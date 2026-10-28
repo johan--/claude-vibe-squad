@@ -11,9 +11,9 @@
 
 <br>
 
-![Vibe Squad command center — Chrono coordinating four model leads](assets/hero/vibe-squad-hero.svg)
+![One operator talks to Chrono, which routes a Markdown task to one of 71 model-bound specialists in its own git worktree; risky work receives cross-family review, and a Markdown result returns to Chrono.](assets/hero/vibe-squad-hero.svg)
 
-*One operator, one coordinator, and four model leads (Codex, Claude, Gemini, and Grok) carrying the routes for 71 Markdown specialists.*
+*One task, one specialist, one fresh CLI in its own git worktree; cross-family review when risky.*
 
 </div>
 
@@ -35,7 +35,7 @@ You can ask it to:
   may change, and nothing merges until its checks pass. That list is enforced when changes are
   integrated, not while the worker runs: a worker executes on your host with your permissions, so
   treat this as an autonomy tool, not a containment boundary. See the note under Quickstart.
-- **A different model checks the work** — so no model signs off on its own reasoning.
+- **A different model checks work that triggers review** — the reviewer comes from another family.
 - **It remembers** — what a run learns is written down and read back before the next one, so a
   lesson paid for once isn't paid for twice.
 
@@ -60,15 +60,16 @@ Then clone and launch:
 git clone https://github.com/mtarcure/claude-vibe-squad.git
 cd claude-vibe-squad
 uv sync                                # create the pinned Python 3.13 environment
-bash docs/install/install-pre-commit-hook.sh  # install the reviewed local leak guard
+bash docs/install/install-pre-commit-hook.sh  # install the reviewed local guards
 bin/squad doctor
 bin/squad up
 ```
 
-The installer copies the self-contained private-memory leak guard into Git's private hooks
-directory. It does not point `core.hooksPath` at tracked files, so checking out another branch
-cannot replace the code Git runs on your next commit. Repository-wide specialist, format, and
-capability validation remains in CI. If an older clone has `core.hooksPath=.githooks`, migrate it
+The installer copies the private-memory leak guard and a reviewed validator bundle into Git's
+private hooks directory. It does not point `core.hooksPath` at tracked files, so checking out another
+branch cannot replace the code Git runs on your next commit. The installed hook also checks release
+versions, specialists, and capability homes, with additional checks triggered by the staged paths;
+CI runs repository-wide validation too. If an older clone has `core.hooksPath=.githooks`, migrate it
 by running the installer. The installer clears the local value and refuses success if a global or
 system value still overrides the private hooks directory, reporting the origin that must be
 removed. See the [install guide](docs/install/README.md#5-install-the-local-leak-guard).
@@ -97,14 +98,21 @@ code root from the live data root is planned.
 
 See [Getting started](docs/getting-started.md) for provider authentication, vault setup, and your first request.
 
-## Two modes, one conversation
+## Three engagement states, one conversation
 
-You ask in plain language. Chrono maps it into exactly one of two workflows.
+You ask in plain language. Chrono always names the mode and asks for your approval before starting.
+
+**`modeless` is the default for ordinary work**, such as routine changes and simple research.
+It needs no mode setup. It follows the stricter of Project and Bounty's permissions and limits,
+including a shorter time limit of 90 minutes per task. Choose Project or Bounty deliberately
+when you need one of their workflows:
 
 - **[Project](shared/modes/project.md)** covers software, research, content and media, operations, and learning. Its lifecycle is scope → plan → build → verify → review when required → deliver → remember.
-- **[Bounty](shared/modes/bounty.md)** covers authorized offensive-security work: verified scope before hunting, and reproduced, negative-controlled impact evidence before anything is called a finding. Those are rules the mode places on Chrono and the specialists, not a launch interlock; no code blocks a bounty dispatch from starting. The end-of-run verifier refuses to close a run whose manifest does not declare a scope gate, an exact target allowlist with every declared target inside it, and a cross-family reproduction with a hash-bound evidence file per finding. It checks those declarations and the evidence hashes. It does not judge the evidence.
+- **[Bounty](shared/modes/bounty.md)** covers authorized offensive-security work: confirm what is in scope before testing, then reproduce the impact and run controls to rule out false positives before calling it a finding. Chrono and the specialists must follow these rules, but the rules do not automatically block a task from starting. At the end, a verifier requires the run record to declare a scope check, an exact list of allowed targets covering every declared target, and reproduction by a different model family with an evidence file for each finding. It checks those declarations and the files' hashes, not whether the evidence proves the findings.
 
-Project and Bounty are the modes. Triage is a dispatch technique, not an extra mode; parallel work is just several independently dispatched single tasks, not a special "panel" or "swarm" transport.
+A task file with no `mode:` defaults to `modeless` (empty or unknown values are rejected), while `scripts/send-task.sh` requires an explicit `--mode modeless`, `--mode project`, or `--mode bounty`.
+
+Project and Bounty are the two defined modes; `modeless` needs no mode file. Triage means deciding how to assign work, not choosing another mode; parallel work means running several independently assigned tasks, with no special "panel" or "swarm" system.
 
 
 ## Dispatch, settlement, and the board
@@ -112,9 +120,9 @@ Project and Bounty are the modes. Triage is a dispatch technique, not an extra m
 ```mermaid
 flowchart LR
     OP([You]) --> CO[Chrono]
-    CO --> PLAN[Markdown task<br/>and capability]
+    CO --> PLAN[Markdown task<br/>and optional capability]
     PLAN --> RUN[Fresh native CLI<br/>in isolated worktree]
-    RUN --> CHECK[Tests and<br/>independent review]
+    RUN --> CHECK[Tests, plus cross-family<br/>review when triggered]
     CHECK --> RESULT[Atomic result<br/>back to Chrono]
     RESULT --> OP
 ```
@@ -154,8 +162,9 @@ Four things hold that together:
    an exact pre-approved file list allows it.
 
 **Review is part of settling, not a separate ceremony.** Every specialist has a route to a reviewer
-from another model family, mandatory for security- and judgment-critical work and skipped for
-ordinary low-risk work. The reviewer's job is to find a concrete reason the work is wrong; `REJECT`
+from another model family. Review is mandatory only when the packet carries one of the four
+[change-level triggers](shared/protocol.md#mandatory-review-behavior); otherwise Chrono verifies
+and closes the task. The reviewer's job is to find a concrete reason the work is wrong; `REJECT`
 is a useful result, not a failed run. The machine checks reviewer independence and evidence
 identity — it does not vote on whether the work is any good. Which of those rules are actually under
 test is written down in a tracked census that names the untested ones too.
@@ -163,6 +172,10 @@ test is written down in a tracked census that names the untested ones too.
 **The board carries work across conversations.** Every run leaves its task file and receipt behind,
 so a failure is diagnosed from those rather than from a chat log, and something raised but not
 finished is picked up next session instead of dying with the thread.
+
+![A live Vibe Squad board: Chrono working in the left pane while seven specialists run in parallel on the right](assets/demo/phase3-swarm.gif)
+
+*A live board: seven specialists running in parallel across Claude and Codex.*
 
 ## Memory that compounds
 
@@ -179,9 +192,9 @@ There is no graph database here, and no fashionable label applied for its own sa
 ## Specialists, skills, and tools
 
 **71 specialist briefs** live under `departments/` and `shared/specialists/`, each validated on every
-push by CI. The installed local pre-commit hook separately blocks private-memory artifacts before
-they enter history. A brief is prose: what the role is for, how it should think, what it must
-refuse. Adding one means writing Markdown, not registering a class.
+push by CI. The installed local pre-commit hook also validates specialists and capability homes
+and blocks private-memory artifacts before they enter history. A brief is prose: what the role is
+for, how it should think, what it must refuse. Adding one means writing Markdown, not registering a class.
 
 ```text
 71 specialists          claude  ██████████████████████████████   30

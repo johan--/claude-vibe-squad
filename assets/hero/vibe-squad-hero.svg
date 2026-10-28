@@ -1,65 +1,78 @@
-<svg width="1400" height="735" viewBox="0 0 1400 735" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="title desc">
-  <title id="title">Vibe Squad command center</title>
-  <desc id="desc">Chrono coordinates four model leads: GPT Codex, Claude, Gemini, and Grok.</desc>
-  <defs>
-    <linearGradient id="bg" x1="0" y1="0" x2="1400" y2="735">
-      <stop offset="0" stop-color="#071017"/>
-      <stop offset="0.52" stop-color="#111827"/>
-      <stop offset="1" stop-color="#171123"/>
-    </linearGradient>
-    <linearGradient id="panel" x1="110" y1="150" x2="1290" y2="650">
-      <stop offset="0" stop-color="#101820"/>
-      <stop offset="1" stop-color="#0b1220"/>
-    </linearGradient>
-    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
-      <feDropShadow dx="0" dy="20" stdDeviation="28" flood-color="#000000" flood-opacity="0.35"/>
-    </filter>
-  </defs>
-  <rect width="1400" height="735" fill="url(#bg)"/>
-  <rect x="84" y="78" width="1232" height="580" rx="28" fill="url(#panel)" stroke="#2f3b4d" filter="url(#shadow)"/>
-  <rect x="84" y="78" width="1232" height="54" rx="28" fill="#151f2e"/>
-  <circle cx="125" cy="105" r="8" fill="#ff5f57"/>
-  <circle cx="151" cy="105" r="8" fill="#ffbd2e"/>
-  <circle cx="177" cy="105" r="8" fill="#28c840"/>
-  <text x="700" y="113" text-anchor="middle" fill="#cbd5e1" font-family="SFMono-Regular, Menlo, Consolas, monospace" font-size="18">squad / chrono</text>
+<svg xmlns="http://www.w3.org/2000/svg" width="1400" height="700" viewBox="0 0 1400 700" role="img" aria-labelledby="title desc">
+  <title id="title">Vibe Squad: the path of one task</title>
+  <desc id="desc">One operator talks to Chrono. Chrono writes a Markdown task file and routes it to one of 71 specialists, each bound to Codex, Claude, Gemini, or Grok. The task runs as a fresh native CLI in its own git worktree. Risky work is checked by a reviewer from a different model family. A Markdown result returns to Chrono.</desc>
+  <style>
+    /* Opaque paper, ink, secondary ink, rule, and a single rust accent.
+       These same tokens apply on both light and dark README themes. */
+    .paper { fill: #F6F5F1; }
+    .ink { fill: #252823; }
+    .secondary { fill: #5B6056; }
+    .accent { fill: #993F29; }
+    .rule { fill: none; stroke: #B9BCB2; stroke-width: 1.5; }
+    .route { fill: none; stroke: #993F29; stroke-width: 2; }
+    .sans { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif; }
+    .mono { font-family: Menlo, Consolas, monospace; }
+    .small { font-size: 18px; }
+    .label { font-size: 20px; }
+    .name { font-size: 30px; font-weight: 600; }
+  </style>
+  <rect class="paper" width="1400" height="700"/>
 
-  <text x="150" y="182" fill="#67e8f9" font-family="Inter, Arial, sans-serif" font-size="28" font-weight="800">CHRONO</text>
-  <text x="150" y="244" fill="#f8fafc" font-family="Inter, Arial, sans-serif" font-size="56" font-weight="800">One operator.</text>
-  <text x="150" y="310" fill="#f8fafc" font-family="Inter, Arial, sans-serif" font-size="56" font-weight="800">Four model leads.</text>
-  <text x="150" y="368" fill="#f8fafc" font-family="Inter, Arial, sans-serif" font-size="46" font-weight="800">71 canonical specialists.</text>
-  <text x="153" y="424" fill="#94a3b8" font-family="Inter, Arial, sans-serif" font-size="22">A local markdown-first AI command center for bounty,</text>
-  <text x="153" y="458" fill="#94a3b8" font-family="Inter, Arial, sans-serif" font-size="22">project, research, content, ops, and release workflows.</text>
+  <!-- Editorial masthead, with no interface chrome or decorative icons. -->
+  <text class="ink" x="64" y="103" font-family="Georgia, 'Times New Roman', serif" font-size="52">Vibe Squad</text>
+  <text class="sans secondary" x="1336" y="100" text-anchor="end" font-size="24">Follow one task.</text>
+  <path class="rule" d="M64 145H1336"/>
 
-  <rect x="152" y="514" width="124" height="38" rx="8" fill="#082f49" stroke="#38bdf8"/>
-  <text x="214" y="539" text-anchor="middle" fill="#e0f2fe" font-family="SFMono-Regular, Menlo, Consolas, monospace" font-size="16" font-weight="700">squad up</text>
-  <rect x="292" y="514" width="180" height="38" rx="8" fill="#2b1a08" stroke="#f59e0b"/>
-  <text x="382" y="539" text-anchor="middle" fill="#ffedd5" font-family="SFMono-Regular, Menlo, Consolas, monospace" font-size="16" font-weight="700">filesystem mailbox</text>
-  <rect x="488" y="514" width="148" height="38" rx="8" fill="#251036" stroke="#c084fc"/>
-  <text x="562" y="539" text-anchor="middle" fill="#f3e8ff" font-family="SFMono-Regular, Menlo, Consolas, monospace" font-size="16" font-weight="700">review gates</text>
-
-  <g transform="translate(760 190)">
-    <rect x="0" y="0" width="430" height="360" rx="18" fill="#08111f" stroke="#334155"/>
-    <text x="26" y="42" fill="#e2e8f0" font-family="Inter, Arial, sans-serif" font-size="22" font-weight="800">MODEL LANES</text>
-    <text x="404" y="42" text-anchor="end" fill="#94a3b8" font-family="Inter, Arial, sans-serif" font-size="15">specialist routes</text>
-    <g transform="translate(26 70)">
-      <rect width="378" height="54" rx="10" fill="#1f1608" stroke="#f59e0b"/>
-      <text x="18" y="34" fill="#fbbf24" font-family="SFMono-Regular, Menlo, Consolas, monospace" font-size="18" font-weight="800">CODEX</text>
-      <text x="108" y="34" fill="#cbd5e1" font-family="Inter, Arial, sans-serif" font-size="17">implementation + tests</text>
-    </g>
-    <g transform="translate(26 140)">
-      <rect width="378" height="54" rx="10" fill="#260f12" stroke="#fb7185"/>
-      <text x="18" y="34" fill="#fb7185" font-family="SFMono-Regular, Menlo, Consolas, monospace" font-size="18" font-weight="800">CLAUDE</text>
-      <text x="118" y="34" fill="#cbd5e1" font-family="Inter, Arial, sans-serif" font-size="17">judgment + safety</text>
-    </g>
-    <g transform="translate(26 210)">
-      <rect width="378" height="54" rx="10" fill="#1b1130" stroke="#c084fc"/>
-      <text x="18" y="34" fill="#d8b4fe" font-family="SFMono-Regular, Menlo, Consolas, monospace" font-size="18" font-weight="800">GEMINI</text>
-      <text x="118" y="34" fill="#cbd5e1" font-family="Inter, Arial, sans-serif" font-size="17">media + grounding</text>
-    </g>
-    <g transform="translate(26 280)">
-      <rect width="378" height="54" rx="10" fill="#062025" stroke="#22d3ee"/>
-      <text x="18" y="34" fill="#67e8f9" font-family="SFMono-Regular, Menlo, Consolas, monospace" font-size="18" font-weight="800">GROK</text>
-      <text x="94" y="34" fill="#cbd5e1" font-family="Inter, Arial, sans-serif" font-size="17">advisory</text>
-    </g>
+  <g class="mono secondary small">
+    <text x="64" y="199">01 / REQUEST</text>
+    <text x="520" y="199">02 / DISPATCH</text>
+    <text x="850" y="199">03 / EXECUTE</text>
   </g>
+
+  <!-- The outbound path. Arrowheads are plain paths, not filters. -->
+  <g class="route">
+    <path d="M218 305H278m-8-6 8 6-8 6"/>
+    <path d="M438 305H510m-8-6 8 6-8 6"/>
+    <path d="M755 305H840m-8-6 8 6-8 6"/>
+  </g>
+  <g class="sans ink">
+    <text class="name" x="64" y="290">Operator</text>
+    <text class="secondary label" x="64" y="327">One person</text>
+    <text class="name" x="288" y="290">Chrono</text>
+    <text class="secondary label" x="288" y="327">Coordinator</text>
+  </g>
+
+  <!-- A file, rather than a mock terminal. -->
+  <path class="rule" d="M520 240H725L755 270V400H520ZM725 240V270H755"/>
+  <text class="mono accent" x="544" y="293" font-size="27">task.md</text>
+  <text class="sans secondary label" x="544" y="330">Markdown task</text>
+  <path class="rule" d="M544 353H712M544 369H680"/>
+
+  <!-- One execution enclosure, not four standing model leads. -->
+  <rect class="rule" x="850" y="240" width="486" height="160"/>
+  <g class="sans">
+    <text class="ink name" x="874" y="282">One specialist</text>
+    <text class="secondary label" x="874" y="316">1 of 71, bound to a model family</text>
+    <text class="ink label" x="874" y="353">Codex / Claude / Gemini / Grok</text>
+  </g>
+  <path class="rule" d="M850 369H1336"/>
+  <text class="mono secondary" x="874" y="391" font-size="19">Fresh native CLI · own git worktree</text>
+
+  <!-- The return path. The dashed enclosure is explicitly conditional. -->
+  <g class="route">
+    <path d="M910 400V444H638V478m-6-8 6 8 6-8"/>
+    <path d="M1160 400V478M850 534H765" stroke-dasharray="6 5"/>
+    <path d="m1154 470 6 8 6-8M773 528l-8 6 8 6"/>
+    <path d="M520 534H355V350m-6 8 6-8 6 8"/>
+  </g>
+  <rect class="rule" x="850" y="488" width="486" height="92" stroke-dasharray="6 5"/>
+  <text class="sans ink" x="874" y="524" font-size="25" font-weight="600">Review if risky</text>
+  <text class="sans secondary label" x="874" y="556">Reviewer from a different model family</text>
+  <rect class="rule" x="520" y="488" width="235" height="92"/>
+  <text class="mono accent" x="544" y="525" font-size="27">result.md</text>
+  <text class="sans secondary label" x="544" y="557">Back to Chrono</text>
+
+  <path class="rule" d="M64 632H1336"/>
+  <text class="sans secondary label" x="64" y="667">Markdown files, all the way through.</text>
+  <text class="mono secondary small" x="1336" y="667" text-anchor="end">REQUEST → TASK → RESULT</text>
 </svg>

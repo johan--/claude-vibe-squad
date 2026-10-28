@@ -69,7 +69,7 @@ Model binding is per specialist. These are the CLIs a specialist row can be boun
 
 ## Dispatch Algorithm
 
-1. Chrono identifies the operator-approved mode and desired artifact.
+1. Chrono identifies the operator-approved engagement state and desired artifact; ordinary in-house work defaults to `modeless` (see `chrono/CLAUDE.md` § Dispatch).
 2. Chrono selects the canonical specialist.
 3. Chrono looks up the `primary_lane`/profile, independent `review_lane`/profile, `source_namespace`, safety/tool constraints, and versioned policies in `shared/specialist-runtime-map.tsv`.
 4. Chrono assigns one write owner for each path in `write_scope`.

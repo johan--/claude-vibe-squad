@@ -21,7 +21,7 @@ Column rules (enforced by `bin/validate-specialists.sh`):
 - routing lanes use `codex | claude | gemini | grok`; `primary_lane` eligibility is governed by `shared/lane-policy.tsv`
 - `primary_lane` and `backup_lane` must differ, and every lane/profile pair must resolve through `shared/registries/profiles.tsv`
 - `safety_level` ∈ `low | medium | high`
-- `high`/`heightened_risk` rows require an independent `review_lane`, `escalation.safety_floor.v1`, and `throughput.never.v1`
+- `high`/`heightened_risk` rows require an independent `review_lane` and `escalation.safety_floor.v1`; `heightened_risk` forbids throughput slots. Other rows may declare gated slots subject to the sensitive-tag rules in `shared/lane-policy.tsv` and per-task eligibility in `shared/routing.md` §5.
 - policy fields must resolve through `shared/registries/policies.tsv`; `tool_profile` must be one of the `vocabulary	tool_profile` values in `shared/lane-policy.tsv` (currently `none`, `media.elevenlabs`, `media.elevenlabs-agent`, `media.higgsfield`)
 - `operator_gate`, `requires_approval`, tools, tags, and safety tags use bracketed list syntax (`[]` when empty)
 - `notes` must be non-empty and `version` must be present
@@ -145,10 +145,10 @@ this guide.
 Send a real packet through the shipped dispatch path (no daemon, no `curl`):
 
 ```bash
-scripts/send-task.sh <source-namespace> <body-file> my-specialist --mode <operator-approved-mode>
+REVIEWS=none scripts/send-task.sh <source-namespace> <body-file> my-specialist --mode <operator-approved-state>
 ```
 
-`scripts/send-task.sh` requires the operator-approved `project|bounty` mode, reads your row from the TSV, maps `primary_lane`/`review_lane` to task-packet model names, generates the task frontmatter (namespace, `review_triggers`, and the `mandatory_review` boolean derived from them), and hands off to `bin/send-task.sh`. It rejects an omitted mode instead of supplying one. The wrapper reads the trigger list from the `REVIEW_TRIGGERS` environment variable, defaulting to `[]` → `mandatory_review: false`; `safety_level` does **not** manufacture a review. To request one, pass a non-empty list, e.g. `REVIEW_TRIGGERS='[blast_radius]' scripts/send-task.sh <source-namespace> <body-file> my-specialist --mode <mode>`. The trigger vocabulary and the single distinct-family review rule live in `shared/protocol.md` § Mandatory Review Behavior. The hardened dispatcher writes the packet to `departments/coding/inbox/TASK-*.md`, pins a verification contract to it, and hands delivery to a detached `bin/board-supervisor.sh`, which creates a git worktree and spawns a fresh CLI for your specialist. The response lands at `departments/coding/outbox/TASK-*-response.md` and `bin/registry-reconciler.sh` settles it. Transport is always the canonical `departments/coding` mailbox regardless of `source_namespace` (`shared/protocol.md` § board-native transport).
+`scripts/send-task.sh` requires an explicit operator-approved `project|bounty|modeless` engagement state and a `REVIEWS=none|TASK-...` declaration, reads your row from the TSV, maps `primary_lane`/`review_lane` to task-packet model names, generates the task frontmatter (namespace, `review_triggers`, and the `mandatory_review` boolean derived from them), and hands off to `bin/send-task.sh`. It rejects an omitted mode instead of supplying one. The wrapper reads the trigger list from the `REVIEW_TRIGGERS` environment variable, defaulting to `[]` → `mandatory_review: false`; `safety_level` does **not** manufacture a review. To request one, pass a non-empty list, e.g. `REVIEWS=none REVIEW_TRIGGERS='[blast_radius]' scripts/send-task.sh <source-namespace> <body-file> my-specialist --mode <mode>`. The trigger vocabulary and the single distinct-family review rule live in `shared/protocol.md` § Mandatory Review Behavior. The hardened dispatcher writes the packet to `departments/coding/inbox/TASK-*.md`, pins a verification contract to it, and hands delivery to a detached `bin/board-supervisor.sh`, which creates a git worktree and spawns a fresh CLI for your specialist. The response lands at `departments/coding/outbox/TASK-*-response.md` and `bin/registry-reconciler.sh` settles it. Transport is always the canonical `departments/coding` mailbox regardless of `source_namespace` (`shared/protocol.md` § board-native transport).
 
 ## Safety & review
 

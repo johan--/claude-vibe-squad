@@ -234,9 +234,10 @@ See [The launchd daemon](install/daemon.md) for the failure modes and uninstall.
 It suppresses the first-run autonomy warning and skips the pre-flight `doctor`
 gate, so plain `bin/squad up` is the stricter of the two on a fresh install.
 Permissions for the coordinator and for board-dispatched workers are identical
-either way. Ask Chrono for work in plain language, then explicitly choose
-Project for delivery work or Bounty for authorized security work when a typed
-workflow is needed.
+either way. Ask Chrono for work in plain language. Ordinary in-house work defaults
+to `modeless`; Chrono still names the state and gets consent. Choose Project or
+Bounty deliberately when a typed workflow is needed; see the
+[engagement-state guide](../README.md#three-engagement-states-one-conversation).
 
 Useful lifecycle commands:
 

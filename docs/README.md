@@ -17,8 +17,10 @@ launch.
 - [Project](../shared/modes/project.md) — the build and delivery workflow.
 - [Bounty](../shared/modes/bounty.md) — the authorized security workflow.
 
-Project and Bounty are the only operating modes. Content and media work is a
-Project capability, not another mode.
+Ordinary in-house work defaults to the `modeless` engagement state, with no mode
+file or capability card. Project and Bounty are the two typed modes, chosen
+deliberately with operator consent. Content and media workflows live under
+Project; see the [engagement-state guide](../README.md#three-engagement-states-one-conversation).
 
 ## Operate and extend
 

@@ -19,14 +19,18 @@ Human and model judgment lives in readable, diffable files:
 - capability cards and specialist briefs
 - routing, review, safety, and memory guidance
 
-There are exactly two work modes: [Project](../shared/modes/project.md) and
-[Bounty](../shared/modes/bounty.md). Project contains engineering, research,
-operations, outreach, and content/media capabilities. Bounty contains authorized
-security research. A conversational request or advisory answer does not create a
-third mode.
+There are three engagement states. Ordinary in-house work defaults to `modeless`,
+which takes the narrower authority of the two typed modes, permits no capability
+card, and has no mode file. [Project](../shared/modes/project.md) and
+[Bounty](../shared/modes/bounty.md) are deliberate, operator-approved choices.
+Project contains engineering, research, operations, outreach, and content/media
+capabilities. Bounty contains authorized security research. The
+[engagement-state guide](../README.md#three-engagement-states-one-conversation)
+explains the dispatch defaults and lane wall.
 
-A capability card selects the workflow, gates, and overlays for a task. It never
-selects the model. Chrono selects a specialist; the specialist's row in
+When a typed-mode task uses a capability card, it selects the workflow, gates,
+and overlays for that task. It never selects the model. Chrono selects a specialist;
+the specialist's row in
 [`shared/specialist-runtime-map.tsv`](../shared/specialist-runtime-map.tsv)
 selects the primary CLI/profile, backup, escalation, and reviewer constraints.
 Folder or mailbox names are compatibility storage labels, not model ownership.

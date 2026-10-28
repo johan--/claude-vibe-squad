@@ -12,13 +12,13 @@ Vibe Squad currently targets macOS.
 | 2 | The four provider CLIs, installed and authenticated | [provider-clis.md](provider-clis.md) |
 | 3 | Clone and create the Python environment | below |
 | 4 | The private memory vault | [../getting-started.md](../getting-started.md#3-create-the-private-memory-vault) |
-| 5 | Install the local private-memory leak guard | below |
+| 5 | Install the reviewed local guards | below |
 | 6 | Check and launch | below |
 | 7 | Optional: the launchd routines | [daemon.md](daemon.md) |
 | 8 | Optional: utility MCPs | below |
 
 Steps 1–6 are required and that is the whole of it — a clone, an environment, a
-vault, a local leak guard, and a launch. Steps 7–8 are optional, and skipping them must leave
+vault, reviewed local guards, and a launch. Steps 7–8 are optional, and skipping them must leave
 everything else working — see [What "optional" means](#what-optional-means).
 
 ## 1. Core tools
@@ -68,16 +68,17 @@ Memory lives outside this repository. See
 
 ## 5. Install the local leak guard
 
-Install a reviewed snapshot of the self-contained private-memory leak guard in
-Git's private hooks directory:
+Install the private-memory leak guard and a reviewed validator bundle in Git's
+private hooks directory:
 
 ```bash
 bash docs/install/install-pre-commit-hook.sh
 ```
 
-The installer refuses to replace an unrelated existing pre-commit hook. It
-also removes the retired local `core.hooksPath=.githooks` setting, because that
-setting lets the checked-out branch replace the code executed by a later
+The installer refuses to replace an unrelated existing pre-commit hook unless
+you provide its reviewed identity with `--replace-unmanaged-sha256 <sha256>`;
+that replacement retains a regular-file backup. It also removes the retired local
+`core.hooksPath=.githooks` setting, because that setting lets the checked-out branch replace the code executed by a later
 commit. If a global or system value still overrides Git's private hooks
 directory, the installer fails and reports its origin instead of claiming the
 guard is active. Remove that setting from the reported scope and rerun the
@@ -89,12 +90,14 @@ Check:
 test -x "$(git rev-parse --path-format=absolute --git-common-dir)/hooks/pre-commit"
 bash bin/doctor.sh --check-pre-commit-hook   # expect an OK line and exit 0
 git config --show-origin --get-all core.hooksPath  # expect no output and exit 1
-git hook run pre-commit                            # expect no output and exit 0 on a clean index
+git hook run pre-commit                            # expect validation output and exit 0 when checks pass
 ```
 
-The local hook blocks private-memory artifacts. The broader specialist,
-capability, and format checks run in CI, where a contributor branch cannot
-replace a developer's local executable hook.
+The local hook blocks private-memory artifacts, checks release versions, and
+runs specialist and live capability-home validation from reviewed snapshots.
+Staged paths trigger capability, skill-wiring, format, and moat Tier-A checks.
+CI runs repository-wide validation too. See [Git hooks](../git-hooks.md) for
+the snapshot boundary and prerequisites.
 
 ## 6. Check and launch
 
