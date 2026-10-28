@@ -23,7 +23,6 @@ LANE_NAMES = {
     "claude": "claude",
     "gemini": "gemini",
     "grok": "grok",
-    "kimi": "kimi",
 }
 # Only these availability states feed the runtime-map tool summary. Every other
 # state — including the Wave 1 (2026-07-26) typed states (authored:stub,

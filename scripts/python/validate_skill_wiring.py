@@ -42,8 +42,6 @@ WHAT IT ENFORCES (hard failures -> exit 1)
          model-lanes/gemini; without the bridge it sees only built-in skills).
          Each SKILL.md must match its canonical home byte-for-byte, including frontmatter;
          only the deliberately different per-path ``probe-canary`` is exempt from identity.
-       - kimi launcher: ``bin/board-supervisor.sh`` must pass ``--skills-dir`` to override
-         kimi's broader default discovery with the shared specialist skill home.
   5. Audience routing (who a skill is FOR — see ``model-lanes/SKILL-HOMES.md``):
        - every wired skill declares ``audience: chrono`` or ``audience: specialist``.
          The test is not "could a specialist read this" but "does a specialist ever
@@ -55,7 +53,7 @@ WHAT IT ENFORCES (hard failures -> exit 1)
          trigger noise competing for a shared attention budget. (``probe-canary`` is the
          one exemption: a per-path infra canary that is deliberately present in both homes.)
        - ``audience: specialist`` skills MUST be present in ``.agents/skills/`` — otherwise
-         codex/gemini/kimi cannot reach them at all.
+         codex/gemini cannot reach them at all.
      A handful of ``audience: chrono`` mirrors that predate this rule and cannot be removed
      by a board worker without operator-authorized deletion are carried in ``PENDING_DEMOTION``
      as a LOUD note rather than a hard failure (same "don't red-line CI on blocked rollout
@@ -74,13 +72,12 @@ WHAT IT REPORTS (informational -> never fails the gate)
   - rollout backlog: demand-referenced + authored skills not yet reachable under
     ``.claude/skills/`` — the remaining rollout after the pilot. Wire on demand.
   - orphan-wired: a wired skill nothing demands (excluding INFRA_WIRED).
-  - per-lane skill reach: for each lane (claude / gpt-codex / gemini / kimi), how many
+  - per-lane skill reach: for each proven lane (claude / gpt-codex / gemini), how many
     skills it can actually enumerate and by what mechanism, plus coverage gaps (a
     ``.claude/skills`` skill not mirrored to ``.agents/skills`` = unreachable by the
     non-claude lanes; an ``.agents``-native skill = unreachable by claude). This replaces
     the earlier "lanes never checked (enumeration unproven)" stance: the original paths
-    were enumerated live 2026-08-18 (TASK-2099-01-01-0010-example-skill-probe), and Kimi was
-    re-probed against installed 1.40.0 on 2026-09-01.
+    were enumerated live 2026-08-18 (TASK-2099-01-01-0010-example-skill-probe).
 
   To promote the backlog to a hard gate once the rollout completes, change the final
   ``return 1 if errors else 0`` to ``return 1 if errors or backlog else 0``. Left as a
@@ -107,6 +104,7 @@ import sys
 import tempfile
 from pathlib import Path
 
+from disk_hygiene import local_config_section
 from chrono_state.thread_charters import CHARTERS_REL, clip, load_active_charters
 from validate_capabilities import Validator, retired_skill_references, table_cells
 from specialist_capability_source import CapabilitySourceError, SOURCE_RELATIVE, load_source
@@ -150,22 +148,15 @@ PENDING_DEMOTION = {
 }
 
 # ---- Per-lane skill reach ---------------------------------------------------
-# Every board lane can now reach project skills. The original paths were proven
-# live 2026-08-18 (TASK-2099-01-01-0010-example-skill-probe); kimi was re-probed against
-# installed kimi 1.40.0 on 2026-09-01 after a contradictory later claim. The
-# mechanisms differ per CLI:
+# These skill paths were proven live 2026-08-18
+# (TASK-2099-01-01-0010-example-skill-probe). Grok has no proven enumeration
+# path here; execution-lane membership alone does not establish skill reach.
+# The mechanisms differ per CLI:
 #   - claude    reads `<cwd=worktree-root>/.claude/skills/`  (its proven load path)
 #   - gpt-codex reads `<cwd=worktree-root>/.agents/skills/`  (resolves probe-canary bare)
 #   - gemini    is the routing identifier for the agy-backed lane. Its cwd is
 #               model-lanes/gemini, so the tracked regular-file materialization at
 #               `model-lanes/gemini/.agents/skills` remains the lane-local skill home.
-#   - kimi      reads skills natively. Live probe: `kimi --help` described repeatable
-#               `--skills-dir` as overriding default discovery; an isolated session `/help`
-#               listed `/skill:live-probe-7c91` when supplied by that flag; the same slash
-#               command was `Unknown` without it. A no-flag session at the repository root
-#               also advertised project skills, proving default project discovery exists.
-#               The supervisor's explicit `.agents/skills` override is therefore a scope
-#               boundary: it selects the specialist home and excludes controller-only skills.
 # The non-claude lanes share `.agents/skills/`, which mirrors cross-lane
 # `.claude/skills` entries as byte-identical regular-file copies. The named canonical
 # winner is `.claude/skills` (Hard Rule 10; see model-lanes/SKILL-HOMES.md), and
@@ -174,7 +165,6 @@ PENDING_DEMOTION = {
 # per-path canary in each home and is never identity-checked as a mirror.
 AGENTS_SKILLS_REL = ".agents/skills"
 GEMINI_BRIDGE_REL = "model-lanes/gemini/.agents"   # tracked regular materialization
-SUPERVISOR_REL = "bin/board-supervisor.sh"
 # (lane, cwd-relative-to-root, convention-dir-relative-to-that-cwd, how-it-was-proven)
 LANE_REACH = (
     ("claude", ".", CLAUDE_SKILLS_REL,
@@ -183,9 +173,6 @@ LANE_REACH = (
      "cwd .agents/skills (codex resolved probe-canary bare)"),
     ("gemini", "model-lanes/gemini", AGENTS_SKILLS_REL,
      "cwd .agents/skills via the model-lanes/gemini/.agents bridge used by agy"),
-    ("kimi", ".", AGENTS_SKILLS_REL,
-     "explicit --skills-dir .agents/skills; in-session /help listed injected canary "
-     "(kimi 1.40.0 live probe, 2026-09-01)"),
 )
 
 # ---- Trigger-distinctness (collision) check ---------------------------------
@@ -269,7 +256,7 @@ def _overlap_coeff(a: set[str], b: set[str]) -> float:
     return len(a & b) / min(len(a), len(b))
 
 
-def check_trigger_collisions(wired: dict[str, Path]) -> tuple[list[str], list[str]]:
+def check_trigger_collisions(wired: dict[str, Path], root: Path | None = None) -> tuple[list[str], list[str]]:
     """Flag wired skills (and wired-vs-plugin) whose triggers fire on the same situation.
 
     Returns (errors, report_lines). A pair scoring >= COLLISION_THRESHOLD is an error
@@ -277,6 +264,18 @@ def check_trigger_collisions(wired: dict[str, Path]) -> tuple[list[str], list[st
     is one of OUR wired skills (plugin-vs-plugin is not our problem to fix). Skills whose
     description is missing/short are skipped — the integrity check already fails them.
     """
+    adjudicated = dict(ADJUDICATED_DISTINCT)
+    if root is not None:
+        local = local_config_section(root, "skill_collision")
+        if local is not None:
+            pair, reason = local.get("pair"), local.get("reason")
+            if (isinstance(pair, list) and len(pair) == 2
+                    and all(isinstance(name, str) and re.fullmatch(r"[a-z0-9-]+", name)
+                            for name in pair) and pair[0] != pair[1]
+                    and isinstance(reason, str) and reason.strip()):
+                adjudicated[frozenset(pair)] = reason
+            else:
+                print("skill_collision: SKIP (invalid local adjudication)")
     ours: dict[str, str] = {}
     for name, path in wired.items():
         fm = parse_frontmatter(path.read_text(encoding="utf-8", errors="ignore"))
@@ -302,7 +301,7 @@ def check_trigger_collisions(wired: dict[str, Path]) -> tuple[list[str], list[st
                 continue
             lo, hi = sorted((a, b))
             scored.append((score, lo, hi))
-            if score >= COLLISION_THRESHOLD and key not in ADJUDICATED_DISTINCT:
+            if score >= COLLISION_THRESHOLD and key not in adjudicated:
                 shared = ", ".join(sorted(toks[a] & toks[b]))
                 errors.append(
                     f"trigger collision ({score:.2f} >= {COLLISION_THRESHOLD:.2f}): "
@@ -312,7 +311,7 @@ def check_trigger_collisions(wired: dict[str, Path]) -> tuple[list[str], list[st
     scored.sort(reverse=True)
     report = [f"top trigger overlaps (>= {COLLISION_THRESHOLD:.2f} fails unless adjudicated):"]
     for score, a, b in scored[:8]:
-        if frozenset({a, b}) in ADJUDICATED_DISTINCT:
+        if frozenset({a, b}) in adjudicated:
             tag = " [adjudicated-distinct]"
         elif score >= COLLISION_THRESHOLD:
             tag = " <- FAIL"
@@ -524,34 +523,18 @@ def check_gemini_bridge(root: Path) -> list[str]:
     return errors
 
 
-def check_kimi_launcher(root: Path) -> list[str]:
-    """The kimi launch must select the shared specialist home with ``--skills-dir``."""
-    errors: list[str] = []
-    sup = root / SUPERVISOR_REL
-    if not sup.is_file():
-        return errors
-    text = sup.read_text(encoding="utf-8", errors="ignore")
-    if "--skills-dir" not in text:
-        errors.append(
-            f"{SUPERVISOR_REL}: no `--skills-dir` wiring for kimi — default project "
-            f"discovery can surface controller-only skills; explicitly select "
-            f"{AGENTS_SKILLS_REL} as the specialist home")
-    return errors
-
-
 def per_lane_coverage(root: Path) -> tuple[list[str], list[str]]:
     """Compute real per-lane skill reach + enforce the wiring that provides it.
 
     Returns (errors, report_lines). Errors are active breakage (symlinked/drifted
-    mirror, invalid gemini bridge, unwired kimi launcher). The report states, per lane,
+    mirror, invalid gemini bridge). The report states, per proven lane,
     how many skills that lane can actually enumerate and by what mechanism, plus the
     coverage deltas (skills a lane cannot reach). This replaces the old blanket
-    "gemini/kimi/gpt-codex never checked (enumeration unproven)" note.
+    "gemini/gpt-codex never checked (enumeration unproven)" note.
     """
     errors = (
         check_mirror_integrity(root)
         + check_gemini_bridge(root)
-        + check_kimi_launcher(root)
     )
     claude_dirs = _skill_dirs(root / CLAUDE_SKILLS_REL)
     claude_set = set(claude_dirs)
@@ -570,7 +553,7 @@ def per_lane_coverage(root: Path) -> tuple[list[str], list[str]]:
     if unmirrored:
         report.append(
             f"    coverage gap: {len(unmirrored)} .claude/skills specialist skill(s) NOT mirrored to "
-            f"{AGENTS_SKILLS_REL}/ — unreachable by codex/gemini/kimi (mirror to fix): "
+            f"{AGENTS_SKILLS_REL}/ — unreachable by codex/gemini (mirror to fix): "
             f"{', '.join(unmirrored)}")
     native_only = sorted((shared_set - claude_set) - INFRA_WIRED)
     if native_only:
@@ -597,7 +580,7 @@ def check_audience(root: Path, wired: dict[str, Path]) -> tuple[list[str], list[
          to a note for the PENDING_DEMOTION mirrors a worker cannot delete without operator
          authorization;
       C. an ``audience: specialist`` skill MUST be present in ``.agents/skills/`` (else
-         codex/gemini/kimi cannot reach it at all).
+         codex/gemini cannot reach it at all).
     ``probe-canary`` (INFRA_WIRED) is exempt from B/C: it is a per-path infra canary that is
     deliberately present in both homes with its own body in each.
     """
@@ -639,7 +622,7 @@ def check_audience(root: Path, wired: dict[str, Path]) -> tuple[list[str], list[
         elif aud == "specialist" and not mirrored:
             errors.append(
                 f"{AGENTS_SKILLS_REL}/{name}: audience:specialist skill is missing from the "
-                f"specialist home — codex/gemini/kimi cannot reach it; mirror it there")
+                f"specialist home — codex/gemini cannot reach it; mirror it there")
     return errors, notes
 
 
@@ -894,7 +877,7 @@ def run(root: Path, verbose: bool = True) -> int:
     root = root.resolve()
     wired = wired_skills(root)
 
-    collision_errors, collision_report = check_trigger_collisions(wired)
+    collision_errors, collision_report = check_trigger_collisions(wired, root)
     coverage_errors, coverage_report = per_lane_coverage(root)
     audience_errors, audience_notes = check_audience(root, wired)
     retirement_errors, retirement_report = check_retired_skill_demand(root)
@@ -1065,7 +1048,7 @@ def self_test() -> int:
 
     # 7. Per-lane reach: a correctly wired multi-lane tree passes; a byte-different mirror,
     #    a symlink mirror, a dangling mirror, a dot-named real skill, a symlink gemini bridge,
-    #    a missing gemini cwd bridge, and an unwired kimi --skills-dir each fail. A regular
+    #    and a missing gemini cwd bridge each fail. A regular
     #    hidden metadata file such as .DS_Store passes. (Only the coverage checks can fail here
     #    — the single wired skill is clean otherwise.) Both valid mirrors and the bridge are
     #    REGULAR copies: launch_hygiene.py refuses to start a board worker when a symlink is
@@ -1101,8 +1084,6 @@ def self_test() -> int:
         mirror = mirror_dir / "SKILL.md"
         mirror.write_bytes(canonical.read_bytes())                         # valid regular copy
         bridge = _mk_bridge(rl)                                            # valid regular-dir bridge
-        (rl / SUPERVISOR_REL).parent.mkdir(parents=True, exist_ok=True)
-        (rl / SUPERVISOR_REL).write_text("kimi launch: --skills-dir .agents/skills\n")
         if run(rl, verbose=False) != 0:
             print("self-test FAILED: a correctly wired multi-lane tree should pass")
             return 1
@@ -1159,10 +1140,6 @@ def self_test() -> int:
             print("self-test FAILED: a missing gemini cwd bridge should fail")
             return 1
         _mk_bridge(rl)                                                     # restore valid bridge
-        (rl / SUPERVISOR_REL).write_text("kimi launch: (no skills-dir wired)\n")  # unwired kimi
-        if run(rl, verbose=False) == 0:
-            print("self-test FAILED: an unwired kimi --skills-dir should fail")
-            return 1
 
     # 8. Audience routing: A (missing/invalid audience), B (chrono skill mirrored into the
     #    specialist home), C (specialist skill missing from it) each fail, then pass once
@@ -1198,8 +1175,6 @@ def self_test() -> int:
         agents.mkdir(parents=True)
         _mirror(agents, "spec-skill", DESC_SPEC)          # specialist correctly mirrored
         _mk_bridge(ru)                                      # valid gemini bridge
-        (ru / SUPERVISOR_REL).parent.mkdir(parents=True, exist_ok=True)
-        (ru / SUPERVISOR_REL).write_text("kimi launch: --skills-dir .agents/skills\n")
         # baseline: specialist mirrored, chrono NOT mirrored -> PASS
         if run(ru, verbose=False) != 0:
             print("self-test FAILED: correct audience wiring should pass")
@@ -1288,8 +1263,7 @@ def self_test() -> int:
           "dual-home: fail on drift / pass in agreement; "
           "collision: truth/verification cluster fails, then passes after retire + disambiguate; "
           "per-lane: valid multi-lane tree passes, byte-different / symlink / dangling mirrors, "
-          "hidden metadata passes, dot-skill / wrong-content / symlink / missing bridges, and "
-          "unwired kimi each fail; "
+          "hidden metadata passes, dot-skill / wrong-content / symlink / missing bridges each fail; "
           "audience: correct routing passes, missing-audience / chrono-mirrored / "
           "specialist-unmirrored each fail then pass; "
           "thread-charter: clean is quiet, completed-active and unresolved-QUEUE report, "

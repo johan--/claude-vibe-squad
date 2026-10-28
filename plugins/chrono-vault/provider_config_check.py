@@ -111,12 +111,10 @@ def main() -> int:
     codex = home / ".codex" / "config.toml"
     gemini_project = repo / "model-lanes" / "gemini" / ".gemini" / "settings.json"
     gemini_home = home / ".gemini" / "settings.json"
-    kimi = home / ".kimi" / "mcp.json"
 
     for provider, path, loader in (
         ("claude", claude, server_from_json),
         ("gpt-codex", codex, server_from_codex),
-        ("kimi", kimi, server_from_json),
     ):
         try:
             server = loader(path)

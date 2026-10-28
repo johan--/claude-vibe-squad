@@ -196,7 +196,7 @@ class V4QualityEvalFixtureTests(unittest.TestCase):
                 self.assertNotIn("claude", scenario["prompt"].lower())
                 self.assertNotIn("codex", scenario["prompt"].lower())
                 self.assertNotIn("gemini", scenario["prompt"].lower())
-                self.assertNotIn("kimi", scenario["prompt"].lower())
+                self.assertNotIn("grok", scenario["prompt"].lower())
 
     def test_project_and_bounty_apertures_preserve_mode_contract(self) -> None:
         for scenario in self.bundle["scenarios"]:

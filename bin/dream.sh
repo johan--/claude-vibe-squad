@@ -33,7 +33,7 @@ DRY_RUN=$#
 DATE="$(date +%Y-%m-%d)"
 
 mkdir -p "${VAULT_ROOT}/${STATE_REL}/dream-packets"
-# bin/send-task.sh:784 requires TASK-YYYY-MM-DD-HHMM-<alnum/hyphen>.
+# bin/send-task.sh:940 requires TASK-YYYY-MM-DD-HHMM-<alnum/hyphen>.
 TASK_ID="TASK-$(date +%Y-%m-%d-%H%M)-dream-${PASS}"
 PACKET="${VAULT_ROOT}/${STATE_REL}/dream-packets/${TASK_ID}.md"
 

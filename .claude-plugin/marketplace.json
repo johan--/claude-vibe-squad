@@ -15,7 +15,7 @@
     },
     {
       "name": "chrono-research-arsenal",
-      "description": "External research arsenal: arxiv_search + xai_search + Perplexity Sonar (via official MCP). Used by all chrono roles needing external data.",
+      "description": "Academic research arsenal: arxiv_search with an OpenAlex fallback.",
       "category": "research",
       "source": "./plugins/chrono-research-arsenal",
       "homepage": "https://github.com/mtarcure/claude-vibe-squad"

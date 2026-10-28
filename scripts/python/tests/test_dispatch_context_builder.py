@@ -90,115 +90,158 @@ EXPECTED_AUTHORITY_FIELDS = {
 }
 
 
-# Frozen from TASK-2026-09-08-1536-3ffac3af's complete route matrix at
-# 1ef85aa2. This historical regression fixture is independent of the live map;
+# The complete route matrix, regenerated whenever the runtime map moves:
+# test_all_declared_bindings_and_legacy_defaults asserts this table IS the live
+# map's divergence set, so it is a snapshot, not an independent fixture.
 # test_known_shadowed_bindings pins the old and requested profiles explicitly.
 # Columns: specialist, requested tier, lane, declared profile, shadowing profile.
 SHADOWED_BINDINGS = tuple(tuple(line.split()) for line in """
-accessibility-engineer escalate gemini gemini.flash.high gemini.flash.default
+accessibility-engineer escalate gemini gemini.argon.high gemini.argon.medium
+accessibility-engineer throughput gemini gemini.flash.default gemini.argon.medium
 agentops escalate claude claude.fable.max claude.fable.xhigh
-ai-engineer escalate claude claude.opus5.max claude.opus5.xhigh
-ai-engineer review claude claude.opus5.high claude.opus5.xhigh
-architect escalate claude claude.fable.max claude.opus5.max
+agentops throughput claude claude.haiku.default claude.fable.xhigh
+ai-engineer escalate claude claude.opus55.max claude.opus55.xhigh
+ai-engineer review claude claude.fable.xhigh claude.opus55.xhigh
+ai-engineer throughput codex codex.terra.default codex.astra.high
+architect escalate claude claude.fable.max claude.opus55.max
 asset-provenance-and-rights-auditor escalate claude claude.fable.max claude.fable.xhigh
-backend-engineer escalate claude claude.opus5.max claude.opus5.xhigh
-backend-engineer review claude claude.opus5.high claude.opus5.xhigh
+backend-engineer review claude claude.fable.xhigh claude.opus55.max
+backend-engineer throughput codex codex.terra.default codex.astra.high
+bounty-researcher throughput gemini gemini.flash.high gemini.argon.high
 brand-voice escalate claude claude.fable.max claude.fable.xhigh
+brand-voice throughput claude claude.haiku.default claude.fable.xhigh
 code-reviewer escalate codex codex.sol.ultra codex.astra.max
+code-reviewer review claude claude.opus55.high claude.mythos.max
 content-verifier escalate claude claude.fable.max claude.fable.xhigh
 data-extraction-engineer escalate codex codex.sol.ultra codex.sol.high
-database-engineer escalate claude claude.opus5.max claude.opus5.xhigh
-database-engineer review claude claude.opus5.high claude.opus5.xhigh
-detection-engineer escalate claude claude.opus5.max claude.opus5.high
+data-extraction-engineer review claude claude.fable.xhigh claude.opus55.high
+data-extraction-engineer throughput codex codex.terra.default codex.sol.high
+database-engineer escalate claude claude.opus55.max claude.opus55.xhigh
+database-engineer review claude claude.opus55.high claude.opus55.xhigh
+detection-engineer escalate claude claude.mythos.max claude.fable.xhigh
 devops-engineer escalate codex codex.sol.ultra codex.astra.max
+devops-engineer throughput codex codex.terra.default codex.astra.max
 editor escalate claude claude.fable.max claude.fable.xhigh
+editor throughput claude claude.haiku.default claude.fable.xhigh
 exodia escalate codex codex.sol.ultra codex.astra.max
-exodia review claude claude.opus5.max claude.opus5.high
-experimental-attacker review claude claude.opus5.max claude.fable.max
-exploit-developer escalate codex codex.sol.high codex.daybreak.default
-frontend-engineer escalate claude claude.opus5.max claude.opus5.xhigh
+exodia review claude claude.opus55.max claude.opus55.high
+experimental-attacker escalate claude claude.opus55.max claude.fable.max
+experimental-attacker review claude claude.opus55.max claude.fable.max
+exploit-developer review claude claude.mythos.max claude.opus55.max
+frontend-engineer escalate claude claude.opus55.max claude.opus55.xhigh
 frontend-engineer review codex codex.sol.high codex.astra.high
+frontend-engineer throughput claude claude.sonnet55.high claude.opus55.xhigh
 game-designer escalate claude claude.fable.max claude.fable.xhigh
-game-engineer escalate claude claude.opus5.max claude.opus5.xhigh
-game-engineer review claude claude.opus5.high claude.opus5.xhigh
+game-designer throughput claude claude.haiku.default claude.fable.xhigh
+game-engineer escalate claude claude.opus55.max claude.opus55.xhigh
+game-engineer review claude claude.fable.xhigh claude.opus55.xhigh
+game-engineer throughput codex codex.terra.default codex.astra.high
+growth-and-search-analyst throughput gemini gemini.flash.default gemini.argon.high
 harness-optimizer escalate claude claude.fable.max claude.fable.xhigh
+harness-optimizer throughput claude claude.haiku.default claude.fable.xhigh
 ichigo review codex codex.sol.ultra codex.sol.high
-image-designer escalate gemini gemini.flash.high gemini.flash.default
-incident-responder escalate claude claude.opus5.max claude.opus5.high
-interactive-audio-designer escalate gemini gemini.flash.high gemini.flash.default
+image-designer escalate gemini gemini.argon.high gemini.argon.medium
+image-designer throughput gemini gemini.flash.default gemini.argon.medium
+incident-responder escalate claude claude.mythos.max claude.opus55.high
+interactive-audio-designer escalate gemini gemini.argon.high gemini.argon.medium
+interactive-audio-designer throughput gemini gemini.flash.default gemini.argon.medium
+kestrel escalate claude claude.opus55.max claude.opus55.high
+kestrel review codex codex.sol.ultra codex.sol.high
 knowledge-librarian escalate claude claude.fable.max claude.fable.xhigh
+knowledge-librarian throughput claude claude.haiku.default claude.fable.xhigh
+large-context-analyst throughput gemini gemini.flash.high gemini.argon.high
 level-narrative-designer escalate claude claude.fable.max claude.fable.xhigh
+level-narrative-designer throughput claude claude.haiku.default claude.fable.xhigh
 localization-specialist escalate claude claude.fable.max claude.fable.xhigh
+localization-specialist throughput claude claude.haiku.default claude.fable.xhigh
 loop-operator escalate claude claude.fable.max claude.fable.xhigh
+loop-operator throughput claude claude.haiku.default claude.fable.xhigh
 mac-ops escalate claude claude.fable.max claude.fable.xhigh
+mac-ops throughput claude claude.haiku.default claude.fable.xhigh
 memory-curator escalate claude claude.fable.max claude.fable.xhigh
-music-composer escalate gemini gemini.flash.high gemini.flash.default
-performance-optimizer escalate claude claude.opus5.max claude.opus5.xhigh
-performance-optimizer review claude claude.opus5.high claude.opus5.xhigh
-privacy-steward escalate claude claude.opus5.max claude.opus5.high
-product-manager escalate claude claude.fable.max claude.opus5.xhigh
+memory-curator throughput claude claude.haiku.default claude.fable.xhigh
+music-composer escalate gemini gemini.argon.high gemini.argon.medium
+music-composer throughput gemini gemini.flash.default gemini.argon.medium
+performance-optimizer escalate claude claude.opus55.max claude.opus55.xhigh
+performance-optimizer review claude claude.fable.xhigh claude.opus55.xhigh
+performance-optimizer throughput codex codex.terra.default codex.astra.high
+planner throughput claude claude.haiku.default claude.fable.max
+privacy-steward escalate claude claude.mythos.max claude.opus55.high
+product-manager escalate claude claude.fable.max claude.fable.xhigh
+product-manager throughput claude claude.haiku.default claude.fable.xhigh
 prompt-engineer escalate claude claude.fable.max claude.fable.xhigh
-red-team-operator escalate codex codex.sol.high codex.daybreak.default
-refactor-cleaner escalate claude claude.opus5.max claude.opus5.xhigh
-refactor-cleaner review claude claude.opus5.high claude.opus5.xhigh
-reverse-engineer escalate codex codex.sol.high codex.daybreak.default
-scout escalate claude claude.opus5.max claude.opus5.high
-scraping-engineer escalate codex codex.sol.ultra codex.astra.max
-security-analyst escalate codex codex.sol.high codex.daybreak.default
+prompt-engineer throughput claude claude.haiku.default claude.fable.xhigh
+red-team-operator review claude claude.mythos.max claude.opus55.max
+refactor-cleaner escalate claude claude.mythos.max claude.opus55.xhigh
+refactor-cleaner review claude claude.fable.xhigh claude.opus55.xhigh
+refactor-cleaner throughput codex codex.terra.default codex.astra.high
+research throughput gemini gemini.flash.high gemini.argon.high
+reverse-engineer review claude claude.mythos.max claude.opus55.max
+scout escalate claude claude.mythos.max claude.opus55.high
+security-analyst review claude claude.mythos.max claude.opus55.max
 site-reliability-engineer escalate codex codex.sol.ultra codex.astra.max
-smart-contract-engineer escalate claude claude.opus5.max claude.opus5.xhigh
-smart-contract-engineer review claude claude.opus5.high claude.opus5.xhigh
-social-strategist escalate gemini gemini.flash.high gemini.flash.default
-software-supply-chain-engineer escalate claude claude.opus5.max claude.opus5.xhigh
-sound-designer escalate gemini gemini.flash.high gemini.flash.default
-summarizer escalate kimi kimi.k3.256k kimi.k3.high
-summarizer throughput kimi kimi.k2.7.bulk kimi.k3.high
+smart-contract-engineer escalate claude claude.mythos.max claude.opus55.xhigh
+smart-contract-engineer review claude claude.opus55.high claude.opus55.xhigh
+social-strategist escalate gemini gemini.argon.high gemini.argon.medium
+social-strategist throughput gemini gemini.flash.default gemini.argon.medium
+software-supply-chain-engineer escalate claude claude.opus55.max claude.opus55.xhigh
+sound-designer escalate gemini gemini.argon.high gemini.argon.medium
+sound-designer throughput gemini gemini.flash.default gemini.argon.medium
+summarizer escalate gemini gemini.argon.medium gemini.flash.high
+summarizer throughput gemini gemini.flash.distill gemini.flash.high
 synthesizer escalate claude claude.fable.max claude.fable.xhigh
 systems-engineer escalate codex codex.sol.ultra codex.astra.max
-technical-writer escalate claude claude.fable.max claude.fable.xhigh
-test-engineer escalate claude claude.opus5.max claude.opus5.high
-threat-modeler review codex codex.sol.ultra codex.sol.high
+systems-engineer review claude claude.fable.xhigh claude.opus55.high
+systems-engineer throughput codex codex.terra.default codex.astra.max
+technical-artist throughput gemini gemini.flash.default gemini.argon.high
+technical-writer throughput gemini gemini.flash.default gemini.argon.high
+test-engineer escalate claude claude.opus55.max claude.opus55.high
+test-engineer review claude claude.fable.xhigh claude.opus55.high
+test-engineer throughput codex codex.terra.default codex.astra.high
 triage escalate claude claude.fable.max claude.fable.xhigh
-ui-engineer escalate claude claude.opus5.max claude.opus5.xhigh
+triage throughput claude claude.haiku.default claude.fable.xhigh
+ui-engineer escalate claude claude.opus55.max claude.sonnet55.high
 ui-engineer review codex codex.sol.high codex.astra.high
+ui-engineer throughput claude claude.haiku.default claude.sonnet55.high
 vibecoding-check escalate codex codex.sol.ultra codex.astra.high
-video-director escalate gemini gemini.flash.high gemini.flash.default
-video-editor escalate gemini gemini.flash.high gemini.flash.default
-voice-narrator escalate gemini gemini.flash.high gemini.flash.default
+vibecoding-check review claude claude.fable.xhigh claude.opus55.high
+vibecoding-check throughput codex codex.terra.default codex.astra.high
+video-director escalate gemini gemini.argon.high gemini.argon.medium
+video-director throughput gemini gemini.flash.default gemini.argon.medium
+video-editor escalate gemini gemini.argon.high gemini.argon.medium
+video-editor throughput gemini gemini.flash.default gemini.argon.medium
+voice-agent-builder throughput claude claude.haiku.default claude.fable.xhigh
+voice-narrator escalate gemini gemini.argon.high gemini.argon.medium
+voice-narrator throughput gemini gemini.flash.default gemini.argon.medium
 """.strip().splitlines())
 
 
 class ExplicitRouteTierTests(unittest.TestCase):
-    def test_kimi_retires_unsupported_max_profile(self) -> None:
-        with (ROOT / "shared/registries/profiles.tsv").open() as stream:
-            profiles = list(csv.DictReader(stream, delimiter="\t"))
+    def test_throughput_only_lane_requires_explicit_tier(self) -> None:
+        row = dcb._runtime_row(ROOT, "synthesizer")
+        self.assertEqual(row["throughput_lane"], "gemini")
+        with self.assertRaisesRegex(dcb.DispatchContextError, "does not select a gemini profile"):
+            dcb._selected_profile(row, "gemini")
         self.assertEqual(
-            {row["profile_id"] for row in profiles if row["lane"] == "kimi"},
-            {"kimi.k2.7.bulk", "kimi.k3.256k", "kimi.k3.high"},
+            dcb._selected_profile(row, "gemini", route_tier="throughput"),
+            "gemini.flash.high",
         )
-        with self.assertRaisesRegex(dcb.DispatchContextError, "exactly one row"):
-            dcb._profile_row(ROOT, lane="kimi", profile_id="kimi.k3.max")
+        with tempfile.TemporaryDirectory() as directory:
+            with self.assertRaisesRegex(dcb.DispatchContextError, "does not select a gemini profile"):
+                self._build_binding(Path(directory), "synthesizer", None, "gemini")
+        with tempfile.TemporaryDirectory() as directory:
+            root, _packet, authority = self._build_binding(
+                Path(directory), "synthesizer", "throughput", "gemini"
+            )
+            guard = self._supervisor_profile_guard(root, authority)
+            self.assertEqual(guard["controller_model_sha256"], authority["selected_model_sha256"])
+            self.assertEqual(
+                tuple(authority["lane_args"]),
+                dcb._trusted_lane_args("gemini", dcb._profile_row(
+                    ROOT, lane="gemini", profile_id="gemini.flash.high"
+                )),
+            )
 
-        # Kimi 1.40.0 exposes thinking on/off, not distinct high/max efforts.
-        # Retiring max must preserve the arguments delivered to each old route.
-        expected_args = ("--yolo", "--thinking", "--model", "kimi-code/k3")
-        for specialist, tier in (
-            ("experimental-attacker", "escalate"),
-            ("kestrel", "primary"),
-            ("kestrel", "escalate"),
-        ):
-            with self.subTest(specialist=specialist, tier=tier):
-                row = dcb._runtime_row(ROOT, specialist)
-                self.assertEqual(
-                    dcb._selected_profile(row, "kimi", route_tier=tier),
-                    "kimi.k3.high",
-                )
-                self.assertEqual(
-                    dcb.trusted_lane_args_for(
-                        ROOT, lane="kimi", specialist=specialist, route_tier=tier
-                    ),
-                    expected_args,
-                )
 
     def test_effort_comparison_detects_codex_high_max_difference(self) -> None:
         args = {}
@@ -213,10 +256,28 @@ class ExplicitRouteTierTests(unittest.TestCase):
         self.assertEqual(args["high"][:-1], args["max"][:-1])
         self.assertNotEqual(args["high"], args["max"])
 
+    def test_escalate_launch_effort_equals_selected_profile_effort(self) -> None:
+        # Regression guard for the harness bug where a static codex adapter/overlay pin
+        # of model_reasoning_effort shadowed the selected profile. The launch args are
+        # the single source of effort truth and must render the escalate profile's
+        # effort (devops-engineer escalate -> codex.sol.ultra -> effort "ultra").
+        specialist = "devops-engineer"
+        row = dcb._runtime_row(ROOT, specialist)
+        profile_id = dcb._selected_profile(row, "codex", route_tier="escalate")
+        self.assertEqual(profile_id, "codex.sol.ultra")
+        profile = dcb._profile_row(ROOT, lane="codex", profile_id=profile_id)
+        self.assertEqual(profile["effort"], "ultra")
+        args = dcb.trusted_lane_args_for(
+            ROOT, lane="codex", specialist=specialist, route_tier="escalate"
+        )
+        self.assertEqual(
+            args[-2:], ("-c", f'model_reasoning_effort="{profile["effort"]}"')
+        )
+
     def test_known_shadowed_bindings(self) -> None:
-        self.assertEqual(len(SHADOWED_BINDINGS), 70)
-        self.assertEqual(len({case[0] for case in SHADOWED_BINDINGS}), 59)
-        self.assertEqual(sum(case[1] == "review" for case in SHADOWED_BINDINGS), 13)
+        self.assertEqual(len(SHADOWED_BINDINGS), 117)
+        self.assertEqual(len({case[0] for case in SHADOWED_BINDINGS}), 65)
+        self.assertEqual(sum(case[1] == "review" for case in SHADOWED_BINDINGS), 22)
         for specialist, tier, lane, expected, previous in SHADOWED_BINDINGS:
             with self.subTest(specialist=specialist, tier=tier):
                 # An earlier matching tier must not shadow the explicit one.
@@ -241,18 +302,26 @@ class ExplicitRouteTierTests(unittest.TestCase):
                     continue
                 count += 1
                 with self.subTest(specialist=row["specialist"], tier=tier):
-                    # Independent historical rule, not the selector under test.
+                    # Independent default rule: budget routes need an explicit tier.
                     legacy_id = next(
-                        row[f"{prefix}_profile"]
-                        for prefix in ("primary", "backup", "escalate", "review", "throughput")
+                        (row[f"{prefix}_profile"]
+                        for prefix in ("primary", "backup", "escalate", "review")
                         if row[f"{prefix}_lane"] == lane
-                        and row[f"{prefix}_profile"] not in ("", "none")
+                        and row[f"{prefix}_profile"] not in ("", "none")),
+                        None,
                     )
                     expected = dcb._profile_row(ROOT, lane=lane, profile_id=profile_id)
-                    legacy = dcb._profile_row(ROOT, lane=lane, profile_id=legacy_id)
-                    for requested, selected_id, selected in (
-                        (None, legacy_id, legacy), (tier, profile_id, expected)
-                    ):
+                    selections = [(tier, profile_id, expected)]
+                    if legacy_id is None:
+                        with self.assertRaises(dcb.DispatchContextError):
+                            dcb._selected_profile(row, lane)
+                        for resolver in (dcb.trusted_lane_args_for, dcb.selected_model_sha256_for):
+                            with self.assertRaises(dcb.DispatchContextError):
+                                resolver(ROOT, lane=lane, specialist=row["specialist"])
+                    else:
+                        legacy = dcb._profile_row(ROOT, lane=lane, profile_id=legacy_id)
+                        selections.append((None, legacy_id, legacy))
+                    for requested, selected_id, selected in selections:
                         self.assertEqual(
                             dcb._selected_profile(row, lane, route_tier=requested), selected_id
                         )
@@ -267,10 +336,10 @@ class ExplicitRouteTierTests(unittest.TestCase):
                                 {"profile_id": selected_id, "profile": selected}
                             )).hexdigest(),
                         )
-                    if legacy_id != profile_id:
+                    if legacy_id is not None and legacy_id != profile_id:
                         divergences.append((row["specialist"], tier, lane, profile_id, legacy_id))
                         model_changes += legacy["model_id"] != expected["model_id"]
-        self.assertEqual((len(rows), count, model_changes), (71, 285, 27))
+        self.assertEqual((len(rows), count, model_changes), (71, 328, 86))
         self.assertEqual(divergences, list(SHADOWED_BINDINGS))
 
     @staticmethod
@@ -329,7 +398,7 @@ class ExplicitRouteTierTests(unittest.TestCase):
         exec(compile(source[start:end], "supervisor-profile-guard", "exec"), namespace)
         return namespace
 
-    def test_builder_and_supervisor_agree_for_all_68_shadowed_bindings(self) -> None:
+    def test_builder_and_supervisor_agree_for_every_shadowed_binding(self) -> None:
         for specialist, tier, lane, profile_id, _previous in SHADOWED_BINDINGS:
             with self.subTest(specialist=specialist, tier=tier), tempfile.TemporaryDirectory() as directory:
                 root, _packet, authority = self._build_binding(Path(directory), specialist, tier, lane)
@@ -364,7 +433,7 @@ class ExplicitRouteTierTests(unittest.TestCase):
                 )
                 guard = self._supervisor_profile_guard(root, authority)
                 self.assertEqual(guard["controller_model_sha256"], authority["selected_model_sha256"])
-                profile_id = "codex.astra.high" if lane == "codex" else "claude.opus5.high"
+                profile_id = "codex.astra.high" if lane == "codex" else "claude.fable.xhigh"
                 profile = dcb._profile_row(ROOT, lane=lane, profile_id=profile_id)
                 self.assertEqual(tuple(authority["lane_args"]), dcb._trusted_lane_args(lane, profile))
 
@@ -374,7 +443,7 @@ class ExplicitRouteTierTests(unittest.TestCase):
             with self.subTest(raw=raw), self.assertRaises(dcb.DispatchContextError):
                 dcb.packet_route_tier({"route_tier": raw})
         row = {"primary_lane": "codex", "primary_profile": "codex.astra.high",
-               "review_lane": "claude", "review_profile": "claude.opus5.max"}
+               "review_lane": "claude", "review_profile": "claude.opus55.max"}
         for tier, lane in (("review", "codex"), ("backup", "codex"), ("throughput", "codex"), ("typo", "codex")):
             with self.subTest(tier=tier), self.assertRaises(dcb.DispatchContextError):
                 dcb._selected_profile(row, lane, route_tier=tier)
@@ -383,10 +452,14 @@ class ExplicitRouteTierTests(unittest.TestCase):
                 dcb._selected_profile({**row, "review_profile": value}, "claude", route_tier="review")
 
     def test_invalid_packet_tier_is_rejected_by_builder(self) -> None:
-        for tier in ("", "none", "null", "[]", "true", "Review", "review", "throughput"):
+        for tier in ("", "none", "null", "[]", "true", "Review", "review"):
             with self.subTest(tier=tier), tempfile.TemporaryDirectory() as directory:
                 with self.assertRaisesRegex(dcb.DispatchContextError, "route_tier"):
                     self._build_binding(Path(directory), "backend-engineer", tier, "codex")
+        # A real heightened row still has no throughput slot to select.
+        with tempfile.TemporaryDirectory() as directory:
+            with self.assertRaisesRegex(dcb.DispatchContextError, "route_tier"):
+                self._build_binding(Path(directory), "security-analyst", "throughput", "codex")
 
     def test_explicit_tier_keeps_registry_lane_and_model_checks(self) -> None:
         row = {"review_lane": "claude", "review_profile": "missing-profile"}
@@ -663,13 +736,12 @@ class DispatchContextBuilderTests(unittest.TestCase):
                 "claude": "anthropic-subscription",
                 "gemini": "google-oauth",
                 "grok": "xai-api-key",
-                "kimi": "moonshot-subscription",
             },
         )
 
     def test_every_lane_launches_its_selected_profile_model(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
-            for lane in ("codex", "claude", "gemini", "grok", "kimi"):
+            for lane in ("codex", "claude", "gemini", "grok"):
                 with self.subTest(lane=lane):
                     root, _packet = self._fake_repo_for_lane(
                         Path(directory), lane=lane, model=lane
@@ -704,7 +776,7 @@ class DispatchContextBuilderTests(unittest.TestCase):
     def test_grok_lane_uses_single_prompt_launch_abi(self) -> None:
         args = dcb._trusted_lane_args(
             "grok",
-            {"model_id": "grok-4.6", "effort": "default"},
+            {"model_id": "grok-4.7", "effort": "default"},
         )
         self.assertEqual(
             args,
@@ -714,7 +786,7 @@ class DispatchContextBuilderTests(unittest.TestCase):
                 "--no-subagents",
                 "--disable-web-search",
                 "--model",
-                "grok-4.6",
+                "grok-4.7",
             ),
         )
 
@@ -739,7 +811,7 @@ class DispatchContextBuilderTests(unittest.TestCase):
             base = Path(directory)
             approved = {
                 lane: base / "approved" / lane
-                for lane in ("claude", "codex", "gemini", "grok", "kimi")
+                for lane in ("claude", "codex", "gemini", "grok")
             }
             calls = []
 
@@ -762,7 +834,6 @@ class DispatchContextBuilderTests(unittest.TestCase):
                 "codex": "subscription",
                 "gemini": "subscription",
                 "grok": "xai-api-key",
-                "kimi": "managed-login",
             },
         )
         self.assertEqual(
@@ -774,28 +845,30 @@ class DispatchContextBuilderTests(unittest.TestCase):
                 "claude": {
                     "claude.fable.max",
                     "claude.fable.xhigh",
-                    "claude.opus5.high",
-                    "claude.opus5.max",
-                    "claude.opus5.xhigh",
+                    "claude.haiku.default",
+                    "claude.mythos.max",
+                    "claude.opus55.high",
+                    "claude.opus55.max",
+                    "claude.opus55.xhigh",
+                    "claude.sonnet55.high",
                 },
-                # Runtime-map selections include Astra and daybreak;
-                # Terra remains unselected and optional-routine.
+                # Runtime-map selections include Terra budget slots.
                 "codex": {
                     "codex.astra.high",
                     "codex.astra.max",
                     "codex.daybreak.default",
+                    "codex.daybreak.max",
                     "codex.sol.high",
                     "codex.sol.ultra",
+                    "codex.terra.default",
                 },
-                "gemini": {"gemini.flash.default", "gemini.flash.high"},
+                "gemini": {
+                    "gemini.argon.medium", "gemini.argon.high",
+                    "gemini.flash.default", "gemini.flash.distill", "gemini.flash.high",
+                },
                 # Profiles are inventoried from live runtime-map selections;
-                # 4.5 is available for overrides but Smokey selects 4.6.
-                "grok": {"grok.4.6.default"},
-                "kimi": {
-                    "kimi.k2.7.bulk",
-                    "kimi.k3.256k",
-                    "kimi.k3.high",
-                },
+                # 4.5 and 4.6 remain optional; mapped Grok routes select 4.7.
+                "grok": {"grok.4.7.default"},
             },
         )
         for row in rows:
@@ -839,7 +912,7 @@ class DispatchContextBuilderTests(unittest.TestCase):
             mock.patch("builtins.print") as output,
         ):
             self.assertEqual(dcb.main(["lane-inventory", "--repo-root", str(ROOT)]), 0)
-        self.assertEqual(output.call_count, 5)
+        self.assertEqual(output.call_count, 4)
         self.assertTrue(all("\t" in call.args[0] for call in output.call_args_list))
 
     def _fake_repo_for_lane(
@@ -974,14 +1047,6 @@ class DispatchContextBuilderTests(unittest.TestCase):
                 / "model-lanes"
                 / "grok"
                 / ".grok"
-                / "agents"
-                / f"{specialist}.yaml"
-            ),
-            "kimi": (
-                root
-                / "model-lanes"
-                / "kimi"
-                / ".kimi"
                 / "agents"
                 / f"{specialist}.yaml"
             ),
@@ -1352,13 +1417,12 @@ class DispatchContextBuilderTests(unittest.TestCase):
                     nonce="2" * 64,
                 )
 
-    def test_exact_authority_context_builds_for_all_five_lanes(self) -> None:
+    def test_exact_authority_context_builds_for_all_four_lanes(self) -> None:
         models = {
             "codex": "gpt-codex",
             "claude": "claude",
             "gemini": "gemini",
             "grok": "grok",
-            "kimi": "kimi",
         }
         with tempfile.TemporaryDirectory() as directory:
             for lane, model in models.items():
@@ -1401,19 +1465,19 @@ class DispatchContextBuilderTests(unittest.TestCase):
                     self.assertEqual(authority["generation"], 2)
                     self.assertEqual(
                         authority["budgets"]["timeout_seconds"],
-                        2700,  # safety backstop, not a short deadline (all lanes)
+                        5400,  # safety backstop, not a short deadline (all lanes)
                     )
                     if lane == "gemini":
                         self.assertEqual(
                             authority["budgets"],
                             {
-                                "timeout_seconds": 2700,
+                                "timeout_seconds": 5400,
                                 dcb.AGY_EXTERNAL_MCP_MAX_CALLS_FIELD: 0,
                             },
                         )
                     else:
                         self.assertEqual(
-                            authority["budgets"], {"timeout_seconds": 2700}
+                            authority["budgets"], {"timeout_seconds": 5400}
                         )
                     self.assertEqual(set(authority), EXPECTED_AUTHORITY_FIELDS)
                     self.assertEqual(
@@ -2154,7 +2218,7 @@ class OutputBridgeTests(unittest.TestCase):
                 root, worktree, self._authority(task_id)
             )
 
-            self.assertEqual(receipt["status"], "completed")
+            self.assertEqual(receipt["status"], "complete")
             self.assertTrue(receipt["artifact_published"])
             self.assertTrue(receipt["envelope_published"])
 
@@ -2600,9 +2664,8 @@ class OutputBridgeTests(unittest.TestCase):
             with self.assertRaises(dcb.DispatchContextError):
                 dcb.bridge_worktree_outputs(root, worktree, self._authority(task_id))
 
-    def test_unrecognized_status_defaults_to_needs_review(self) -> None:
-        # An unmappable status defaults to needs_review so questionable work
-        # surfaces to the controller rather than silently auto-closing.
+    def test_unrecognized_status_defaults_to_blocked(self) -> None:
+        # An unmappable status cannot authorize integration or auto-completion.
         task_id = "TASK-2026-07-26-8006-unknown"
         with tempfile.TemporaryDirectory() as directory:
             root, worktree = self._stage_completion(
@@ -2624,11 +2687,11 @@ class OutputBridgeTests(unittest.TestCase):
             receipt = dcb.bridge_worktree_outputs(
                 root, worktree, self._authority(task_id)
             )
-            self.assertEqual(receipt["status"], "needs_review")
+            self.assertEqual(receipt["status"], "blocked")
 
     def test_coerce_status_mapping(self) -> None:
         self.assertEqual(dcb._coerce_status("complete"), "complete")
-        self.assertEqual(dcb._coerce_status("completed"), "completed")
+        self.assertEqual(dcb._coerce_status("completed"), "complete")
         self.assertEqual(dcb._coerce_status("needs_review"), "needs_review")
         self.assertEqual(dcb._coerce_status("blocked"), "blocked")
         self.assertEqual(
@@ -2646,8 +2709,8 @@ class OutputBridgeTests(unittest.TestCase):
         self.assertEqual(
             dcb._coerce_status("awaiting operator approval"), "needs_human"
         )
-        self.assertEqual(dcb._coerce_status(""), "needs_review")
-        self.assertEqual(dcb._coerce_status("wat"), "needs_review")
+        self.assertEqual(dcb._coerce_status(""), "blocked")
+        self.assertEqual(dcb._coerce_status("wat"), "blocked")
 
 
 class CandidateHealthCausationTests(unittest.TestCase):

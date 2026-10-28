@@ -14,7 +14,7 @@ def test_dispatch_and_project_routes_are_not_mounted():
 
 def test_tasks_status_route_remains_available(tmp_path, monkeypatch):
     monkeypatch.setenv("VIBESQUAD_STATE_DIR", str(tmp_path))
-    lane_dir = tmp_path / "active" / "kimi"
+    lane_dir = tmp_path / "active" / "grok"
     lane_dir.mkdir(parents=True)
     (lane_dir / "TASK-status.md").write_text("started_at_epoch: 123\ntokens_used: 7\n")
 
@@ -25,7 +25,7 @@ def test_tasks_status_route_remains_available(tmp_path, monkeypatch):
         "tasks": [
             {
                 "task_id": "TASK-status",
-                "lane": "kimi",
+                "lane": "grok",
                 "state": "running",
                 "tokens_used": 7,
                 "started_at_epoch": 123,

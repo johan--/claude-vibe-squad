@@ -16,7 +16,7 @@ gates: [public_release, production_mutation]
 
 ## Availability in a fresh clone
 
-A zero-key checkout gets this protocol and its validation metadata as documentation; automated dispatch is `needs_tool`. To make it runnable, install and authenticate the selected model CLI, configure every MCP declared by the dispatched specialists, bind the private vault (`CHRONO_VAULT_ROOT`; Kimi also requires its exact vault context), install any required host-local binaries, and provide approved credentials plus a bounded budget for any metered provider named below. After setup, re-run the production role planner and validators on that host; availability remains subject to the narrower gaps and operator gates documented in this card.
+A zero-key checkout gets this protocol and its validation metadata as documentation; automated dispatch is `needs_tool`. To make it runnable, install and authenticate the selected model CLI, configure every MCP declared by the dispatched specialists, bind the private vault (`CHRONO_VAULT_ROOT`), install any required host-local binaries, and provide approved credentials plus a bounded budget for any metered provider named below. After setup, re-run the production role planner and validators on that host; availability remains subject to the narrower gaps and operator gates documented in this card.
 
 **When to use:** author, test, and deploy **EVM/Solidity** on-chain contracts. Solana (Anchor) and Cosmos
 SDK are out of the live scope (`needs_tool` — no verified toolchain; see Notes). For authorized
@@ -37,7 +37,9 @@ vulnerability research against an existing target, use `bounty/smart-contract-we
 reviews risk/impact at S4/S5. Mainnet deployment is operator-gated (`public_release` + `production_mutation`).
 The ``/`` audit-checklist skills are draft references, not invokable dependencies until typed.
 **Multi-chain extension is a documented gap, not a live claim:** Solana (Anchor) and Cosmos SDK builds are
-`needs_tool`/`needs_specialist` — the registry verifies no Anchor / `cargo` / Cosmos build+test toolchain (the
-`solana-anchor-audit-checklist` / `cosmos-sdk-audit-checklist` entries are untyped skill docs, not tooling).
-Extending the live scope to those ecosystems requires cataloging that toolchain first; derived `live` here
-covers the EVM/Solidity scope only.
+`needs_tool`/`needs_specialist`. The registry DOES catalog `anchor`/`solana`/`trident`/`cargo-fuzz`
+, so these are not registry-absent; what is unverified is an
+end-to-end target-compatible Anchor/`cargo` build+test run and a Solana role probe. Cosmos SDK remains a
+separate gap with no cataloged build+test toolchain. Extending the live scope to those ecosystems requires
+that end-to-end probe (and, for Cosmos, cataloging the toolchain first); derived `live` here covers the
+EVM/Solidity scope only.

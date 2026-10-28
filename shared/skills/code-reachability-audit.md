@@ -27,9 +27,10 @@ A repo-only `git grep` is **not** exhaustive. Check all of these:
 **The launchd surface is the one that bites.** On 2026-08-06 an audit classified
 `bin/squad-monitor.sh` as dead on correct in-repo evidence — its only references
 were two tests. It runs **every 120 seconds** via `com.chrono.squad-monitor`,
-registered in `~/Library/LaunchAgents/`, where no `git grep` reaches. Six repo
-scripts are bound that way. `bin/doctor.sh` now reports the mapping on every
-health run; read it before calling anything dead.
+registered in `~/Library/LaunchAgents/`, where no `git grep` reaches. Several repo
+scripts are bound that way. `bin/doctor.sh` now reports the live mapping on every
+health run, computed from the main checkout; read that mapping (not any fixed count,
+which drifts) before calling anything dead.
 
 ## Matching, without fooling yourself
 

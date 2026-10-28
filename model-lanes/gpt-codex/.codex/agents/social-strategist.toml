@@ -1,12 +1,11 @@
 # generated_by=lane-capability-registry/v1 registry_sha256=268b6f90a9c6eb271bab4d6099c584332059c6b21404bece9775ccc25de296d6
 name = "social_strategist"
 description = "Thin Codex adapter for social-strategist; canonical brief is authoritative."
-model_reasoning_effort = "high"
 sandbox_mode = "workspace-write"
 # BEGIN SPECIALIST CAPABILITY PROJECTION
 capability_source = "model-lanes/specialist-lane-capabilities.v1.json"
-capability_source_sha256 = "c16dad3b4285660ca0e18b0b7ac0a60fca55c745f1656f2f300e65918b773f20"
-skills = ["virality-analysis"]
+capability_source_sha256 = "efea0007013e967a9c4ceadcc3c7573485671b1ad465f6602c386ead95a96b1f"
+skills = ["virality-analysis","x-reply-craft"]
 mcps = ["chrono-media-studio","chrono-vault","sequential-thinking"]
 # END SPECIALIST CAPABILITY PROJECTION
 developer_instructions = """

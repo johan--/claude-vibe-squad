@@ -31,7 +31,6 @@ IMPLEMENTATION_SUPERVISOR = IMPLEMENTATION_ROOT / "bin" / "board-supervisor.sh"
 sys.path.insert(0, str(ROOT / "scripts" / "python"))
 from lane_capability_enforcement import (  # noqa: E402
     CapabilityDenied,
-    RESEARCH_API_KEY_NAMES,
     adapter_path_for,
     load_projection,
     parse_live_mcp_listing,
@@ -293,7 +292,7 @@ Dry-run dispatch test only.
                 # MODEL_LANES is what the wrapper's lane allowlist validates
                 # against; the real helper defines it, so the stub must too or
                 # the fixture tests a script that cannot run.
-                "MODEL_LANES=(gpt-codex claude gemini grok kimi)\n"
+                "MODEL_LANES=(gpt-codex claude gemini grok)\n"
                 "COMPATIBILITY_NAMESPACES=(coding security content sysmgmt research)\n"
                 'is_compatibility_namespace() { [[ "$1" == coding ]]; }\n'
                 "namespace_default_model() { printf 'claude\\n'; }\n",
@@ -741,7 +740,7 @@ Dry-run dispatch test only.
     ) -> None:
         text = LAUNCH_SQUAD.read_text(encoding="utf-8")
         self.assertIn("bash ~/Obsidian-Claude-Vibe-Squad/bin/launch-squad.sh", text)
-        self.assertIn("conversation + live four-lane status sidebar", text)
+        self.assertIn("Chrono coordinator + live dashboard sidebar", text)
         self.assertIn("watchers/status (outbox notifications + reconciliation)", text)
         for index in range(1, 5):
             self.assertNotIn(f"Ctrl-b + {index}", text)
@@ -1391,12 +1390,9 @@ Dry-run dispatch test only.
             calls.append("solodit")
             return "synthetic-solodit"
 
-        def load_research_api_keys() -> dict[str, str]:
-            calls.append("research")
-            return {
-                "XAI_API_KEY": "synthetic-xai",
-                "PERPLEXITY_API_KEY": "synthetic-perplexity",
-            }
+        def load_grok_api_key() -> str:
+            calls.append("grok")
+            return "synthetic-xai"
 
         def load_github_mcp_token() -> None:
             calls.append("github")
@@ -1404,9 +1400,8 @@ Dry-run dispatch test only.
 
         namespace = {
             "MappingProxyType": MappingProxyType,
-            "RESEARCH_API_KEY_NAMES": RESEARCH_API_KEY_NAMES,
             "load_solodit_api_key": load_solodit_api_key,
-            "load_research_api_keys": load_research_api_keys,
+            "load_grok_api_key": load_grok_api_key,
             "load_github_mcp_token": load_github_mcp_token,
         }
         exec(compile(body, "board-supervisor.sh", "exec"), namespace)
@@ -1433,12 +1428,10 @@ Dry-run dispatch test only.
             project(base, snapshot),
             {
                 **base,
-                "XAI_API_KEY": "synthetic-xai",
-                "PERPLEXITY_API_KEY": "synthetic-perplexity",
             },
         )
-        self.assertEqual(calls, ["research"])
-        self.assertEqual(missing, ("FIRECRAWL_API_KEY",))
+        self.assertEqual(calls, [])
+        self.assertEqual(missing, ())
         calls.clear()
 
         # A credential the secret store did not supply is REPORTED, not fatal:
@@ -1469,7 +1462,7 @@ Dry-run dispatch test only.
         ]
         for loader in (
             "load_solodit_api_key(",
-            "load_research_api_keys(",
+            "load_grok_api_key(",
             "load_github_mcp_token(",
             "load_managed_credentials(",
         ):
@@ -1481,30 +1474,14 @@ Dry-run dispatch test only.
 
         ambient = {
             **base,
-            "SOLODIT_API_KEY": "ambient-solodit",
             "XAI_API_KEY": "ambient-xai",
-            "PERPLEXITY_API_KEY": "ambient-perplexity",
+            "SOLODIT_API_KEY": "ambient-solodit",
             "GITHUB_PERSONAL_ACCESS_TOKEN": "ambient-github",
         }
         empty, empty_missing = load("claude", [])
         self.assertEqual(project(ambient, empty), base)
         self.assertEqual(empty_missing, ())
         self.assertEqual(calls, [])
-
-        kimi_snapshot, kimi_missing = load(
-            "kimi", ["chrono-research-arsenal"]
-        )
-        self.assertEqual(
-            project(ambient, kimi_snapshot),
-            {
-                **base,
-                "XAI_API_KEY": "synthetic-xai",
-                "PERPLEXITY_API_KEY": "synthetic-perplexity",
-            },
-        )
-        self.assertEqual(calls, ["research"])
-        self.assertEqual(kimi_missing, ("FIRECRAWL_API_KEY",))
-        calls.clear()
 
         gemini_snapshot, gemini_missing = load(
             "gemini", ["guarded-solodit", "chrono-research-arsenal", "github"]
@@ -1514,15 +1491,27 @@ Dry-run dispatch test only.
             {
                 **base,
                 "SOLODIT_API_KEY": "synthetic-solodit",
-                "XAI_API_KEY": "synthetic-xai",
-                "PERPLEXITY_API_KEY": "synthetic-perplexity",
             },
         )
-        self.assertEqual(calls, ["solodit", "research", "github"])
+        self.assertEqual(calls, ["solodit", "github"])
         self.assertEqual(
             gemini_missing,
-            ("FIRECRAWL_API_KEY", "GITHUB_PERSONAL_ACCESS_TOKEN"),
+            ("GITHUB_PERSONAL_ACCESS_TOKEN",),
         )
+        calls.clear()
+        for lane in ("claude", "codex", "gemini"):
+            with self.subTest(lane=lane):
+                snapshot, missing = load(lane, ["chrono-research-arsenal"])
+                self.assertNotIn("XAI_API_KEY", snapshot)
+                self.assertEqual(project(ambient, snapshot), base)
+                self.assertEqual(missing, ())
+                self.assertEqual(calls, [])
+
+        grok_snapshot, grok_missing = load("grok", [])
+        self.assertEqual(dict(grok_snapshot), {"XAI_API_KEY": "synthetic-xai"})
+        self.assertEqual(project(ambient, grok_snapshot), {**base, "XAI_API_KEY": "synthetic-xai"})
+        self.assertEqual(grok_missing, ())
+        self.assertEqual(calls, ["grok"])
         self.assertEqual(base, {"PATH": "/usr/bin:/bin"})
 
     def test_health_probe_and_launcher_share_one_credential_snapshot(self) -> None:
@@ -1531,7 +1520,7 @@ Dry-run dispatch test only.
         environment_end = source.index("MANAGED_CREDENTIAL_NAMES = (", environment)
         self.assertNotIn("load_solodit_api_key()", source[environment:environment_end])
         self.assertNotIn(
-            "load_research_api_keys()", source[environment:environment_end]
+            "load_grok_api_key()", source[environment:environment_end]
         )
 
         # The snapshot is read once, before the probe, and the probe measures an
@@ -1675,7 +1664,7 @@ Dry-run dispatch test only.
                 "chrono-obsidian          stdio  enabled   /bin/obsidian\n"
                 "chrono-research-arsenal  stdio  enabled   /bin/research\n"
                 "chrono-vault             stdio  enabled   /bin/vault\n"
-                "perplexity               http   enabled   https://example.invalid/mcp\n"
+                "example-search               http   enabled   https://example.invalid/mcp\n"
                 "optional                 stdio  disabled  /bin/optional\n"
             ),
         )
@@ -1684,15 +1673,15 @@ Dry-run dispatch test only.
             "chrono-obsidian",
             "chrono-research-arsenal",
             "chrono-vault",
-            "perplexity",
+            "example-search",
         }
         self.assertEqual(set(parsed), expected)
         self.assertNotIn("optional", parsed)
-        self.assertEqual(parsed["perplexity"], {"live_name": "perplexity"})
+        self.assertEqual(parsed["example-search"], {"live_name": "example-search"})
         global_plan = plan_lane(
             lane="gemini",
             projection={
-                "mcps": ["perplexity"],
+                "mcps": ["example-search"],
                 "brokered_mcps": [],
                 "tools": [],
             },
@@ -1717,47 +1706,15 @@ Dry-run dispatch test only.
                 ),
             )
 
-    def test_gemini_and_kimi_match_proven_launcher_contract(self) -> None:
+    def test_gemini_matches_proven_launcher_contract(self) -> None:
         builder = (
             ROOT / "scripts" / "python" / "dispatch_context_builder.py"
         ).read_text(encoding="utf-8")
         supervisor = SUPERVISOR.read_text(encoding="utf-8")
         self.assertNotIn("_PROVEN_LANE_MODELS", builder)
         self.assertIn('return (*base, "--model", model)', builder)
-        self.assertIn('"--yolo",\n        "--thinking"', builder)
-        self.assertIn(
-            'str(lane_config_root / "model-lanes" / "kimi" / "main.yaml")',
-            supervisor,
-        )
-        self.assertIn(
-            "lane_config_root = repo_path if external_work_repo else handle.worktree_root",
-            supervisor,
-        )
-        self.assertIn("def kimi_role_launcher(", supervisor)
-        self.assertIn("kimi_vault_environment=(", supervisor)
-        self.assertIn('("CHRONO_VAULT_ROOT", "CHRONO_VAULT_CONTEXT")', supervisor)
-        self.assertIn("concise_prompt = (", supervisor)
-        self.assertIn("## Main-lead MCP contract", supervisor)
-        self.assertIn("capability_plan.authorized_mcps", supervisor)
-        self.assertIn("Native `Agent(...)` subagents remain MCP-free", supervisor)
-        self.assertIn("lead_allowlist_json.encode", supervisor)
-        self.assertIn("lead MCP allowlist exceeds prompt bound", supervisor)
-        self.assertNotIn(
-            "role_config_json",
-            supervisor[supervisor.index("def kimi_role_launcher(") :],
-        )
-        self.assertIn("def run_with_restored_prompt(", supervisor)
-        self.assertNotIn("kimi_config_path", supervisor)
-        self.assertNotIn('.kimi" / "mcp.json"', supervisor)
-        self.assertIn("repo_root=repo_root", supervisor)
-        kimi_launcher = supervisor.index("def kimi_role_launcher(")
-        prompt_contract = supervisor.index("## Main-lead MCP contract", kimi_launcher)
-        final_command = supervisor.index("kimi_command = (", prompt_contract)
-        guarded_write = supervisor.index("run_with_restored_prompt(", final_command)
-        self.assertLess(prompt_contract, final_command)
-        self.assertLess(final_command, guarded_write)
         gemini_launcher = supervisor.index("    def gemini_ordered_launcher(")
-        gemini_end = supervisor.index("\n    def kimi_role_launcher(", gemini_launcher)
+        gemini_end = supervisor.index("\n    def grok_role_launcher(", gemini_launcher)
         gemini_body = supervisor[gemini_launcher:gemini_end]
         self.assertIn("agent_system_context.rstrip()", gemini_body)
         self.assertNotIn("base_gemini_prompt", gemini_body)
@@ -1799,26 +1756,11 @@ Dry-run dispatch test only.
         self.assertLess(prompt, agy_command)
         self.assertLess(agy_command, launch)
         self.assertIn(
-            '30 <= budgets["timeout_seconds"] <= 2700',
+            '30 <= budgets["timeout_seconds"] <= 5400',
             supervisor,
         )
-        kimi_docs = (ROOT / "model-lanes" / "kimi" / "KIMI.md").read_text()
-        self.assertIn("Native `Agent(...)` subagents remain MCP-free", kimi_docs)
-        self.assertIn("deterministic local templates", kimi_docs)
-        capability_docs = (
-            ROOT / "model-lanes" / "adapter-capability-schema.md"
-        ).read_text()
-        self.assertIn("controller-owned local templates", capability_docs)
-        self.assertIn(
-            "credential-bearing remote routes are unavailable",
-            " ".join(capability_docs.lower().split()),
-        )
-        for adapter in (ROOT / "model-lanes" / "kimi" / ".kimi" / "agents").glob(
-            "*.yaml"
-        ):
-            self.assertNotIn("mcpServers:", adapter.read_text(encoding="utf-8"))
 
-    def test_kimi_partial_prompt_write_restores_exact_original_bytes(self) -> None:
+    def test_shared_partial_prompt_write_restores_exact_original_bytes(self) -> None:
         supervisor = SUPERVISOR.read_text(encoding="utf-8")
         start = supervisor.index("    def run_with_restored_prompt(")
         end = supervisor.index("\n    def gemini_ordered_launcher(", start)
@@ -1842,7 +1784,7 @@ Dry-run dispatch test only.
                 self.value = bytes(value)
                 return len(value)
 
-        original = b"tracked KIMI prompt\r\nwith exact bytes\n"
+        original = b"tracked role prompt\r\nwith exact bytes\n"
         prompt_path = PartialWritePath(original)
         callback_called = False
 
@@ -1858,7 +1800,8 @@ Dry-run dispatch test only.
         self.assertEqual(prompt_path.write_count, 2)
         self.assertNotIn(marker, str(raised.exception))
 
-    def test_kimi_receipt_reports_lead_allowlist_without_changing_surface(self) -> None:
+
+    def test_receipt_reports_authorized_allowlist_without_changing_surface(self) -> None:
         supervisor = SUPERVISOR.read_text(encoding="utf-8")
         receipt = supervisor.index('"capability_enforcement": capability_enforcement')
         receipt_body = supervisor[receipt:]
@@ -1868,6 +1811,7 @@ Dry-run dispatch test only.
             'capability_projection["brokered_mcps"] = authorized_mcps',
             supervisor,
         )
+
 
     def test_codex_worker_gets_only_derived_linked_git_commit_dirs(self) -> None:
         text = SUPERVISOR.read_text(encoding="utf-8")
@@ -2047,9 +1991,9 @@ class SplitOutputEnvelopeTests(unittest.TestCase):
             receipt = publish_prepared_worktree_outputs(repo, prepared)
 
             envelope = (repo / self._outbox_relative()).read_text(encoding="utf-8")
-            self.assertEqual(prepared.status, "needs_review")
-            self.assertEqual(receipt["status"], "needs_review")
-            self.assertIn("status: needs_review", envelope)
+            self.assertEqual(prepared.status, "blocked")
+            self.assertEqual(receipt["status"], "blocked")
+            self.assertIn("status: blocked", envelope)
             self.assertIn(SYNTHESIZED_ENVELOPE_MARKER, envelope)
             # The excerpt skips the `#` heading and carries real prose, so the
             # summary the reconciler surfaces says something about the work.

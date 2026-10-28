@@ -14,7 +14,9 @@ from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(ROOT / "scripts/python"))
+import gen_runtime_tool_summary  # noqa: E402
 from specialist_capability_source import (  # noqa: E402
+    LANES,
     SURFACE_SCHEMA,
     CapabilityRef,
     CapabilitySourceError,
@@ -45,6 +47,20 @@ REGISTRY_SPEC.loader.exec_module(registry)
 
 
 class SpecialistCapabilitySourceTests(unittest.TestCase):
+    def test_retired_lane_entry_is_rejected(self) -> None:
+        payload = json.loads((ROOT / SOURCE_RELATIVE).read_text(encoding="utf-8"))
+        retired = json.loads(json.dumps(next(e for e in payload["entries"] if e["lane"] == "claude")))
+        retired["lane"] = "kimi"
+        payload["entries"].append(retired)
+        with tempfile.TemporaryDirectory() as directory:
+            source = Path(directory) / SOURCE_RELATIVE.name
+            source.write_text(json.dumps(payload), encoding="utf-8")
+            with self.assertRaisesRegex(CapabilitySourceError, "invalid lane 'kimi'"):
+                load_source(ROOT, source)
+
+    def test_runtime_summary_maps_exactly_the_four_lanes(self) -> None:
+        self.assertEqual(set(gen_runtime_tool_summary.LANE_NAMES.values()), set(LANES))
+
     def test_public_prior_art_operation_promise_is_rejected(self) -> None:
         spec = importlib.util.spec_from_file_location(
             "public_operation_control", ROOT / "model-lanes/check_public_plugin_capabilities.py"
@@ -64,7 +80,7 @@ class SpecialistCapabilitySourceTests(unittest.TestCase):
             issues = check.audit(root)
             self.assertEqual(
                 {issue["identifier"] for issue in issues if issue["path"] == planted},
-                {"chrono-dedup", "lead:chrono-dedup"},
+                {"chrono-dedup"},
             )
             result = subprocess.run(
                 [sys.executable, "-B", str(ROOT / "model-lanes/check_public_plugin_capabilities.py"),
@@ -172,6 +188,36 @@ class SpecialistCapabilitySourceTests(unittest.TestCase):
         self.assertEqual(
             validator.required_primary_diagnostics(rows, entries, root=ROOT), []
         )
+
+    def test_migrated_primary_capabilities_and_gemini_budget_adapter(self) -> None:
+        entries, _payload = load_source(ROOT)
+        for specialist, lane in (("detection-engineer", "gpt-codex"),
+                                 ("kestrel", "claude"), ("summarizer", "gemini")):
+            with self.subTest(specialist=specialist):
+                self.assertEqual(entries[specialist, lane]["coverage"], "full")
+                self.assertIn("chrono-vault", available_arrays(entries, specialist, lane)["mcps"])
+        self.assertIn("detection-as-code",
+                      available_arrays(entries, "detection-engineer", "gpt-codex")["skills"])
+        self.assertEqual(entries["detection-engineer", "claude"]["coverage"], "partial")
+        self.assertEqual(entries["synthesizer", "gemini"]["coverage"], "partial")
+        for name in ("summarizer", "synthesizer"):
+            adapter = ROOT / "model-lanes/gemini/.gemini/agents" / f"{name}.md"
+            registry.validate_adapter_file(ROOT, "gemini", adapter)
+        self.assertFalse(any(lane == "kimi" for _, lane in entries))
+
+    def test_primary_coverage_check_detects_regression_after_migration(self) -> None:
+        entries, _payload = load_source(ROOT)
+        rows = validator.runtime_rows(ROOT)
+        changed = dict(entries)
+        changed["detection-engineer", "gpt-codex"] = {
+            **entries["detection-engineer", "gpt-codex"], "coverage": "partial"}
+        issues = validator.source_coverage_diagnostics(rows, changed)
+        self.assertTrue(any(item["identifier"] == "detection-engineer:gpt-codex"
+                            and "primary lane must declare full coverage" in item["message"]
+                            for item in issues), issues)
+        del changed["summarizer", "gemini"]
+        issues = validator.source_coverage_diagnostics(rows, changed)
+        self.assertTrue(any(item["identifier"] == "summarizer:gemini" for item in issues), issues)
 
     def test_required_installed_skill_root_is_usable(self) -> None:
         payload = json.loads((ROOT / SOURCE_RELATIVE).read_text(encoding="utf-8"))
@@ -409,6 +455,73 @@ class SpecialistCapabilitySourceTests(unittest.TestCase):
             ),
         )
 
+    def test_codex_adapter_render_pins_no_reasoning_effort(self) -> None:
+        # `model_reasoning_effort` is a dispatch-time (route-tier) decision applied
+        # at launch via `-c model_reasoning_effort=<profile effort>`. A static pin in
+        # the codex adapter would shadow the selected profile (e.g. ultra/max), so a
+        # fresh render must never emit it, while unrelated policy (sandbox_mode) stays.
+        rendered = registry.render_adapter(ROOT, "gpt-codex", "devops-engineer")
+        self.assertNotIn("model_reasoning_effort", rendered)
+        self.assertIn('sandbox_mode = "workspace-write"', rendered)
+
+    def test_codex_projection_upsert_strips_legacy_reasoning_effort(self) -> None:
+        codex_with_pin = (
+            'name = "frontend_engineer"\n'
+            'description = "x"\n'
+            'model_reasoning_effort = "high"\n'
+            'sandbox_mode = "workspace-write"\n'
+            "# BEGIN SPECIALIST CAPABILITY PROJECTION\n"
+            "# END SPECIALIST CAPABILITY PROJECTION\n"
+            'developer_instructions = """Canonical specialist instructions live at '
+            '`departments/coding/specialists/frontend-engineer.md`."""\n'
+        )
+        first = registry.upsert_capability_projection(
+            ROOT, "gpt-codex", "frontend-engineer", codex_with_pin
+        )
+        self.assertNotIn("model_reasoning_effort", first)
+        self.assertIn('sandbox_mode = "workspace-write"', first)
+        # Idempotent: a second pass on already-clean text keeps it clean.
+        second = registry.upsert_capability_projection(
+            ROOT, "gpt-codex", "frontend-engineer", first
+        )
+        self.assertEqual(first, second)
+
+    def test_committed_codex_adapters_pin_no_reasoning_effort(self) -> None:
+        import re
+        import tomllib
+
+        pin = re.compile(r"(?m)^\s*model_reasoning_effort\s*=")
+        adapters = sorted(
+            (ROOT / "model-lanes/gpt-codex/.codex/agents").glob("*.toml")
+        )
+        self.assertTrue(adapters, "no committed codex adapters found")
+        offenders = []
+        for adapter in adapters:
+            text = adapter.read_text(encoding="utf-8")
+            data = tomllib.loads(text)
+            if pin.search(text) or "model_reasoning_effort" in data:
+                offenders.append(adapter.name)
+        self.assertEqual(offenders, [], f"codex adapters pin effort: {offenders}")
+
+    def test_committed_codex_overlays_pin_no_reasoning_effort(self) -> None:
+        # One fact, one home: effort is a route-tier launch decision (profiles.tsv),
+        # never restated in a static role overlay. A stale overlay copy ages
+        # independently of the profile registry, so the gpt-codex overlays must not
+        # carry model_reasoning_effort.
+        import json
+
+        overlays = sorted(
+            (ROOT / "shared/lane-role-overlay/v1/gpt-codex").glob("*.json")
+        )
+        self.assertTrue(overlays, "no gpt-codex role overlays found")
+        offenders = [
+            overlay.name
+            for overlay in overlays
+            if "model_reasoning_effort"
+            in json.loads(overlay.read_text(encoding="utf-8")).get("fields", {})
+        ]
+        self.assertEqual(offenders, [], f"overlays pin effort: {offenders}")
+
     def test_nmap_is_explicitly_preferred_and_available(self) -> None:
         entries, _payload = load_source(ROOT)
         nmap = next(ref for ref in entries[("scout", "claude")]["tools"] if ref.identifier == "nmap")
@@ -416,15 +529,14 @@ class SpecialistCapabilitySourceTests(unittest.TestCase):
         self.assertEqual(nmap.availability, "available")
         self.assertIn("nmap", available_arrays(entries, "scout", "claude")["tools"])
 
-    def test_firecrawl_wrapper_is_primary_while_legacy_plugin_stays_claude_only(self) -> None:
+    def test_arxiv_wrapper_survives_while_firecrawl_is_absent_on_every_lane(self) -> None:
         entries, _payload = load_source(ROOT)
         rows = validator.runtime_rows(ROOT)
-        self.assertIn(
-            "firecrawl", available_arrays(entries, "research", "claude")["tools"]
-        )
-        self.assertNotIn(
-            "firecrawl", available_arrays(entries, "research", "gemini")["tools"]
-        )
+        self.assertEqual({lane for _, lane in entries}, set(LANES))
+        for (specialist, lane), entry in entries.items():
+            with self.subTest(specialist=specialist, lane=lane):
+                self.assertNotIn("firecrawl", {ref.identifier for ref in entry["tools"]})
+                self.assertNotIn("firecrawl", {ref.identifier for ref in entry["mcps"]})
         gemini_wrapper_consumers = []
         for specialist, row in sorted(rows.items()):
             if "gemini" not in validator.routed_lanes(row):
@@ -434,7 +546,7 @@ class SpecialistCapabilitySourceTests(unittest.TestCase):
                 (
                     ref
                     for ref in entry["tools"]
-                    if ref.identifier == "firecrawl_scrape"
+                    if ref.identifier == "arxiv_search"
                 ),
                 None,
             )
@@ -450,8 +562,36 @@ class SpecialistCapabilitySourceTests(unittest.TestCase):
         self.assertGreater(
             len(gemini_wrapper_consumers),
             0,
-            "no current Gemini-routed specialist consumes firecrawl_scrape",
+            "no current Gemini-routed specialist consumes arxiv_search",
         )
+
+    def test_four_lane_source_without_retired_arsenal_operations(self) -> None:
+        self.assertEqual(set(LANES), {"gpt-codex", "claude", "gemini", "grok"})
+        payload = json.loads((ROOT / SOURCE_RELATIVE).read_text(encoding="utf-8"))
+        retired = {"xai_search", "perplexity_search", "firecrawl_scrape",
+                   "firecrawl_crawl", "firecrawl_parse"}
+        payload["entries"] = [entry for entry in payload["entries"] if entry["lane"] in LANES]
+        for server in payload["servers"]:
+            server["provides"] = [name for name in server["provides"] if name not in retired]
+        for entry in payload["entries"]:
+            entry["tools"] = [ref for ref in entry["tools"] if ref["id"] not in retired]
+        with tempfile.TemporaryDirectory() as directory:
+            source = Path(directory) / SOURCE_RELATIVE.name
+            source.write_text(json.dumps(payload), encoding="utf-8")
+            entries, _ = load_source(ROOT, source)
+            self.assertTrue(entries)
+            self.assertFalse(any(ref.identifier in retired
+                                 for entry in entries.values() for ref in entry["tools"]))
+            arxiv = next(ref for entry in entries.values() for ref in entry["tools"]
+                         if ref.identifier == "arxiv_search")
+            self.assertEqual(arxiv.provided_by, "chrono-research-arsenal")
+            # Retiring other operations must not bypass the reciprocal provider check.
+            server = next(server for server in payload["servers"]
+                          if server["id"] == arxiv.provided_by)
+            server["provides"].remove("arxiv_search")
+            source.write_text(json.dumps(payload), encoding="utf-8")
+            with self.assertRaisesRegex(CapabilitySourceError, "not reciprocal"):
+                load_source(ROOT, source)
 
     def test_pending_and_failed_capabilities_are_tracked_but_not_projected(self) -> None:
         entries, _payload = load_source(ROOT)
@@ -479,9 +619,7 @@ class SpecialistCapabilitySourceTests(unittest.TestCase):
                 self.assertEqual(
                     refs,
                     {
-                        identifier: (
-                            "needs-operator-install", "operator-install-required"
-                        )
+                        identifier: ("superseded", "superseded")
                         for identifier in (
                             "guarded-semgrep", "guarded-slither", "guarded-solodit"
                         )

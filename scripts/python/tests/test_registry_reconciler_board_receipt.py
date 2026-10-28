@@ -211,18 +211,10 @@ class BoardReceiptSettlementTests(unittest.TestCase):
             )
             os.utime(receipt, (1, 1))
 
-            # Run the production pruner source through its destructive branch
-            # in an isolated vault. Redirect its one host-global scratch root
-            # so this regression cannot touch another lane's /tmp state.
+            # Run unmodified production code with an explicitly fixture-owned
+            # scratch root; no source substitution or host scratch sweep.
             pruner_source = (ROOT / "bin/prune-board-worktrees.sh").read_text(
                 encoding="utf-8"
-            )
-            scratch_literal = 'pathlib.Path("/tmp/vs")'
-            self.assertIn(scratch_literal, pruner_source)
-            pruner_source = pruner_source.replace(
-                scratch_literal,
-                'pathlib.Path("_state/test-board-scratch")',
-                1,
             )
             fixture_pruner = root / "bin/prune-board-worktrees.sh"
             fixture_pruner.parent.mkdir(parents=True)
@@ -238,6 +230,9 @@ class BoardReceiptSettlementTests(unittest.TestCase):
 
             environment = os.environ.copy()
             environment["VAULT_ROOT"] = str(root)
+            environment["SQUAD_TEST_ISOLATION"] = "1"
+            environment["BOARD_SCRATCH_ROOT"] = str(state / "test-board-scratch")
+            environment["PYTHONPATH"] = str(PYTHON_SCRIPTS)
             applied = subprocess.run(
                 ["bash", str(fixture_pruner), "--apply"],
                 cwd=root,
@@ -1294,7 +1289,7 @@ class BoardReceiptSettlementTests(unittest.TestCase):
                 reconciler.reconcile(task_id, dry_run=False)
             return json.loads(registry_path.read_text(encoding="utf-8"))[task_id]
 
-    def test_quarantined_receipt_holds_even_when_worker_status_would_complete(self) -> None:
+    def test_untriggered_quarantined_receipt_completes_with_controller_provenance(self) -> None:
         control_entry = {
             "mandatory_review": "false",
             "review_triggers": [],
@@ -1308,8 +1303,10 @@ class BoardReceiptSettlementTests(unittest.TestCase):
                 entry = self._run_transport_receipt(
                     failure_class=failure_class, quarantined=True
                 )
-                self.assertEqual(entry["status"], reconciler.REVIEW_REQUIRED)
-                self.assertEqual(entry["review_required_by"], "claude")
+                self.assertEqual(entry["status"], "complete")
+                self.assertNotIn("review_required_by", entry)
+                self.assertEqual(entry["review_disposition"], "transport-quarantine-not-required")
+                self.assertEqual(entry["coordination_request_source"], "controller-transport-quarantine")
                 self.assertEqual(
                     entry["terminal_receipt_controller_quarantine"],
                     reconciler.CONTROLLER_QUARANTINE_MARKER,
@@ -1328,16 +1325,15 @@ class BoardReceiptSettlementTests(unittest.TestCase):
                     "stderr provider diagnostic",
                     entry["terminal_receipt_cli_stderr_excerpt"],
                 )
-                self.assertNotEqual(entry["status"], "complete")
                 self.assertNotIn("worker_reported_status", entry)
         previously_completed = self._run_transport_receipt(
             failure_class="cli_nonzero",
             quarantined=True,
             initial_status="complete",
         )
-        self.assertEqual(previously_completed["status"], reconciler.REVIEW_REQUIRED)
+        self.assertEqual(previously_completed["status"], "complete")
 
-    def test_quarantined_envelope_without_receipt_does_not_settle_complete(
+    def test_envelope_only_quarantine_uses_worker_status_without_controller_provenance(
         self,
     ) -> None:
         task_id = "TASK-2026-08-31-1500-quarantine-envelope-only"
@@ -1387,9 +1383,11 @@ class BoardReceiptSettlementTests(unittest.TestCase):
 
             settled = json.loads(registry_path.read_text(encoding="utf-8"))[task_id]
             self.assertGreater(changed, 0, messages)
-            self.assertEqual(settled["status"], reconciler.REVIEW_REQUIRED)
-            self.assertEqual(settled["review_required_by"], "claude")
-            self.assertNotEqual(settled["status"], "complete")
+            self.assertEqual(settled["status"], "complete")
+            self.assertNotIn("review_required_by", settled)
+            self.assertEqual(settled["review_disposition"], "not-required")
+            self.assertEqual(settled["coordination_request_source"], "legacy-needs_review-status")
+            self.assertNotIn("response_controller_quarantine", settled)
 
     def test_fence_partial_quarantine_receipt_resolves_blocked(self) -> None:
         for label, marker in (

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import contextlib
+import csv
 import importlib.util
 import io
 import json
@@ -102,6 +103,39 @@ def row(specialist: str = "example") -> dict[str, str]:
 
 
 class CapabilityHomeTests(unittest.TestCase):
+    def test_inventory_requires_exactly_four_active_lanes(self) -> None:
+        active = {"gpt-codex", "claude", "gemini", "grok"}
+        self.assertEqual(set(module.LANES), active)
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            inventory = root / module.LANE_REGISTRY_RELATIVE
+            inventory.parent.mkdir(parents=True)
+            fields = ["lane", "adapter_tools", "mcp_surface", "skills"]
+
+            def write(lanes):
+                with inventory.open("w", newline="", encoding="utf-8") as handle:
+                    writer = csv.DictWriter(handle, fieldnames=fields, delimiter="\t")
+                    writer.writeheader()
+                    writer.writerows(dict(lane=lane, adapter_tools="[]",
+                                          mcp_surface="[]", skills="[]") for lane in lanes)
+
+            write(sorted(active))
+            self.assertEqual(set(module.load_lane_inventory(root)), active)
+            for lanes in (active - {"grok"}, active | {"typo"}, active | {"kimi"},
+                          (active - {"grok"}) | {"kimi"}):
+                write(sorted(lanes))
+                with self.assertRaisesRegex(module.CapabilityHomeError, "four execution lanes"):
+                    module.load_lane_inventory(root)
+
+    def test_retired_catalog_prose_cannot_grant_active_lane_access(self) -> None:
+        for section, block in (("Moonshot / Kimi", ""),
+                               ("Other", "Kimi-lane only"),
+                               ("Other", "- lanes: kimi"),
+                               ("Kimi lane", "")):
+            with self.subTest(section=section, block=block):
+                self.assertEqual(module._explicit_catalog_lanes(section, block), set())
+        self.assertEqual(module._explicit_catalog_lanes("Other", "Grok-lane only"), {"grok"})
+
     def test_markdown_capabilities_require_json_string_arrays(self) -> None:
         parsed = module._markdown_frontmatter(
             '---\nname: x\nskills: ["one", "two"]\ntools: []\n---\n',
@@ -988,7 +1022,8 @@ class CapabilityHomeTests(unittest.TestCase):
             for lane in ("claude", "gpt-codex", "gemini"):
                 self.assertIn("playwright", found[lane]["mcps"])
                 self.assertIn("playwright", found[lane]["tools"])
-            self.assertNotIn("playwright", found["kimi"]["mcps"])
+            self.assertEqual(set(found), {"gpt-codex", "claude", "gemini", "grok"})
+            self.assertNotIn("playwright", found["grok"]["mcps"])
 
     def test_catalog_only_lane_restriction_overrides_route_expansion(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

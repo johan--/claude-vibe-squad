@@ -5,9 +5,11 @@
 # Phases:
 #   0. Launch dependency parity — every command bin/launch-squad.sh hard-gates
 #      on, from the list both programs share (shared/launch-dependencies.sh)
-#   1. CLI presence on this HOME's PATH (Claude / Codex / Gemini / Grok / Kimi)
-#      (presence ONLY; login/auth state is deliberately NOT verified — the
-#      program logs in to nothing and says so, see the auth note in Phase 1)
+#   0b. Board worker sandbox compatibility — exact macOS build + harmless
+#       canary; an ISSUE here leaves Chrono available to qualify/fix the host
+#   1. CLI presence plus zero-token status probes for Claude/Codex;
+#      Grok checks only the XAI_API_KEY name declaration, with validity undetermined;
+#      agy login is UNKNOWN (no zero-token status probe). No login is initiated.
 #   2. MCP servers reachable from each CLI
 #   3. Secrets sourced
 #   4. Private memory vault root + runtime repository accessible (resolves the
@@ -72,6 +74,28 @@ try:
 except VaultRootError as exc:
     print(str(exc), file=sys.stderr)
     raise SystemExit(1)
+PY
+}
+
+check_board_sandbox_compatibility() {
+    python3 -B - "${VAULT_ROOT}/scripts/python" <<'PY'
+import sys
+
+sys.path.insert(0, sys.argv[1])
+build = "unknown (build could not be read)"
+try:
+    import seatbelt_profile
+
+    # Read once so even a failed canary names the host build. The real verifier
+    # still owns admission, binary identity checks, and the harmless canary.
+    build = seatbelt_profile._read_macos_build()
+    compatibility = seatbelt_profile.verify_sandbox_compatibility(
+        build_reader=lambda: build,
+    )
+except Exception as exc:
+    print(f"macOS build {build}: {exc}")
+    raise SystemExit(1)
+print(f"macOS build {compatibility.macos_build}: exact build admitted; harmless sandbox-exec canary passed")
 PY
 }
 
@@ -373,8 +397,11 @@ for entry in missing[:3]:
 PY
 }
 
-# Root-independent durable state. Resolve this from the script's physical home,
-# not VAULT_ROOT: the latter may be the broken path this run needs to report.
+# Root-independent durable state. The shared initializer above rejects an
+# invalid VAULT_ROOT before log validation or writes. An existing root with a
+# health issue (such as being unwritable) still gets an off-repo report here.
+# Resolve this helper from the script's physical home so fixture/data-only
+# roots do not need to carry the log-home helper themselves.
 # shellcheck source-path=SCRIPTDIR source=doctor-log-home.sh disable=SC1091
 source "$(cd -- "$(dirname -- "$(readlink -f -- "${BASH_SOURCE[0]}" 2>/dev/null || printf '%s' "${BASH_SOURCE[0]}")")" && pwd -P)/doctor-log-home.sh" || exit $?
 
@@ -411,7 +438,7 @@ EOF
 #
 #   HEALTHY   the check ran and the thing is good                          OK
 #   WARNINGS  the check ran; needs attention, or is simply not configured  WARN
-#   ISSUES    the check ran and the thing is broken            ISSUE (gates exit 1)
+#   ISSUES    the check ran and the thing is broken            ISSUE
 #   UNKNOWNS  the check COULD NOT RUN. Never healthy, never a pass.        UNKNOWN
 #   SKIPPED   the check does not apply to THIS distribution                N/A
 #
@@ -420,7 +447,10 @@ EOF
 # input" is a fact about the projection. The split mirrors bin/test's
 # PASS/FAIL/BLOCKED/SKIP, which already draws the same line for test suites.
 #
-# ISSUES gate with exit 1. Most optional UNKNOWNs remain report-only: a first
+# ISSUES gate with exit 1 except explicitly NON_GATING_ISSUES: a board sandbox
+# failure must stay visible as breakage while Chrono can start to qualify/fix
+# the host. The per-dispatch sandbox gate remains fail-closed.
+# Most optional UNKNOWNs remain report-only: a first
 # run has no secrets file or private vault, and treating setup as failure teaches
 # users to ignore the exit code. A small set of mandatory integrity checks use
 # GATE_UNKNOWN_LIST instead when an input EXISTS but cannot be read or
@@ -448,6 +478,7 @@ EOF
 # the defect; a check that says "I was not measured, here is the flag that
 # measures me" is the whole point of the split.
 ISSUES=()
+NON_GATING_ISSUES=()
 WARNINGS=()
 HEALTHY=()
 UNKNOWNS=()
@@ -464,6 +495,10 @@ GATE_UNKNOWN_LIST=()
 note_ok()      { HEALTHY+=("$1");  printf -- '- \xe2\x9c\x93 %s\n' "${2:-$1}" >> "${DOCTOR_LOG}"; }
 note_warn()    { WARNINGS+=("$1"); printf -- '- \xe2\x9a\xa0\xef\xb8\x8f %s\n' "${2:-$1}" >> "${DOCTOR_LOG}"; }
 note_issue()   { ISSUES+=("$1");   printf -- '- \xf0\x9f\x94\x94 %s\n' "${2:-$1}" >> "${DOCTOR_LOG}"; }
+note_non_gating_issue() {
+    note_issue "$@"
+    NON_GATING_ISSUES+=("$1")
+}
 note_unknown() { UNKNOWNS+=("$1"); printf -- '- ? COULD NOT DETERMINE: %s\n' "${2:-$1}" >> "${DOCTOR_LOG}"; }
 note_gate_unknown() {
     note_unknown "$@"
@@ -635,6 +670,24 @@ else
 fi
 
 echo "" >> "${DOCTOR_LOG}"
+echo "## Board Worker Sandbox" >> "${DOCTOR_LOG}"
+BOARD_SANDBOX_HEALTHY=""
+BOARD_SANDBOX_REMEDIATION="See scripts/python/qualify_macos_build.py --help for the qualification procedure. Non-gating for squad up: Chrono must remain available to qualify/fix the host."
+case "$(classify_dependency scripts/python/seatbelt_profile.py)" in
+    unpublished)
+        note_skip "board worker sandbox check: this distribution does not carry scripts/python/seatbelt_profile.py"
+        ;;
+    *)
+        if BOARD_SANDBOX_RESULT="$(check_board_sandbox_compatibility 2>&1)"; then
+            BOARD_SANDBOX_HEALTHY="board worker sandbox compatibility passed — ${BOARD_SANDBOX_RESULT}"
+            note_ok "${BOARD_SANDBOX_HEALTHY}"
+        else
+            note_non_gating_issue "board dispatch is blocked on this host — ${BOARD_SANDBOX_RESULT}. ${BOARD_SANDBOX_REMEDIATION}"
+        fi
+        ;;
+esac
+
+echo "" >> "${DOCTOR_LOG}"
 echo "## Pre-commit Guard" >> "${DOCTOR_LOG}"
 if PRE_COMMIT_HEALTH="$(check_pre_commit_hook 2>&1)"; then
     note_ok "managed pre-commit guard active outside the worktree" "${PRE_COMMIT_HEALTH}"
@@ -659,44 +712,28 @@ echo "Resolved on this HOME's PATH (HOME=${HOME:-<unset>})." >> "${DOCTOR_LOG}"
 #     claude auth status   -> {"loggedIn": true, "authMethod": ..., "apiKeySource": ...}
 #     codex login status   -> Logged in using ChatGPT
 #
-# `agy`, `grok`, and `kimi` expose no such subcommand. Grok and Kimi have bounded
-# credential-at-rest checks; agy's OAuth state has no stable zero-token file or
+# `agy` and `grok` expose no such subcommand. Grok has a bounded
+# credential-at-rest check; agy's OAuth state has no stable zero-token file or
 # status contract here, so doctor reports it as UNKNOWN instead of guessing.
 #
 # WHY THE PROBE SHAPE IS A TABLE HERE AND THE POLICY IS NOT. The lane inventory
-# already carries auth-policy per lane (claude/codex/gemini subscription, kimi
-# managed-login) and doctor must not restate it -- it reads
+# already carries auth-policy per lane and doctor must not restate it -- it reads
 # it back below and reports any DISAGREEMENT between the declared policy and what
 # this probe observed, which is CLAUDE.md rule 9 applied to authentication. What
 # the inventory cannot supply is the probe COMMAND: `claude auth status` versus
 # `codex login status` is a fact about each vendor's CLI surface, recorded
-# nowhere in this repository. That, and only that, is what these five cases name.
+# nowhere in this repository. That, and only that, is what these four cases name.
 #
-# Bounded at 5s each, not the 10s the version probe uses: five lanes share one
+# Bounded at 5s each, not the 10s the version probe uses: four lanes share one
 # 45s launch gate, and an auth endpoint is likelier to hang than `--version`.
 # Timeout is UNKNOWN, never "not logged in" -- doctor did not establish either.
 LANE_AUTH_OBSERVED=()
-
-# kimi: ~/.kimi/credentials/kimi-code.json, written by `kimi login`.
-#
-# The check is for a REFRESH token, not for freshness, because freshness is the
-# wrong question and measuring it would produce a permanent false positive: both
-# file carries a short-lived access token beside the refresh token. Its expiry is
-# expected, so only the durable half is evidence of anything.
-#
-# Key presence only. No value from either file is read, printed, or logged.
-lane_credential_file() {
-    case "$1" in
-        kimi)   printf '%s\n' "${HOME}/.kimi/credentials/kimi-code.json" ;;
-        *)      return 1 ;;
-    esac
-}
 
 CLI_PROBE_OUT="$(mktemp "${TMPDIR:-/tmp}/vs-doctor-cli.XXXXXXXX" 2>/dev/null)" \
     || CLI_PROBE_OUT=""
 AUTH_PROBE_OUT="$(mktemp "${TMPDIR:-/tmp}/vs-doctor-auth.XXXXXXXX" 2>/dev/null)" \
     || AUTH_PROBE_OUT=""
-for lane in claude codex gemini grok kimi; do
+for lane in claude codex gemini grok; do
     lane_cli="${lane}"
     [[ "${lane}" == gemini ]] && lane_cli=agy
     lane_path="$(command -v "${lane_cli}" 2>/dev/null || true)"
@@ -820,26 +857,6 @@ for lane in claude codex gemini grok kimi; do
             note_unknown "gemini login state not verifiable; agy exposes no zero-token auth status" \
                 "gemini: the lane runs through ${lane_path} using Antigravity OAuth. agy exposes no zero-token authentication status, so login state is UNKNOWN. Start agy interactively to verify or restore its OAuth session; GEMINI_API_KEY is not lane authentication."
             ;;
-        kimi)
-            LANE_CRED_FILE="$(lane_credential_file "${lane}")"
-            LANE_CRED_HINT="run \`${lane} login\`"
-            if [[ -r "${LANE_CRED_FILE}" ]] \
-                && grep -q '"refresh_token"' "${LANE_CRED_FILE}" 2>/dev/null; then
-                # A credential at rest is not a login result, and this must not
-                # read as one. Loud, never a pass: there is no zero-token status
-                # subcommand for this lane, so its login state is UNDETERMINED
-                # and the file is the strongest honest evidence doctor has.
-                LANE_AUTH_OBSERVED+=("${lane}=credential-file")
-                note_unknown "${lane} login state not verifiable (no status subcommand); a refresh credential IS present" \
-                    "${lane}: ${LANE_CRED_FILE#"${HOME}/"} exists under \$HOME and carries a refresh token, so this lane has a durable credential at rest. That is NOT a login result — ${lane} exposes no zero-token status subcommand, so whether the credential still works is UNDETERMINED. No value from the file is read or logged."
-            elif [[ -e "${LANE_CRED_FILE}" ]]; then
-                note_warn "${lane} credential file is present but carries no refresh token — ${LANE_CRED_HINT}" \
-                    "${lane}: ${LANE_CRED_FILE#"${HOME}/"} exists but has no refresh token, so the lane cannot re-authenticate unattended. Fix: ${LANE_CRED_HINT}."
-            else
-                note_warn "${lane} has no credential — ${LANE_CRED_HINT}" \
-                    "${lane}: no credential at ${LANE_CRED_FILE#"${HOME}/"}, so this lane is not authenticated and every ${lane} dispatch will fail. Fix: ${LANE_CRED_HINT}."
-            fi
-            ;;
     esac
 done
 [[ -n "${CLI_PROBE_OUT}" ]] && rm -f "${CLI_PROBE_OUT}"
@@ -875,7 +892,7 @@ if [[ -z "${DOCTOR_EUID_HOME}" ]]; then
         "the dispatch rail resolves executable authority from the effective-UID account home, but doctor could not resolve that home safely"
 elif [[ "${HOME:-}" != "${DOCTOR_EUID_HOME}" ]]; then
     # A clean-room HOME must not gain capabilities from the account that happens
-    # to execute the rehearsal. lane-inventory resolves Claude/Kimi from the
+    # to execute the rehearsal. lane-inventory resolves Claude from the
     # passwd home, so invoking it here would execute another home's binaries and
     # contaminate the very check doctor is meant to perform.
     note_unknown "dispatch lane inventory not probed: HOME differs from effective-UID account home" \
@@ -907,15 +924,23 @@ elif LANE_INVENTORY=$(PYTHONPATH="${VAULT_ROOT}/scripts/python" python3 -B \
             note_warn "${lane}: policy is subscription auth but the CLI reports it authenticated with an API key (${lane_observed_auth%%/*})" \
                 "  ⚠️ ${lane} declares auth-policy=subscription, and its own status subcommand reports method '${lane_observed_auth%%/*}' — dispatches on this lane will spend API credit rather than the subscription. Unset the lane's API-key variable for subscription runs."
         fi
-        here="$(command -v "${lane}" 2>/dev/null || true)"
+        # The lane NAME is a routing label, not the executable basename. The
+        # gemini lane dispatches through `agy` (root CLAUDE.md: the standalone
+        # `gemini` binary is retired), so `command -v gemini` finds a leftover
+        # homebrew `gemini` and "disagrees" with the agy authority on every run.
+        # Cross-check the name the authority will ACTUALLY exec -- the basename
+        # of its path -- so lane!=binary lanes are not permanent false alarms.
+        exec_name="${literal##*/}"
+        here=""
+        [[ -n "${exec_name}" ]] && here="$(command -v "${exec_name}" 2>/dev/null || true)"
         if [[ -n "${here}" && "${here}" != "${literal}" ]]; then
             CLI_DISAGREEMENTS=$((CLI_DISAGREEMENTS + 1))
             note_warn "${lane}: this HOME's PATH and the dispatch authority path disagree" \
-                "  ⚠️ this HOME resolves ${lane} to ${here}, but dispatch will exec ${literal}"
-        elif [[ -z "${here}" && "${installed}" == true ]]; then
+                "  ⚠️ this HOME resolves ${exec_name} to ${here}, but dispatch will exec ${literal}"
+        elif [[ -z "${here}" && "${installed}" == true && -n "${exec_name}" ]]; then
             CLI_DISAGREEMENTS=$((CLI_DISAGREEMENTS + 1))
             note_warn "${lane}: dispatch authority sees a CLI this HOME does not" \
-                "  ⚠️ ${lane} is absent from this HOME's PATH but present at the authority path ${literal} — that is another account's install, not yours"
+                "  ⚠️ ${exec_name} is absent from this HOME's PATH but present at the authority path ${literal} — that is another account's install, not yours"
         fi
     done <<< "${LANE_INVENTORY}"
     if [[ "${CLI_DISAGREEMENTS}" -eq 0 ]]; then
@@ -942,6 +967,9 @@ else
     mcp_status_rc=0
     mcp_status_raw="$(bash "${VAULT_ROOT}/scripts/bootstrap-mcps.sh" --status 2>/dev/null)" \
         || mcp_status_rc=$?
+    # Every ✓/✗ row that --status prints is a per-CLI registration. Keep it that
+    # way: a ✗ row for anything else would read here as a missing registration
+    # and send the operator to a script that cannot clear it.
     mcp_status=$(printf '%s\n' "${mcp_status_raw}" | grep -E '^[[:space:]]+[✓✗]' || true)
     if [[ -z "${mcp_status}" ]]; then
         # Formerly "MCP status indeterminate" as a WARNING, which reads like a
@@ -1134,7 +1162,7 @@ if [[ "${GREP_USABLE}" == true ]]; then
     # and launch diagnostics are instructions even though agents do not ingest
     # them as markdown. It was omitted when this scan copied the referenced-
     # script scope below, which is how a four-lane welcome survived the move to
-    # five routed lanes.
+    # four routed lanes.
     MARKDOWN_DRIFT_PATHS=("${VAULT_ROOT}/README.md" "${VAULT_ROOT}/CLAUDE.md" \
         "${VAULT_ROOT}/chrono" "${VAULT_ROOT}/shared")
     DRIFT_PATHS=("${MARKDOWN_DRIFT_PATHS[@]}" "${VAULT_ROOT}/bin")
@@ -1372,9 +1400,9 @@ fi
 # registered job whose script no longer exists -- which previously appeared only
 # as a silent "No such file or directory" in a log nobody reads.
 #
-# Matched on the repo-relative TAIL, not on an absolute VAULT_ROOT prefix: under
-# a git worktree VAULT_ROOT is the worktree, so a prefix match silently reports
-# zero and the check quietly stops checking.
+# Matched on this checkout's VAULT_ROOT prefix, including the trailing slash.
+# Jobs bound to another checkout are outside this audit, even if that checkout
+# has the same basename or shares a directory-name prefix with this one.
 REGISTERED_MISSING=0
 REGISTERED_COUNT=0
 PLIST_COUNT=0
@@ -1997,6 +2025,40 @@ from memory_metrics import autocapture_write_failures
 print(autocapture_write_failures(sys.argv[1], days=int(sys.argv[2])))
 ' "${VAULT_ROOT}" "${DOCTOR_AUTOCAPTURE_WINDOW_DAYS}" 2>/dev/null
 )" || AUTOCAPTURE_FAIL_COUNT=""
+# The warning used to GUESS "unauthenticated or unreachable gemini CLI". That is
+# only one failure shape; a distiller that TIMES OUT looks identical to memory
+# but has a different fix, and pointing the operator at auth wastes the triage.
+# Surface the dominant reason the log actually recorded in the same window. The
+# window constant stays single-homed here; this reads only the `reason` field,
+# which memory_metrics.autocapture_write_failures does not consult.
+AUTOCAPTURE_TOP_REASON="$(
+    python3 -B -c '
+import sys, json
+from collections import Counter
+from datetime import datetime, timezone, timedelta
+root, days = sys.argv[1], int(sys.argv[2])
+cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+tally = Counter()
+try:
+    with open(f"{root}/_state/autocapture-failures.jsonl", encoding="utf-8", errors="replace") as handle:
+        for line in handle:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                row = json.loads(line)
+                at = datetime.strptime(str(row["at"]), "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
+            except (ValueError, TypeError, KeyError, json.JSONDecodeError):
+                continue
+            if at >= cutoff:
+                tally[str(row.get("reason", "unknown"))] += 1
+except OSError:
+    pass
+if tally:
+    reason, count = tally.most_common(1)[0]
+    print(f"{count}x {reason}"[:200])
+' "${VAULT_ROOT}" "${DOCTOR_AUTOCAPTURE_WINDOW_DAYS}" 2>/dev/null
+)" || AUTOCAPTURE_TOP_REASON=""
 if [[ -z "${AUTOCAPTURE_FAIL_COUNT}" ]]; then
     note_unknown "auto-capture write-path probe could not run" \
         "memory_metrics.autocapture_write_failures could not be read; auto-capture health was NOT measured"
@@ -2004,8 +2066,15 @@ elif [[ "${AUTOCAPTURE_FAIL_COUNT}" == "0" ]]; then
     note_ok "auto-capture write path: no distillation failures in the last ${DOCTOR_AUTOCAPTURE_WINDOW_DAYS} days" \
         "chrono-vault auto-capture recorded no write-path failures in the last ${DOCTOR_AUTOCAPTURE_WINDOW_DAYS} days"
 else
-    note_warn "auto-capture wrote NO note ${AUTOCAPTURE_FAIL_COUNT}x in the last ${DOCTOR_AUTOCAPTURE_WINDOW_DAYS} days — the distillation lane may be down" \
-        "chrono-vault auto-capture failed to write a semantic note ${AUTOCAPTURE_FAIL_COUNT} time(s) in the last ${DOCTOR_AUTOCAPTURE_WINDOW_DAYS} days. The raw captures are safe in _state/episodic/, but memory is not growing. Most likely an unauthenticated or unreachable \`gemini\` CLI — this repo has lost three weeks to exactly that before. Read the reasons in _state/autocapture-failures.jsonl; \`CHRONO_AUTOCAPTURE_DISTILL=off\` writes unstripped notes rather than none while the lane is fixed."
+    autocapture_detail="chrono-vault auto-capture failed to write a semantic note ${AUTOCAPTURE_FAIL_COUNT} time(s) in the last ${DOCTOR_AUTOCAPTURE_WINDOW_DAYS} days. The raw captures are safe in _state/episodic/, but memory is not growing."
+    if [[ -n "${AUTOCAPTURE_TOP_REASON}" ]]; then
+        autocapture_detail+=" Dominant recorded reason: ${AUTOCAPTURE_TOP_REASON} (a timeout means the lane is SLOW, not unauthenticated; an auth error means the opposite — fix accordingly)."
+    else
+        autocapture_detail+=" Read the reasons in _state/autocapture-failures.jsonl to see whether the lane is timing out, unauthenticated, or unreachable."
+    fi
+    autocapture_detail+=" \`CHRONO_AUTOCAPTURE_DISTILL=off\` writes unstripped notes rather than none while the lane is fixed."
+    note_warn "auto-capture wrote NO note ${AUTOCAPTURE_FAIL_COUNT}x in the last ${DOCTOR_AUTOCAPTURE_WINDOW_DAYS} days — memory is not growing" \
+        "${autocapture_detail}"
 fi
 
 # `[[ -w ]]` asks the permission bits a question the filesystem may not agree
@@ -2155,6 +2224,35 @@ fi
 # --- 6. Disk space ---
 echo "" >> "${DOCTOR_LOG}"
 echo "## Disk Space" >> "${DOCTOR_LOG}"
+# Local disk protection policy: inspect only configuration, never run a sweep.
+if disk_policy="$(python3 -B - "${VAULT_ROOT}" <<'PY'
+import sys
+from pathlib import Path
+root = Path(sys.argv[1])
+sys.path.insert(0, str(root / "scripts/python"))
+from disk_hygiene import tmp_policy
+raise SystemExit(0 if tmp_policy(root) is not None else 1)
+PY
+)"; then
+    note_ok "disk cleanup protection policy available"
+else
+    note_warn "disk cleanup protection policy unavailable; scratch retained" \
+        "Provision valid _state/disk-hygiene.local.json tmp settings for this squad root. ${disk_policy}"
+fi
+# End local disk protection policy.
+# Absolute campaign headroom complements the existing percentage check. Doctor
+# only measures; the watcher's existing timer owns cleanup and board notices.
+if [[ -x "${VAULT_ROOT}/bin/disk-hygiene.sh" ]]; then
+    disk_headroom_status=0
+    disk_headroom="$("${VAULT_ROOT}/bin/disk-hygiene.sh" --check 2>&1)" || disk_headroom_status=$?
+    case "$disk_headroom_status" in
+        0) note_ok "campaign disk headroom OK" "$disk_headroom" ;;
+        3) note_warn "campaign disk below 15 GB" "$disk_headroom" ;;
+        *) note_unknown "campaign disk headroom could not be measured" "$disk_headroom" ;;
+    esac
+else
+    note_unknown "campaign disk hygiene unavailable" "bin/disk-hygiene.sh is missing or not executable"
+fi
 # A df that returns nothing used to leave disk_free_pct empty, which bash
 # evaluates as 0 inside [[ -gt ]], so a FAILED MEASUREMENT fell straight through
 # to "Disk: % free (CRITICAL)" -- an issue raised, with the number missing from
@@ -2436,20 +2534,38 @@ else
     yesterday_iso=$(date -u -v-1d +%FT%TZ 2>/dev/null \
         || date -u -d '1 day ago' +%FT%TZ 2>/dev/null || true)
     dispatch_scan_rc=0
-    DISPATCHES_LAST_24H=$(jq -r --arg t "$yesterday_iso" \
-        'if (type == "object") and ((.ts | type) == "string")
-         then select(.ts > $t) | (.model_lane // .to_model // "?")
-         else error("dispatch row lacks a string ts")
-         end' \
-        "${VAULT_ROOT}/_state/dispatch-log.jsonl" 2>/dev/null \
-        | wc -l | tr -d ' ') || dispatch_scan_rc=$?
+    # Count records before filtering task IDs: ID-less dispatches still count.
+    DISPATCH_COUNTS=$(jq -s --arg t "$yesterday_iso" \
+        '[.[] | if (type == "object") and ((.ts | type) == "string")
+          then select(.ts > $t)
+          else error("dispatch row lacks a string ts")
+          end] as $dispatches
+         | [$dispatches[] | .task_id | select(type == "string" and length > 0)]
+         | group_by(.) | map({task_id: .[0], count: length})
+         | (max_by(.count) // {task_id: "", count: 0})
+         | {total: ($dispatches | length), top: .}' \
+        "${VAULT_ROOT}/_state/dispatch-log.jsonl" 2>/dev/null) || dispatch_scan_rc=$?
+    DISPATCHES_LAST_24H=$(jq -r '.total' <<<"${DISPATCH_COUNTS}")
+    # A retry loop re-dispatches the SAME task; a busy day dispatches many
+    # distinct ones. Across 79 days of history no task exceeded 5 dispatches,
+    # while normal busy days reached 225 — so total volume alone blocked
+    # legitimate launches (2026-09-26). Rows without a task_id are not grouped.
+    TOP_TASK_COUNT=$(jq -r '.top.count' <<<"${DISPATCH_COUNTS}")
+    TOP_TASK_ID=$(jq -r '.top.task_id' <<<"${DISPATCH_COUNTS}")
+    TOP_TASK_COUNT=${TOP_TASK_COUNT:-0}
     if [[ -z "${yesterday_iso}" || "${dispatch_scan_rc}" -ne 0 \
         || ! "${DISPATCHES_LAST_24H}" =~ ^[0-9]+$ ]]; then
         note_gate_unknown "dispatch-log token-spend scan failed" \
             "the 24-hour cutoff or dispatch log could not be parsed — dispatch volume is UNKNOWN"
+    elif [[ ${TOP_TASK_COUNT} -ge 10 ]]; then
+        note_issue "task ${TOP_TASK_ID} dispatched ${TOP_TASK_COUNT} times in 24h" \
+            "One task re-dispatched 10+ times (historical max 5) — likely retry loop"
+    elif [[ ${DISPATCHES_LAST_24H} -gt 600 ]]; then
+        note_issue "dispatch volume ${DISPATCHES_LAST_24H} exceeds 600/24h ceiling" \
+            "Dispatch volume far above any observed day (max 225) — possible runaway task creation"
     elif [[ ${DISPATCHES_LAST_24H} -gt 200 ]]; then
-        note_issue "dispatch volume ${DISPATCHES_LAST_24H} exceeds 200/24h baseline" \
-            "High dispatch volume (>200/day) — possible runaway loop"
+        note_warn "dispatch volume ${DISPATCHES_LAST_24H} above 200/24h baseline" \
+            "Busy but not loop-shaped: no task dispatched more than ${TOP_TASK_COUNT} times"
     else
         note_ok "dispatch volume within threshold" \
             "Total dispatches last 24h: ${DISPATCHES_LAST_24H} (threshold: 200)"
@@ -2739,10 +2855,10 @@ if [[ "${PS_USABLE}" != true ]]; then
     note_unknown "process audit could not run: ${PS_DENIED_REASON}" \
         "Process audit COULD NOT RUN — ${PS_DENIED_REASON}. Long-running CLI processes, extra non-squad CLI roots, and runaway-CPU processes are ALL UNDETERMINED. None of them were found absent; none of them were looked for."
 else
-    # Long-running claude/codex/gemini/grok/kimi processes are expected for the daily
+    # Long-running claude/codex/gemini/grok processes are expected for the daily
     # driver, but extra interactive CLIs outside the squad pane roots can leave
     # MCP children around. Report them separately; never kill them here.
-    long_procs=$(ps -eo pid,ppid,etime,pcpu,comm | awk '$5 ~ /(claude|codex|gemini|grok|kimi)/ && $3 ~ /^[0-9]+-[0-9]+/ {print}' | head -10)
+    long_procs=$(ps -eo pid,ppid,etime,pcpu,comm | awk '$5 ~ /(claude|codex|gemini|grok)/ && $3 ~ /^[0-9]+-[0-9]+/ {print}' | head -10)
     if [[ -n "${long_procs}" ]]; then
         note_info "Long-running CLI processes (>1 day; may be active non-squad sessions):"
         echo "${long_procs}" | sed 's/^/  /' >> "${DOCTOR_LOG}"
@@ -2752,7 +2868,7 @@ else
     fi
 
     # WHY THIS CHANGED (2026-08-17). The old check matched
-    # /(claude|codex|gemini|grok|kimi)( |$)/ against the WHOLE command line: exactly
+    # /(claude|codex|gemini|grok)( |$)/ against the WHOLE command line: exactly
     # the unanchored argv substring matching shared/process-identity.sh exists
     # to forbid, and it produced the failure that file predicts. Measured on the
     # maintainer's tree, its four "extra non-squad CLI sessions" were three
@@ -2800,7 +2916,7 @@ else
             function leaf(path,   parts, n) { n = split(path, parts, "/"); return parts[n] }
             function is_lane(name) {
                 return name == "claude" || name == "codex" \
-                    || name == "gemini" || name == "grok" || name == "kimi"
+                    || name == "gemini" || name == "grok"
             }
             function is_interpreter(name) {
                 return name == "node" || name == "python" || name == "python3" \
@@ -2844,7 +2960,7 @@ else
     fi
 
     # Pathology: high-CPU CLI processes (likely retry storm or runaway loop)
-    runaway=$(ps -eo pid,etime,pcpu,comm | awk '$4 ~ /(claude|codex|gemini|grok|kimi)/ && $3+0 > 80 {print}' | head -3)
+    runaway=$(ps -eo pid,etime,pcpu,comm | awk '$4 ~ /(claude|codex|gemini|grok)/ && $3+0 > 80 {print}' | head -3)
     if [[ -n "${runaway}" ]]; then
         note_issue "CLI process consuming >80% CPU — kill if stuck in retry loop" \
             "High-CPU CLI processes (>80% CPU — possible runaway):"
@@ -2916,12 +3032,15 @@ state_size=$(du -sh "${VAULT_ROOT}/_state" 2>/dev/null | cut -f1)
 echo "- _state/ size: ${state_size}" >> "${DOCTOR_LOG}"
 
 # --- Summary ---
+GATE_ISSUE_COUNT=$(( ${#ISSUES[@]} - ${#NON_GATING_ISSUES[@]} ))
 echo "" >> "${DOCTOR_LOG}"
 echo "## Summary" >> "${DOCTOR_LOG}"
 echo "- Mode: ${DOCTOR_MODE}" >> "${DOCTOR_LOG}"
 echo "- Healthy: ${#HEALTHY[@]}" >> "${DOCTOR_LOG}"
 echo "- Warnings: ${#WARNINGS[@]}" >> "${DOCTOR_LOG}"
 echo "- Issues: ${#ISSUES[@]}" >> "${DOCTOR_LOG}"
+echo "- Launch-blocking issues: ${GATE_ISSUE_COUNT}" >> "${DOCTOR_LOG}"
+echo "- Non-gating issues (Chrono can start): ${#NON_GATING_ISSUES[@]}" >> "${DOCTOR_LOG}"
 echo "- Could not determine: ${#UNKNOWNS[@]}" >> "${DOCTOR_LOG}"
 echo "- Gate-blocking unknowns: ${#GATE_UNKNOWN_LIST[@]}" >> "${DOCTOR_LOG}"
 echo "- Inputs not produced yet (loud, non-gating): ${#ABSENT_INPUTS[@]}" >> "${DOCTOR_LOG}"
@@ -3011,6 +3130,7 @@ json_array() {
 # Bash empty-array under set -u needs the +expansion guard
 WARNINGS_JSON=$(json_array ${WARNINGS[@]+"${WARNINGS[@]}"})
 ISSUES_JSON=$(json_array ${ISSUES[@]+"${ISSUES[@]}"})
+NON_GATING_ISSUES_JSON=$(json_array ${NON_GATING_ISSUES[@]+"${NON_GATING_ISSUES[@]}"})
 UNKNOWNS_JSON=$(json_array ${UNKNOWNS[@]+"${UNKNOWNS[@]}"})
 SKIPPED_JSON=$(json_array ${SKIPPED[@]+"${SKIPPED[@]}"})
 # Both are SUBSETS of unknowns, published so a consumer can gate on either
@@ -3036,6 +3156,8 @@ cat > "${SUMMARY}" <<EOF
   "healthy_count": ${#HEALTHY[@]},
   "warning_count": ${#WARNINGS[@]},
   "issue_count": ${#ISSUES[@]},
+  "gate_issue_count": ${GATE_ISSUE_COUNT},
+  "non_gating_issue_count": ${#NON_GATING_ISSUES[@]},
   "unknown_count": ${#UNKNOWNS[@]},
   "gate_unknown_count": ${#GATE_UNKNOWN_LIST[@]},
   "absent_input_count": ${#ABSENT_INPUTS[@]},
@@ -3043,6 +3165,7 @@ cat > "${SUMMARY}" <<EOF
   "skipped_count": ${#SKIPPED[@]},
   "warnings": ${WARNINGS_JSON},
   "issues": ${ISSUES_JSON},
+  "non_gating_issues": ${NON_GATING_ISSUES_JSON},
   "unknowns": ${UNKNOWNS_JSON},
   "gate_unknowns": ${GATE_UNKNOWNS_JSON},
   "absent_inputs": ${ABSENT_INPUTS_JSON},
@@ -3087,7 +3210,10 @@ printf '  COULD NOT DETERMINE ..... %d  (%d gate-blocking, %d not produced yet, 
     "${#DEEP_DEFERRED[@]}"
 printf '  NOT APPLICABLE HERE ..... %d\n' "${#SKIPPED[@]}"
 
-print_list "ISSUES — measured breakage (exit 1):" "!" \
+if [[ -n "${BOARD_SANDBOX_HEALTHY}" ]]; then
+    printf '\nHEALTHY: %s\n' "${BOARD_SANDBOX_HEALTHY}"
+fi
+print_list "ISSUES — measured breakage (non-gating exceptions are marked):" "!" \
     ${ISSUES[@]+"${ISSUES[@]}"}
 print_list "GATE-BLOCKING UNKNOWNS — input was there and could not be read (exit 2):" "x" \
     ${GATE_UNKNOWN_LIST[@]+"${GATE_UNKNOWN_LIST[@]}"}
@@ -3103,11 +3229,11 @@ print_list "NOT APPLICABLE — this distribution never carried the input:" "o" \
 printf '\nFull report:       %s\n' "${DOCTOR_LOG}"
 printf 'Machine-readable:  %s\n' "${SUMMARY}"
 
-# Exit 1 for a measured issue; exit 2 when a mandatory gate could not determine
-# its result. Optional UNKNOWNs remain loud but non-gating.
-if [[ "${#ISSUES[@]}" -gt 0 ]]; then
-    printf '\nVERDICT: %d issue(s) found. This installation is broken; fix them before launching. (exit 1)\n' \
-        "${#ISSUES[@]}"
+# Exit 1 for a launch-blocking issue; exit 2 when a mandatory gate could not
+# determine its result. Board sandbox issues leave Chrono available for repair.
+if [[ "${GATE_ISSUE_COUNT}" -gt 0 ]]; then
+    printf '\nVERDICT: %d launch-blocking issue(s) found. This installation is broken; fix them before launching. (exit 1)\n' \
+        "${GATE_ISSUE_COUNT}"
     exit 1
 fi
 if [[ "${#GATE_UNKNOWN_LIST[@]}" -gt 0 ]]; then
@@ -3120,6 +3246,10 @@ fi
 DEFERRED_NOTE=""
 if [[ "${#DEEP_DEFERRED[@]}" -gt 0 ]]; then
     DEFERRED_NOTE="$(printf ' %d check(s) were NOT measured in this fast run and are listed above; bin/doctor.sh --deep runs them.' "${#DEEP_DEFERRED[@]}")"
+fi
+if [[ "${#NON_GATING_ISSUES[@]}" -gt 0 ]]; then
+    printf '\nVERDICT: board dispatch is blocked on this host; Chrono startup remains available to qualify/fix it. (exit 0)%s\n' "${DEFERRED_NOTE}"
+    exit 0
 fi
 if [[ "${#ABSENT_INPUTS[@]}" -gt 0 ]]; then
     printf '\nVERDICT: healthy. %d check(s) had no input to read yet, which is what a fresh install looks like — they are reported above, not counted as passes. (exit 0)%s\n' \

@@ -1,6 +1,6 @@
 # Security arsenal guide
 
-Tool inventory checked 2026-07-18; the guarded MCP-stack section re-verified against the live per-CLI configs 2026-07-28. Commands below are starting points, not authorization: use active scanners, fuzzers, RPC calls, and exploit helpers only against assets explicitly covered by the current program rules. Start read-only, pin a block or local fixture, cap concurrency, and retain the command/output log.
+Tool inventory checked 2026-07-18; the guarded MCP stack was retired on 2026-10-27 (see below). Commands below are starting points, not authorization: use active scanners, fuzzers, RPC calls, and exploit helpers only against assets explicitly covered by the current program rules. Start read-only, pin a block or local fixture, cap concurrency, and retain the command/output log.
 
 ## Smart-contract audit
 
@@ -16,9 +16,9 @@ Tool inventory checked 2026-07-18; the guarded MCP-stack section re-verified aga
 | `medusa` | Parallel coverage-guided Solidity fuzzer; use alongside Echidna to diversify state exploration. | `medusa fuzz` |
 | `halmos` | Symbolic Foundry-test runner; use when bounded proof is more useful than additional random inputs. | `halmos --root .` |
 | `aderyn` | Fast Rust static analyzer; use for a low-friction first sweep and SARIF/Markdown handoff. | `aderyn .` |
-| ItyFuzz container | Hybrid EVM/MoveVM fuzzer. The pinned image is verified, but this Mac has no supported native release; begin by confirming the image, then build a campaign-specific layer containing Foundry or the required artifacts. | `docker run --platform linux/amd64 --network none --read-only --cap-drop ALL --security-opt no-new-privileges --pids-limit 64 --memory 512m --cpus 1 vibe-ityfuzz:nightly-35b7f089 --version` |
+| ItyFuzz container | Hybrid EVM/MoveVM fuzzer. Upstream ships no native macOS ARM release, so run the pinned Linux/amd64 image: confirm the image first, then build a campaign-specific layer containing Foundry or the required artifacts. | `docker run --platform linux/amd64 --network none --read-only --cap-drop ALL --security-opt no-new-privileges --pids-limit 64 --memory 512m --cpus 1 vibe-ityfuzz:nightly-35b7f089 --version` |
 
-Recommended sequence: `forge test` → `aderyn .` and `slither .` → targeted `myth`/`halmos` → invariant campaign with `echidna` plus `medusa`. Add ItyFuzz after its campaign image has the target's exact compiler/Foundry dependencies; its current verified image is not evidence that a project campaign has run.
+Recommended sequence: `forge test` → `aderyn .` and `slither .` → targeted `myth`/`halmos` → invariant campaign with `echidna` plus `medusa`. Add ItyFuzz after its campaign image has the target's exact compiler/Foundry dependencies; a working image is not evidence that a project campaign has run.
 
 ## OSINT, recon, code, and web security
 
@@ -62,7 +62,7 @@ These candidates were evaluated, not installed or wired. Their model calls can i
 | PyRIT | Programmable multi-turn attacks, converters, scorers, and target orchestration; best for deeper specialist campaigns. | Second-stage pilot after Promptfoo/garak; use a pinned virtual environment following the official PyRIT docs. |
 | PentestGPT | Autonomous/interactive pentest orchestration over existing tools. | Do not wire globally. Pilot only in a dedicated lab with telemetry disabled: clone, `make install`, then `LANGFUSE_ENABLED=false pentestgpt --list-sessions`. |
 | HexStrike AI | MCP-to-offensive-tool orchestration with a very large command surface. | Do not wire globally. If reviewed, run its API and MCP adapter in a dedicated network-restricted security VM; never accept its self-reported benchmark numbers as local evidence. |
-| Semgrep MCP | Structured local SAST tools supplied by the installed Semgrep binary. | Best MCP pilot: stdio command `/opt/homebrew/bin/semgrep mcp`; mount the repo read-only, omit cloud tokens, and log calls. |
+| Semgrep MCP | Structured local SAST tools supplied by the installed Semgrep binary. | Best MCP pilot: stdio command `semgrep mcp`; mount the repo read-only, omit cloud tokens, and log calls. |
 | FuzzingLabs `medusa-mcp` | MCP wrapper around Medusa, which is already installed. | Low incremental value; pilot only if orchestration improves a measured workflow. Do not deploy the full MCP hub. |
 | E2B | Hosted Firecracker sandboxes for untrusted agent code. | Defensive infrastructure, not a scanner. Requires an account/API key and usage spend; evaluate separately from the local sandbox policy. |
 | RIFT-Bench | June 2026 agent red-team research benchmark. | Research lead only: the cited arXiv preprint exists, but the named Fujitsu GitHub repository was empty on 2026-07-18. |
@@ -82,6 +82,8 @@ These versions were pinned in an **operator-local arsenal directory that is not 
 
 Do not run Promptfoo, garak, or PyRIT against a provider merely because the CLI exists. A campaign needs target authorization, prompt/data-flow review, provider credentials, and a spend ceiling. Do not run Snyk Agent Scan over MCP configs without reviewing each command: scanning starts configured stdio servers.
 
+LlamaFirewall is still not inline: model download/license and AlignmentCheck provider data flow need separate approval. Use Snyk Agent Scan only after approving its credential/data-flow terms and manually approving each downstream command.
+
 ## Smart-contract pilots added 2026-07-18
 
 These are operator-local installs, not tracked in this repository. Install each from its documented source (`shared/api-catalog.md` §12), then run the command shown — it resolves the tool from your `PATH`.
@@ -93,19 +95,9 @@ These are operator-local installs, not tracked in this repository. Install each 
 
 The official Heimdall release asset checksum matched, but its `0.9.3` asset prints `heimdall 0.9.2`; preserve that provenance caveat in evidence. Never use its unencrypted-HTTP bootstrap. Kontrol's official route has no release binary and documents a 30–60 minute Nix/kup build, so the failed prerequisite is an honest capability gap rather than a host-level Nix mutation.
 
-## Guarded security MCP stack
+## Guarded security MCP stack (retired)
 
-The cutover described in the 2026-07-18 staging plan has happened. `guarded-semgrep`, `guarded-slither`, and `guarded-solodit` are now wired into the **active** per-CLI configs — `model-lanes/claude/.mcp.json` and `model-lanes/gpt-codex/.codex/config.toml` — not into staged snippets. Each routes through Trail of Bits `mcp-context-protector` with a pinned server-config file:
-
-1. `/opt/homebrew/bin/semgrep mcp` with the cloud token explicitly empty.
-2. The pinned `slither-mcp` entry point with metrics disabled.
-3. The pinned `solodit-mcp` build; `SOLODIT_API_KEY` is inherited from the environment and is deliberately absent from the config.
-
-The superseded staged snippets (`model-lanes/claude/.mcp.security-arsenal.staged.json`, `model-lanes/gpt-codex/.codex/security-arsenal.staged.toml`) and the hold record `plugins/security-mcp-stack/held-solodit.json` are retained as provenance; `python3 plugins/security-mcp-stack/validate_staged.py` still validates them.
-
-**Verification is still required per run, and config presence is not proof.** A guarded server counts as live only when a bounded real call succeeds from the CLI that will use it — `tools/list`, a read-only synthetic fixture smoke, context-protector pin enforcement, and host tool-call logs. Board-spawned specialists do not automatically inherit an operator's CLI config, so confirm the surface from inside the process that will use it rather than from the file. Solodit's install-time dependency audit returned eight high and five moderate advisories; treat advisory review as ongoing, not closed.
-
-LlamaFirewall is still not inline: model download/license and AlignmentCheck provider data flow need separate approval. Use Snyk Agent Scan only after approving its credential/data-flow terms and manually approving each downstream command.
+`guarded-semgrep`, `guarded-slither`, and `guarded-solodit` were staged behind Trail of Bits `mcp-context-protector`, then retired on 2026-10-27. No lane declares them. Run `semgrep` and `slither` from the tables above directly. Solodit prior-art lookups have no CLI replacement: use a separately provisioned prior-art service, or search Solodit by hand.
 
 ## Planned only
 
@@ -113,4 +105,4 @@ LlamaFirewall is still not inline: model download/license and AlignmentCheck pro
 - **Google Model Armor:** separate GCP procurement task covering account/project, API enablement, key/service-account custody, region/data retention, free-tier/overage ceiling, synthetic prompt smoke, and rollback. No key was created here.
 - **E2B:** separate procurement/privacy decision for hosted metered sandboxes, including account, API key, data residency, spend cap, egress policy, retention, and a containment denial test. No SDK/account was installed or created here.
 
-The authoritative installed versions and verification commands remain in `shared/api-catalog.md` §12. The guarded stack is wired for `claude` and `codex` only; Gemini, Grok, and Kimi remain deferred.
+The authoritative installed versions and verification commands remain in `shared/api-catalog.md` §12.

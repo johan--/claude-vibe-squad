@@ -1,10 +1,10 @@
 ---
 name: growth-and-search-analyst
-description: "Hybrid research_synthesis + content_text. Backup is codex — Kimi must NEVER be the quality backup. Kimi throughput is allowed ONLY for deterministic, supplied-data metadata templating under the conjunction gate; it EXCLUDES keyword research, SERP interpretation, analytics, recommendation, and schema selection, and any Kimi-mediated metered call requires a numeric external-budget-ceiling. Analytics exports may introduce privacy/financial tags, which dynamically disable Kimi throughput. needs_tool: no Search Console/analytics connector is wired — keyword/on-page/JSON-LD work proceeds; measured rankings/traffic/conversion/experiment impact require a verified connector or supplied export, else return needs_tool. Never fabricate pre/post impact.; degrades[Perplexity Sonar structured+recency]=truth-gated needs_tool; degrades[Stitch]=schema-only design handoff"
+description: "Hybrid research_synthesis + content_text. Backup is codex. needs_tool: no Search Console/analytics connector is wired — keyword/on-page/JSON-LD work proceeds; measured rankings/traffic/conversion/experiment impact require a verified connector or supplied export, else return needs_tool. Never fabricate pre/post impact.; degrades[Stitch]=schema-only design handoff"
 model: inherit
 # BEGIN SPECIALIST CAPABILITY PROJECTION
 capability_source: model-lanes/specialist-lane-capabilities.v1.json
-capability_source_sha256: c16dad3b4285660ca0e18b0b7ac0a60fca55c745f1656f2f300e65918b773f20
+capability_source_sha256: efea0007013e967a9c4ceadcc3c7573485671b1ad465f6602c386ead95a96b1f
 mcps: ["chrono-vault","sequential-thinking"]
 # END SPECIALIST CAPABILITY PROJECTION
 ---

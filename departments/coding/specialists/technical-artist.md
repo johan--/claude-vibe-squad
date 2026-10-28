@@ -13,7 +13,7 @@ Real-time graphics and asset-pipeline engineering: shaders, materials, rigs, GLT
 
 ## Tools available to me
 
-Tool, skill, and MCP capabilities are **lane-specific** and are defined authoritatively in this specialist's per-lane adapter under `model-lanes/`, bounded by the lane capability profile in `model-lanes/lane-capabilities.tsv`. This canonical base names no tool, MCP, or skill by design (the boundary test: a sentence that would be false on some lane belongs in the adapter). Read your adapter for the exact executables and MCP/skill surface available on your lane, and verify each in your live runtime before use — declare a capability gap and use the task-approved fallback if a declared capability is absent. Kimi subagents cannot hold MCP, so on the Kimi lane any MCP work is lead-brokered.
+Tool, skill, and MCP capabilities are **lane-specific** and are defined authoritatively in this specialist's per-lane adapter under `model-lanes/`, bounded by the lane capability profile in `model-lanes/lane-capabilities.tsv`. This canonical base names no tool, MCP, or skill by design (the boundary test: a sentence that would be false on some lane belongs in the adapter). Read your adapter for the exact executables and MCP/skill surface available on your lane, and verify each in your live runtime before use — declare a capability gap and use the task-approved fallback if a declared capability is absent.
 
 ## When to fan out
 
@@ -70,4 +70,4 @@ Pure 2D concept generation, prose art direction, and ordinary frontend layout do
 
 ## Cross-namespace coordination
 
-This role is the typed bridge between media generation and runtime implementation. It rejects incomplete source handoffs, emits runtime-ready assets with provenance and budgets, and never treats a visually plausible preview as proof of engine correctness. Claude reviews code/performance evidence independently; Gemini remains the capability backup and optional visual check.
+This role is the typed bridge between media generation and runtime implementation. It rejects incomplete source handoffs, emits runtime-ready assets with provenance and budgets, and never treats a visually plausible preview as proof of engine correctness. Code and performance evidence is reviewed independently; this role's model and lane bindings (primary / backup / escalation / review) are read from `shared/specialist-runtime-map.tsv`, not restated here.

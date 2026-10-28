@@ -27,10 +27,14 @@ Three properties are load-bearing, and the second is the one most easily lost:
 
 from __future__ import annotations
 
+import contextlib
+import csv
 import importlib.util
+import io
 import json
 import os
 from pathlib import Path
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -268,6 +272,38 @@ class PublicCloneEntryPointTests(unittest.TestCase):
 class MaintainerRunUnaffectedTests(unittest.TestCase):
     """The degradation must not degrade the real check on a maintainer tree."""
 
+    def test_grok_card_tuples_stay_unsupported_until_probed(self) -> None:
+        validator = validate_capabilities.Validator(REPO_ROOT)
+        card = validate_capabilities.policy_fixture(
+            "grok-tuple", "live", "`arxiv_search` (grok · yes · subscription)")
+        codes = {e["code"] for e in validator.validate_text(card, "<grok>", None)["errors"]}
+        self.assertIn("tool-lane-invalid", codes)
+
+    def test_retired_lane_tuples_are_rejected(self) -> None:
+        validator = validate_capabilities.Validator(REPO_ROOT)
+        for registered in ({"all"}, {"codex", "kimi"}):
+            with self.subTest(registered=registered):
+                validator.tools["retirement-control"] = [{
+                    "lanes": "|".join(sorted(registered)),
+                    "verified_state": "yes", "cost_tier": "subscription",
+                }]
+                control = validate_capabilities.policy_fixture(
+                    "lane-control", "live",
+                    "`retirement-control` (codex · yes · subscription)")
+                self.assertEqual(validator.validate_text(control, "<control>", None)["errors"], [])
+                retired = control.replace("(codex ·", "(kimi ·")
+                result = validator.validate_text(retired, "<retired>", None)
+                self.assertEqual(result["status"], "fail")
+                self.assertIn("tool-lane-invalid", {e["code"] for e in result["errors"]})
+        self.assertFalse(validate_capabilities.lane_supported("kimi", {"all"}))
+
+    def test_live_cards_do_not_cite_retired_lane(self) -> None:
+        for path in sorted((REPO_ROOT / "shared/capabilities").rglob("*.md")):
+            for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+                for match in validate_capabilities.TOOL_TUPLE_RE.finditer(line):
+                    self.assertNotEqual(match.group("lane").strip(), "kimi",
+                                        f"{path}:{number} cites a retired lane")
+
     def test_maintainer_run_still_validates_every_card(self) -> None:
         result = _run_validator(REPO_ROOT)
         combined = result.stdout + result.stderr
@@ -323,6 +359,63 @@ class MaintainerRunUnaffectedTests(unittest.TestCase):
         self.assertEqual(
             validate_capabilities.registry_publication_state(REPO_ROOT), "published"
         )
+
+    def test_self_test_passes_after_retired_arsenal_tools_and_lane_are_removed(self) -> None:
+        retired = {"xai_search", "perplexity_search", "firecrawl_scrape",
+                   "firecrawl_crawl", "firecrawl_parse"}
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            for relative in ("shared/capabilities", "shared/skills"):
+                shutil.copytree(REPO_ROOT / relative, root / relative)
+            shutil.copy2(REPO_ROOT / "shared/specialist-runtime-map.tsv", root / "shared")
+            with MAINTAINER_REGISTRY.open(newline="", encoding="utf-8") as handle:
+                reader = csv.DictReader(handle, delimiter="\t")
+                fields = reader.fieldnames
+                rows = [row for row in reader if row["name"] not in retired]
+            for row in rows:
+                relative = Path(row["path_or_source"])
+                if (row["record_kind"] == "skill" and row["type"] == "invokable"
+                        and not relative.is_absolute() and (REPO_ROOT / relative).is_file()):
+                    target = root / relative
+                    target.parent.mkdir(parents=True, exist_ok=True)
+                    shutil.copy2(REPO_ROOT / relative, target)
+            registry = root / REGISTRY_RELATIVE
+            registry.parent.mkdir(parents=True)
+            with registry.open("w", newline="", encoding="utf-8") as handle:
+                writer = csv.DictWriter(handle, fieldnames=fields, delimiter="\t")
+                writer.writeheader()
+                writer.writerows(rows)
+            for path in (root / "shared/capabilities").rglob("*.md"):
+                lines = []
+                for line in path.read_text(encoding="utf-8").splitlines():
+                    cells = line.split("|")
+                    if len(cells) == 7 and validate_capabilities.STEP_RE.match(cells[1].strip()):
+                        matches = list(validate_capabilities.TOOL_TUPLE_RE.finditer(cells[3]))
+                        if matches:
+                            kept = [match.group(0) for match in matches
+                                    if match.group("name").strip() not in retired]
+                            cells[3] = " " + (", ".join(kept) or "—") + " "
+                            line = "|".join(cells)
+                    lines.append(line)
+                path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+            validator = validate_capabilities.Validator(root)
+            self.assertTrue(retired.isdisjoint(validator.tools))
+            self.assertIn("arxiv_search", validator.tools)
+            output = io.StringIO()
+            with contextlib.redirect_stdout(output):
+                code = validate_capabilities.self_test(validator)
+            result = json.loads(output.getvalue())
+            self.assertEqual(code, 0, result)
+            self.assertEqual(result["status"], "pass")
+            self.assertEqual(result["fixture_preconditions"], "pass")
+            # Stale demand must still fail; tolerance never makes a missing tool usable.
+            for name in retired:
+                card = validate_capabilities.policy_fixture(
+                    "stale-demand", "live", f"`{name}` (claude · yes · metered)",
+                    cost_note="metered with budget ceiling",
+                )
+                finding = validator.validate_text(card, "<retired-demand>", None)
+                self.assertIn("tool-catalog-claim", {error["code"] for error in finding["errors"]})
 
 
 class SiblingValidatorParityTests(unittest.TestCase):

@@ -14,10 +14,12 @@ Task 2.1's scheduler, it composes both.
 from __future__ import annotations
 
 from dataclasses import dataclass, replace
+from contextlib import contextmanager
 import fcntl
 import os
 from pathlib import Path, PurePosixPath
 import re
+import shutil
 import stat
 import subprocess
 import tempfile
@@ -40,6 +42,7 @@ GIT_RESOURCE_CLASSES: tuple[str, ...] = (
     "integration_branch",
 )
 _GIT_EXECUTABLE = Path("/usr/bin/git")
+_WORKTREE_ADD_TIMEOUT_SECONDS = 180
 _TASK_RE = re.compile(r"^TASK-[A-Za-z0-9][A-Za-z0-9._-]{3,127}$")
 _ATTEMPT_RE = re.compile(r"^d-[0-9a-f]{32}$")
 _UNSAFE_BRANCH_CHARS = re.compile(r"[\s~^:?*\[\\]")
@@ -58,50 +61,120 @@ class WorktreeIsolationError(RuntimeError):
     """A worktree cannot be provisioned, or its write scope is not provably isolated."""
 
 
+# Bound from the controller repository, never from a worker's .git pointer.
+_GIT_BINDINGS: dict[Path, tuple[Path, Path]] = {}
+
+
+def _git_environment(cwd: Path) -> dict[str, str]:
+    environment = {
+        "LC_ALL": "C", "PATH": "/usr/bin:/bin:/usr/sbin:/sbin",
+        "GIT_CONFIG_NOSYSTEM": "1", "GIT_CONFIG_GLOBAL": "/dev/null",
+        "GIT_TERMINAL_PROMPT": "0", "GIT_NO_REPLACE_OBJECTS": "1",
+    }
+    root = Path(os.path.realpath(cwd))
+    binding = _GIT_BINDINGS.get(root)
+    if binding is not None:
+        git_dir, common = binding
+        pointer = root / ".git"
+        try:
+            if (pointer.is_symlink() or not pointer.is_file()
+                    or pointer.read_text().strip() != f"gitdir: {git_dir}"
+                    or any(path.is_symlink() for path in (git_dir, *git_dir.parents))
+                    or (git_dir / "commondir").is_symlink()
+                    or (git_dir / "commondir").read_text().strip() != "../.."
+                    or os.path.lexists(git_dir / "config.worktree")):
+                raise WorktreeIsolationError("worker Git metadata identity changed")
+        except OSError as exc:
+            raise WorktreeIsolationError(f"worker Git metadata unavailable: {exc}") from exc
+        environment.update(GIT_DIR=str(git_dir), GIT_COMMON_DIR=str(common),
+                           GIT_WORK_TREE=str(root))
+    return environment
+
+
+def _bind_worker_git(root: Path, common: Path) -> None:
+    # Registration is discovered from controller-owned common metadata. The
+    # backlink is checked as data; it is never passed to Git as a repository.
+    matches = []
+    for directory in (common / "worktrees").iterdir():
+        backlink = directory / "gitdir"
+        if directory.is_symlink() or backlink.is_symlink():
+            continue
+        if backlink.is_file() and backlink.read_text().strip() == str(root / ".git"):
+            matches.append(directory)
+    if len(matches) != 1:
+        raise WorktreeIsolationError("cannot bind registered worker Git metadata")
+    previous = _GIT_BINDINGS.get(root)
+    binding = (matches[0], common)
+    if previous is not None and previous != binding:
+        raise WorktreeIsolationError("registered worker Git metadata changed")
+    _GIT_BINDINGS[root] = binding
+    _git_environment(root)
+
+
+@contextmanager
+def _controller_git_environment(cwd: Path, index_file: Path | None):
+    environment = _git_environment(cwd)
+    binding = _GIT_BINDINGS.get(Path(os.path.realpath(cwd)))
+    if binding is None:
+        if index_file is not None:
+            environment["GIT_INDEX_FILE"] = str(index_file)
+        yield environment
+        return
+    git_dir, common = binding
+    # Git reads config.worktree before command-line -c overrides. A private
+    # metadata view prevents a worker racing that file into the linked gitdir
+    # from injecting filters/includes. Objects, refs and the index stay pinned.
+    with tempfile.TemporaryDirectory(prefix="board-git-metadata-") as directory:
+        private = Path(directory).resolve()
+        (private / "HEAD").write_bytes((git_dir / "HEAD").read_bytes())
+        (private / "commondir").write_text(str(common) + "\n")
+        environment.update(GIT_DIR=str(private), GIT_COMMON_DIR=str(common),
+                           GIT_INDEX_FILE=str(index_file or git_dir / "index"))
+        yield environment
+
+
 def _run_git(
     args: Sequence[str],
     *,
     cwd: Path,
     timeout: float = 10,
+    index_file: Path | None = None,
+    input_text: str | None = None,
 ) -> subprocess.CompletedProcess[str]:
     try:
-        return subprocess.run(
-            [
-                str(_GIT_EXECUTABLE),
-                # CBSE hardening (corpus C section 1.A / defensive posture #1):
-                # every board git op in a worker-controlled worktree runs with
-                # hook and fsmonitor execution disabled so a worker-planted
-                # `.git/hooks/*` or `core.fsmonitor` program can never fire on
-                # the host. A command-line `-c` overrides any value the same key
-                # carries in a (potentially worker-planted) config file.
-                "-c",
-                "core.hooksPath=/dev/null",
-                "-c",
-                "core.fsmonitor=",
-                "-c",
-                "gc.auto=0",
-                *args,
-            ],
-            cwd=str(cwd),
-            capture_output=True,
-            text=True,
-            timeout=timeout,
-            check=False,
-            close_fds=True,
-            # Neutralize worker-plantable global/system git config as a second
-            # CBSE layer: HOME is already absent here, and pinning the global and
-            # system config to /dev/null keeps a planted `~/.gitconfig` (aliases,
-            # `core.hooksPath`, `sshCommand`, pager/editor exec) out of every
-            # board plumbing call. Commit identity is git's built-in
-            # username@hostname auto-detection, unaffected by these settings.
-            env={
-                "LC_ALL": "C",
-                "PATH": "/usr/bin:/bin:/usr/sbin:/sbin",
-                "GIT_CONFIG_NOSYSTEM": "1",
-                "GIT_CONFIG_GLOBAL": "/dev/null",
-                "GIT_TERMINAL_PROMPT": "0",
-            },
-        )
+        with _controller_git_environment(cwd, index_file) as environment:
+            return subprocess.run(
+                [
+                    str(_GIT_EXECUTABLE),
+                    # CBSE hardening (corpus C section 1.A / defensive posture #1):
+                    # every board git op in a worker-controlled worktree runs with
+                    # hook and fsmonitor execution disabled so a worker-planted
+                    # `.git/hooks/*` or `core.fsmonitor` program can never fire on
+                    # the host. A command-line `-c` overrides any value the same key
+                    # carries in a (potentially worker-planted) config file.
+                    "-c",
+                    "core.hooksPath=/dev/null",
+                    "-c",
+                    "core.fsmonitor=",
+                    "-c",
+                    "gc.auto=0",
+                    *args,
+                ],
+                cwd=str(cwd),
+                capture_output=True,
+                input=input_text,
+                text=True,
+                timeout=timeout,
+                check=False,
+                close_fds=True,
+                # Neutralize worker-plantable global/system git config as a second
+                # CBSE layer: HOME is already absent here, and pinning the global and
+                # system config to /dev/null keeps a planted `~/.gitconfig` (aliases,
+                # `core.hooksPath`, `sshCommand`, pager/editor exec) out of every
+                # board plumbing call. Commit identity is git's built-in
+                # username@hostname auto-detection, unaffected by these settings.
+                env=environment,
+            )
     except (OSError, subprocess.SubprocessError) as exc:
         raise WorktreeIsolationError(f"git invocation failed: {exc}") from exc
 
@@ -297,6 +370,7 @@ def worktree_write_scope_paths(worktree_root: Path, repo_root: Path) -> tuple[Pa
         raise WorktreeIsolationError(
             f"worktree root is not a registered git worktree of {repo_root}: {root}"
         )
+    _bind_worker_git(root, common)
     return (root,)
 
 
@@ -357,6 +431,7 @@ class WorktreeIntegrationReceipt:
     deleted_paths: tuple[str, ...] = ()
     authorized_delete_paths: tuple[str, ...] = ()
     target_branch: str = ""
+    attempts: int = 1
 
 
 EVIDENCE_SELECTION_POLICY = (
@@ -473,9 +548,13 @@ class WorktreePool:
         # Reassert immediately before creation in case an operator intentionally
         # edited the repository-local excludes after this pool was constructed.
         _ensure_worker_credential_exclusion(self._repo_root)
+        # A full checkout writes every tracked file. Tracked media pushed it past
+        # 1.2 GB (2026-10-03), and the 10 s plumbing default then denied every
+        # dispatch while git kept running and left a late worktree behind.
         completed = _run_git(
             ["worktree", "add", "-q", "-b", branch, str(worktree_root), base_commit],
             cwd=self._repo_root,
+            timeout=_WORKTREE_ADD_TIMEOUT_SECONDS,
         )
         if completed.returncode != 0:
             raise WorktreeIsolationError(
@@ -1681,11 +1760,211 @@ def preserve_terminal_evidence(
     return receipt
 
 
+@dataclass(frozen=True)
+class ValidatedWorkerCandidate:
+    worker_head: str
+    tree: str
+    commit: str
+    residue: tuple[str, ...]
+    hook: Path | None
+    interpreter: Path | None
+    trusted_path: str
+    validation: str
+
+
+def _checked_git(args: Sequence[str], *, cwd: Path, **kwargs) -> str:
+    result = _run_git(args, cwd=cwd, **kwargs)
+    if result.returncode:
+        raise WorktreeIsolationError(f"candidate Git operation failed: {result.stderr.strip()}")
+    return result.stdout.strip()
+
+
+def _integration_hook(handle: WorktreeHandle, trusted_hook: Path) -> Path | None:
+    if handle.external_work_repo:
+        # This path is only a receipt label; external hooks are never executed.
+        # Even malformed hook paths must not gate otherwise valid client work.
+        try:
+            configured = _run_git(["config", "--local", "--path", "--get", "core.hooksPath"],
+                                  cwd=handle.repo_root)
+            hooks = Path(configured.stdout.strip()) if configured.returncode == 0 else (
+                git_common_dir(handle.repo_root) / "hooks")
+            if not hooks.is_absolute():
+                hooks = handle.repo_root / hooks
+            hook = hooks / "pre-commit"
+            return hook if os.path.lexists(hook) else None
+        except (WorktreeIsolationError, OSError, ValueError):
+            return None
+    hook = Path(trusted_hook)
+    if (not hook.is_absolute() or not hook.is_file()
+            or any(path.is_symlink() for path in (hook, *hook.parents))
+            or hook.resolve().is_relative_to(handle.worktree_root.resolve())):
+        raise WorktreeIsolationError("trusted residue pre-commit snapshot is unavailable")
+    return hook
+
+
+def _validate_candidate_tree(
+    handle: WorktreeHandle, tree: str, hook: Path | None,
+    interpreter: Path | None, trusted_path: str,
+    *, leaks_only: bool = False,
+) -> None:
+    # External hooks can load arbitrary candidate code through local scripts,
+    # test configuration or package managers. Defer them to the operator/CI.
+    if handle.external_work_repo or hook is None:
+        return
+    # A private repository makes HEAD the immutable dispatch base. Both staged
+    # trigger selection and validators reading disk see the entire candidate,
+    # including worker commits, without executing worker Git config or filters.
+    with tempfile.TemporaryDirectory(prefix="board-candidate-validation-") as directory:
+        root = Path(directory).resolve()
+        _checked_git(["init", "-q", "--template="], cwd=root)
+        git_dir = root / ".git"
+        (git_dir / "objects/info/alternates").write_text(
+            str(git_common_dir(handle.repo_root) / "objects") + "\n")
+        (git_dir / "HEAD").write_text(handle.base_commit + "\n")
+        _checked_git(["read-tree", tree], cwd=root)
+        if not leaks_only:
+            paths = _checked_git(["ls-files", "-z"], cwd=root).split("\0")
+            changed = {path.as_posix() for _, path in
+                       _changed_records(handle.repo_root, handle.base_commit, tree)}
+            # Untouched media is irrelevant to these guards and can exceed a GB.
+            materialized = [p for p in paths if p and (handle.external_work_repo
+                            or not p.startswith("media/") or p in changed)]
+            _checked_git(["checkout-index", "--stdin", "-z"], cwd=root,
+                         input_text="\0".join(materialized) + "\0", timeout=180)
+        environment = {
+            **_git_environment(root), "PATH": trusted_path,
+            "GIT_DIR": str(git_dir), "GIT_COMMON_DIR": str(git_dir),
+            "GIT_WORK_TREE": str(root), "GIT_INDEX_FILE": str(git_dir / "index"),
+            "GIT_CONFIG_COUNT": "2", "GIT_CONFIG_KEY_0": "core.hooksPath",
+            "GIT_CONFIG_VALUE_0": "/dev/null", "GIT_CONFIG_KEY_1": "core.fsmonitor",
+            "GIT_CONFIG_VALUE_1": "", "PYTHONDONTWRITEBYTECODE": "1",
+        }
+        if "HOME" in os.environ:
+            environment["HOME"] = os.environ["HOME"]
+        command = [str(interpreter), "-I", "-B", str(hook)]
+        if leaks_only:
+            # Reuse the installed driver's leak policy, without materializing
+            # the checkout or invoking release/capability validators per commit.
+            command = [str(interpreter), "-I", "-B", "-c", """
+import runpy, sys
+hook = runpy.run_path(sys.argv[1])
+paths = hook['_staged_paths']()
+if paths is None:
+    raise SystemExit('pre-commit leak guard: cannot inspect staged paths')
+for path in paths:
+    blob = hook['_git']('cat-file', 'blob', ':' + path)
+    if blob.returncode:
+        raise SystemExit('pre-commit leak guard: cannot read staged blob')
+    if hook['_path_reasons'](path) or hook['_restricted_frontmatter'](blob.stdout):
+        raise SystemExit('pre-commit leak guard: COMMIT BLOCKED: ' + repr(path))
+""", str(hook)]
+        try:
+            result = subprocess.run(command, cwd=root, env=environment,
+                                    capture_output=True, text=True, timeout=300, check=False)
+        except (OSError, subprocess.SubprocessError) as exc:
+            raise WorktreeIsolationError(f"trusted residue pre-commit validation failed: {exc}") from exc
+        if result.returncode:
+            detail = (result.stdout + "\n" + result.stderr).strip()
+            raise WorktreeIsolationError(
+                f"trusted residue pre-commit validation failed (exit {result.returncode}): {detail}")
+        if _checked_git(["write-tree"], cwd=root) != tree:
+            raise WorktreeIsolationError("trusted hook modified the candidate index")
+
+
+def validate_worker_residue(
+    handle: WorktreeHandle,
+    write_scope: Sequence[str],
+    exclude_paths: Sequence[str],
+    trusted_hook: Path,
+    *,
+    interpreter: Path | None = None,
+    trusted_path: str | None = None,
+    authorized_delete_paths: Sequence[str] = (),
+) -> ValidatedWorkerCandidate:
+    """Capture and validate immutable history and residue before committing it."""
+    root = worktree_write_scope_paths(handle.worktree_root, handle.repo_root)[0]
+    scopes = tuple(_normalized_relative(p, label="write scope") for p in write_scope)
+    excluded = tuple(_normalized_relative(p, label="excluded bridge path") for p in exclude_paths)
+    if _checked_git(["symbolic-ref", "--short", "HEAD"], cwd=root) != handle.branch:
+        raise WorktreeIsolationError("worker worktree is detached or changed branches")
+    head = _resolve_commit(root, "HEAD")
+    changes = _audited_worker_changes(handle.repo_root, handle.base_commit, head)
+    uncommitted = _uncommitted_records(root)
+    residue = tuple(sorted({p.as_posix() for _, p in uncommitted
+                            if _is_contained(p, scopes) and not _is_contained(p, excluded)}))
+    scan_cbse_artifacts(root, tuple(p for _, p in changes) + tuple(p for _, p in uncommitted),
+                        scopes, excluded)
+    authorized_deletes = freeze_delete_authorization(
+        handle.repo_root, handle.base_commit, authorized_delete_paths, scopes, excluded)
+    committed_out_of_scope = sorted({p.as_posix() for _, p in changes
+                                    if not _is_contained(p, scopes) or _is_contained(p, excluded)})
+    if committed_out_of_scope:
+        raise WorktreeIsolationError(
+            "worker committed paths outside the integration scope or bridge-owned outputs: "
+            + ", ".join(committed_out_of_scope))
+    unauthorized_deletes = sorted({p.as_posix() for status, p in changes
+                                  if status == "D" and p not in authorized_deletes})
+    if unauthorized_deletes:
+        raise _unauthorized_delete_error(unauthorized_deletes, authorized_deletes)
+    path = trusted_path or os.environ.get("TRUSTED_HOST_PATH") or os.environ.get("PATH", os.defpath)
+    if not changes and not residue:
+        tree = _checked_git(["rev-parse", f"{head}^{{tree}}"], cwd=handle.repo_root)
+        return ValidatedWorkerCandidate(head, tree, head, (), None, None, path, "no-code-changes")
+    with tempfile.TemporaryDirectory(prefix="board-residue-index-") as directory:
+        index = Path(directory) / "index"
+        _checked_git(["read-tree", head], cwd=root, index_file=index)
+        for name in residue:
+            args = (["add", "-A", "--", f":(literal){name}"] if os.path.lexists(root / name)
+                    else ["update-index", "--force-remove", "--", name])
+            _checked_git(args, cwd=root, index_file=index)
+        tree = _checked_git(["write-tree"], cwd=root, index_file=index)
+    # Check the captured residue tree too, before resolving or executing any hook.
+    residue_changes = _changed_records(handle.repo_root, head, tree)
+    unauthorized_deletes = sorted({p.as_posix() for status, p in residue_changes
+                                  if status == "D" and p not in authorized_deletes})
+    if unauthorized_deletes:
+        raise _unauthorized_delete_error(unauthorized_deletes, authorized_deletes)
+    _reject_non_regular_committed_modes(
+        handle.repo_root, tree, tuple(p for status, p in residue_changes if status != "D"))
+    hook = _integration_hook(handle, trusted_hook)
+    if hook is not None and not handle.external_work_repo:
+        resolved = str(interpreter) if interpreter else shutil.which("python3", path=path)
+        if not resolved:
+            raise WorktreeIsolationError("trusted hook requires Python 3.11+ on trusted host PATH")
+        interpreter = Path(resolved)
+        try:
+            probe = subprocess.run([str(interpreter), "-I", "-c",
+                                    "import sys, tomllib; raise SystemExit(sys.version_info < (3, 11))"],
+                                   capture_output=True, text=True, timeout=10,
+                                   env={"PATH": path, "LC_ALL": "C"})
+        except (OSError, subprocess.SubprocessError) as exc:
+            raise WorktreeIsolationError(f"trusted hook interpreter unavailable: {exc}") from exc
+        if probe.returncode:
+            raise WorktreeIsolationError("trusted hook requires Python 3.11+ with tomllib: " + probe.stderr.strip())
+    validation = ("external-hook-deferred" if hook else "external-no-hook") if handle.external_work_repo else "squad-snapshot"
+    # Intermediate commits remain in landed history: scan their blobs for
+    # leaks, while full repository validators apply only to the final tree.
+    commits = _checked_git(["rev-list", "--reverse", f"{handle.base_commit}..{head}"], cwd=handle.repo_root)
+    validated = {tree}
+    for prior_commit in commits.splitlines():
+        committed_tree = _checked_git(["rev-parse", f"{prior_commit}^{{tree}}"], cwd=handle.repo_root)
+        if committed_tree not in validated:
+            _validate_candidate_tree(handle, committed_tree, hook, interpreter, path, leaks_only=True)
+            validated.add(committed_tree)
+    _validate_candidate_tree(handle, tree, hook, interpreter, path)
+    head_tree = _checked_git(["rev-parse", f"{head}^{{tree}}"], cwd=handle.repo_root)
+    commit = head if tree == head_tree else _checked_git(
+        ["commit-tree", tree, "-p", head, "-m",
+         f"board: worker residue for {handle.task_id} ({handle.attempt_id})"], cwd=handle.repo_root)
+    return ValidatedWorkerCandidate(head, tree, commit, residue, hook, interpreter, path, validation)
+
+
 def commit_worker_residue(
     handle: WorktreeHandle,
     write_scope: Sequence[str],
     *,
     exclude_paths: Sequence[str] = (),
+    candidate: ValidatedWorkerCandidate | None = None,
 ) -> tuple[str, ...]:
     """Commit the in-scope working-tree residue a worker left behind.
 
@@ -1704,6 +1983,8 @@ def commit_worker_residue(
     ``exclude_paths``, are deliberately left dirty and contained.
 
     Returns the repo-relative paths that were committed, in sorted order.
+    The supervisor must check terminal status and call
+    ``validate_worker_residue`` before this low-level commit operation.
     """
 
     _validate_task_attempt(handle.task_id, handle.attempt_id)
@@ -1729,6 +2010,13 @@ def commit_worker_residue(
         or current_worker_branch.stdout.strip() != handle.branch
     ):
         raise WorktreeIsolationError("worker worktree is detached or changed branches")
+
+    if candidate is not None:
+        # Compare-and-swap the captured head; never restage worker bytes here.
+        _checked_git(["update-ref", f"refs/heads/{handle.branch}",
+                      candidate.commit, candidate.worker_head], cwd=repo_root)
+        _checked_git(["read-tree", "--reset", candidate.tree], cwd=worktree_root)
+        return candidate.residue
 
     in_scope = tuple(
         (code, path.as_posix())
@@ -1796,11 +2084,13 @@ def integrate_worktree_commits(
     exclude_paths: Sequence[str] = (),
     authorized_delete_paths: Sequence[str] = (),
     target_branch: str | None = None,
+    candidate: ValidatedWorkerCandidate | None = None,
 ) -> WorktreeIntegrationReceipt:
     """Atomically integrate only committed, declared-scope worker changes.
 
-    The worktree base is immutable. Under one controller lock, the entire
-    declared scope on ``target_branch`` must still match that base. Every
+    The worktree base is immutable. Prepare and validate outside the controller
+    lock, then recheck target identity under that lock. The entire scope on
+    ``target_branch`` must still match that base. Every
     committed worker change must be in scope, distinct from bridge-owned
     outputs, and either non-deleting or named in ``authorized_delete_paths``;
     out-of-scope dirty probes are retained only in the isolated worktree and
@@ -1870,6 +2160,8 @@ def integrate_worktree_commits(
     ):
         raise WorktreeIsolationError("worker worktree is detached or changed branches")
     worker_head = _resolve_commit(worktree_root, "HEAD")
+    if candidate is not None and worker_head != candidate.commit:
+        raise WorktreeIsolationError("worker HEAD changed after trusted validation")
     ancestry = _run_git(
         ["merge-base", "--is-ancestor", handle.base_commit, worker_head],
         cwd=repo_root,
@@ -1877,22 +2169,118 @@ def integrate_worktree_commits(
     if ancestry.returncode != 0:
         raise WorktreeIsolationError("worker history does not descend from its bound base")
 
-    common = git_common_dir(repo_root)
-    lock_path = common / "board-integration.lock"
-    lock_descriptor = os.open(lock_path, os.O_RDWR | os.O_CREAT, 0o600)
-    try:
-        fcntl.flock(lock_descriptor, fcntl.LOCK_EX)
-        current_target_branch = _run_git(
-            ["symbolic-ref", "--quiet", "--short", "HEAD"],
-            cwd=repo_root,
+    current_target_branch = _run_git(
+        ["symbolic-ref", "--quiet", "--short", "HEAD"],
+        cwd=repo_root,
+    )
+    if (
+        current_target_branch.returncode != 0
+        or current_target_branch.stdout.strip() != target_branch
+    ):
+        raise WorktreeIsolationError(
+            f"integration repo is not checked out on {target_branch}"
         )
-        if (
-            current_target_branch.returncode != 0
-            or current_target_branch.stdout.strip() != target_branch
-        ):
-            raise WorktreeIsolationError(
-                f"integration repo is not checked out on {target_branch}"
+    changed = _audited_worker_changes(
+        repo_root,
+        handle.base_commit,
+        worker_head,
+    )
+
+    def selected(path: PurePosixPath) -> bool:
+        return _is_contained(path, scopes) and not _is_contained(path, excluded)
+
+    def authorized_delete(path: PurePosixPath) -> bool:
+        return path in authorized_deletes
+
+    committed_out_of_scope = tuple(
+        sorted(path.as_posix() for _status, path in changed if not selected(path))
+    )
+    if committed_out_of_scope:
+        raise WorktreeIsolationError(
+            "worker committed paths outside the integration scope or bridge-owned "
+            "outputs: " + ", ".join(committed_out_of_scope)
+        )
+    deleted_paths = tuple(
+        sorted(path.as_posix() for status, path in changed if status == "D")
+    )
+    unauthorized_deletes = tuple(
+        sorted(
+            path.as_posix()
+            for status, path in changed
+            if status == "D" and not authorized_delete(path)
+        )
+    )
+    if unauthorized_deletes:
+        raise _unauthorized_delete_error(unauthorized_deletes, authorized_deletes)
+    integrated_paths = tuple(
+        sorted({path.as_posix() for _status, path in changed})
+    )
+    worker_residue = _uncommitted_paths(worktree_root)
+    # CBSE gate: refuse worker-planted auto-exec/config artifacts (symlinks,
+    # embedded .git/hooks, venv/IDE/host config) across every committed and
+    # uncommitted change before any branch mutation. This runs before the
+    # ff-merge so a config-based sandbox-escape plant is surfaced to the
+    # operator, never integrated onto the target branch, and never left
+    # dormant in a worktree a later host git op might trip over.
+    scan_cbse_artifacts(
+        worktree_root,
+        tuple(path for _status, path in changed) + tuple(worker_residue),
+        scopes,
+        excluded,
+    )
+    # Typechange gate, from committed state. A `T` record (for example
+    # file->symlink) is not a `D`, so the deletion gate never saw it, and
+    # the CBSE scan above reads the worktree rather than the tree that is
+    # about to be integrated.
+    #
+    # The AUTHORITATIVE application of this gate is inside
+    # `_audited_worker_changes`, at every commit in the shipped history.
+    # This head-tree pass is defense in depth, and is honestly redundant
+    # TODAY: given a history proven linear and proven to terminate at
+    # `worker_head`, any non-regular mode at head was necessarily recorded
+    # as a non-`D` change in the commit that introduced it, so the walk
+    # already refused it. Removing it breaks no test. It is kept because it
+    # costs one `ls-tree` and it stops being redundant the moment either of
+    # those two proofs is weakened -- which is exactly how the head-only
+    # check became a bypass in the first place.
+    _reject_non_regular_committed_modes(
+        repo_root,
+        worker_head,
+        tuple(
+            sorted(
+                {path for status, path in changed if status != "D"},
+                key=lambda item: item.as_posix(),
             )
+        ),
+    )
+    invalid_residue = tuple(
+        sorted(
+            path.as_posix()
+            for path in worker_residue
+            if _is_contained(path, scopes)
+            and not _is_contained(path, excluded)
+        )
+    )
+    if invalid_residue:
+        raise WorktreeIsolationError(
+            "worker left uncommitted in-scope code changes: "
+            + ", ".join(invalid_residue)
+        )
+    uncommitted_excluded_paths = tuple(
+        sorted(
+            path.as_posix()
+            for path in worker_residue
+            if not _is_contained(path, scopes)
+            and not _is_contained(path, excluded)
+        )
+    )
+    scope_strings = [path.as_posix() for path in scopes]
+    literal_scopes = [f":(literal){path}" for path in scope_strings]
+    literal_integrated = [f":(literal){path}" for path in integrated_paths]
+    lock_path = git_common_dir(repo_root) / "board-integration.lock"
+    # Worker history and residue are immutable inputs already audited above.
+    # Retry only target advancement; validation always runs outside the lock.
+    for attempts in range(1, 4):
         target_before = _resolve_commit(repo_root, f"refs/heads/{target_branch}")
         target_ancestry = _run_git(
             ["merge-base", "--is-ancestor", handle.base_commit, target_before],
@@ -1902,8 +2290,6 @@ def integrate_worktree_commits(
             raise WorktreeIsolationError(
                 "target branch no longer descends from the worktree base"
             )
-        scope_strings = [path.as_posix() for path in scopes]
-        literal_scopes = [f":(literal){path}" for path in scope_strings]
         # With no pathspec Git would compare the entire tree, not an empty scope.
         if scopes:
             scope_drift = _run_git(
@@ -1925,100 +2311,6 @@ def integrate_worktree_commits(
                 raise WorktreeIsolationError(
                     "target write scope changed since the worker worktree was created"
                 )
-        changed = _audited_worker_changes(
-            repo_root,
-            handle.base_commit,
-            worker_head,
-        )
-
-        def selected(path: PurePosixPath) -> bool:
-            return _is_contained(path, scopes) and not _is_contained(path, excluded)
-
-        def authorized_delete(path: PurePosixPath) -> bool:
-            return path in authorized_deletes
-
-        committed_out_of_scope = tuple(
-            sorted(path.as_posix() for _status, path in changed if not selected(path))
-        )
-        if committed_out_of_scope:
-            raise WorktreeIsolationError(
-                "worker committed paths outside the integration scope or bridge-owned "
-                "outputs: " + ", ".join(committed_out_of_scope)
-            )
-        deleted_paths = tuple(
-            sorted(path.as_posix() for status, path in changed if status == "D")
-        )
-        unauthorized_deletes = tuple(
-            sorted(
-                path.as_posix()
-                for status, path in changed
-                if status == "D" and not authorized_delete(path)
-            )
-        )
-        if unauthorized_deletes:
-            raise _unauthorized_delete_error(unauthorized_deletes, authorized_deletes)
-        integrated_paths = tuple(
-            sorted({path.as_posix() for _status, path in changed})
-        )
-        worker_residue = _uncommitted_paths(worktree_root)
-        # CBSE gate: refuse worker-planted auto-exec/config artifacts (symlinks,
-        # embedded .git/hooks, venv/IDE/host config) across every committed and
-        # uncommitted change before any branch mutation. This runs before the
-        # ff-merge so a config-based sandbox-escape plant is surfaced to the
-        # operator, never integrated onto the target branch, and never left
-        # dormant in a worktree a later host git op might trip over.
-        scan_cbse_artifacts(
-            worktree_root,
-            tuple(path for _status, path in changed) + tuple(worker_residue),
-            scopes,
-            excluded,
-        )
-        # Typechange gate, from committed state. A `T` record (for example
-        # file->symlink) is not a `D`, so the deletion gate never saw it, and
-        # the CBSE scan above reads the worktree rather than the tree that is
-        # about to be integrated.
-        #
-        # The AUTHORITATIVE application of this gate is inside
-        # `_audited_worker_changes`, at every commit in the shipped history.
-        # This head-tree pass is defense in depth, and is honestly redundant
-        # TODAY: given a history proven linear and proven to terminate at
-        # `worker_head`, any non-regular mode at head was necessarily recorded
-        # as a non-`D` change in the commit that introduced it, so the walk
-        # already refused it. Removing it breaks no test. It is kept because it
-        # costs one `ls-tree` and it stops being redundant the moment either of
-        # those two proofs is weakened -- which is exactly how the head-only
-        # check became a bypass in the first place.
-        _reject_non_regular_committed_modes(
-            repo_root,
-            worker_head,
-            tuple(
-                sorted(
-                    {path for status, path in changed if status != "D"},
-                    key=lambda item: item.as_posix(),
-                )
-            ),
-        )
-        invalid_residue = tuple(
-            sorted(
-                path.as_posix()
-                for path in worker_residue
-                if _is_contained(path, scopes)
-                and not _is_contained(path, excluded)
-            )
-        )
-        if invalid_residue:
-            raise WorktreeIsolationError(
-                "worker left uncommitted in-scope code changes: "
-                + ", ".join(invalid_residue)
-            )
-        uncommitted_excluded_paths = tuple(
-            sorted(
-                path.as_posix()
-                for path in worker_residue
-                if not _is_contained(path, scopes)
-                and not _is_contained(path, excluded)
-            )
-        )
         if not integrated_paths:
             return WorktreeIntegrationReceipt(
                 status="no-committed-in-scope-changes",
@@ -2037,7 +2329,6 @@ def integrate_worktree_commits(
                 target_branch=target_branch,
             )
 
-        literal_integrated = [f":(literal){path}" for path in integrated_paths]
         dirty_integrated = _run_git(
             [
                 "status",
@@ -2129,58 +2420,80 @@ def integrate_worktree_commits(
                     + ", ".join(unexpected)
                 )
 
-        if _resolve_commit(repo_root, f"refs/heads/{target_branch}") != target_before:
-            raise WorktreeIsolationError(
-                "target branch advanced concurrently before atomic integration"
-            )
-        if handle.external_work_repo:
-            # Create only this task ref, atomically refusing an existing branch.
-            # Never check it out or move the operator's base branch/index.
-            merged = _run_git(
-                ["update-ref", f"refs/heads/{landing_branch}", integration_commit,
-                 "0" * len(integration_commit)],
-                cwd=repo_root,
-            )
-        else:
-            merged = _run_git(
-                ["merge", "--ff-only", "--no-edit", integration_commit],
-                cwd=repo_root,
-                timeout=30,
-            )
-        if merged.returncode != 0:
-            target_after_failure = _resolve_commit(
-                repo_root, f"refs/heads/{target_branch}"
-            )
-            if target_after_failure != target_before:
+        if candidate is not None and not exact_worker_history:
+            # Concurrent unrelated target changes also belong to the final tree.
+            tree = _checked_git(["rev-parse", f"{integration_commit}^{{tree}}"], cwd=repo_root)
+            _validate_candidate_tree(handle, tree, candidate.hook,
+                                     candidate.interpreter, candidate.trusted_path)
+
+        lock_descriptor = os.open(lock_path, os.O_RDWR | os.O_CREAT, 0o600)
+        try:
+            fcntl.flock(lock_descriptor, fcntl.LOCK_EX)
+            if _checked_git(["symbolic-ref", "--short", "HEAD"], cwd=repo_root) != target_branch:
+                raise WorktreeIsolationError("integration target checkout changed before atomic integration")
+            if _resolve_commit(worktree_root, "HEAD") != worker_head:
+                raise WorktreeIsolationError("worker HEAD changed before atomic integration")
+            dirty = _run_git(["status", "--porcelain=v1", "--untracked-files=all", "--",
+                              *literal_integrated], cwd=repo_root)
+            if dirty.returncode or dirty.stdout:
+                raise WorktreeIsolationError("target worktree changed before atomic integration")
+            if _resolve_commit(repo_root, f"refs/heads/{target_branch}") != target_before:
+                if attempts < 3:
+                    # The finally block releases the lock before rebuilding and
+                    # validating against the new target. All other refusals are final.
+                    continue
                 raise WorktreeIsolationError(
-                    "integration failed after the target branch moved concurrently"
+                    "target branch advanced concurrently before atomic integration (attempts=3)"
                 )
-            raise WorktreeIsolationError(
-                f"atomic integration failed before the branch commit point: "
-                f"{merged.stderr.strip()}"
+            if handle.external_work_repo:
+                # Create only this task ref, atomically refusing an existing branch.
+                # Never check it out or move the operator's base branch/index.
+                merged = _run_git(
+                    ["update-ref", f"refs/heads/{landing_branch}", integration_commit,
+                     "0" * len(integration_commit)],
+                    cwd=repo_root,
+                )
+            else:
+                merged = _run_git(
+                    ["merge", "--ff-only", "--no-edit", integration_commit],
+                    cwd=repo_root,
+                    timeout=30,
+                )
+            if merged.returncode != 0:
+                target_after_failure = _resolve_commit(
+                    repo_root, f"refs/heads/{target_branch}"
+                )
+                if target_after_failure != target_before:
+                    raise WorktreeIsolationError(
+                        "integration failed after the target branch moved concurrently"
+                    )
+                raise WorktreeIsolationError(
+                    f"atomic integration failed before the branch commit point: "
+                    f"{merged.stderr.strip()}"
+                )
+            target_after = _resolve_commit(repo_root, f"refs/heads/{landing_branch}")
+            if target_after != integration_commit:
+                raise WorktreeIsolationError("integration did not land the expected commit")
+            return WorktreeIntegrationReceipt(
+                status="integrated",
+                task_id=handle.task_id,
+                base_commit=handle.base_commit,
+                worker_head=worker_head,
+                target_before=target_before,
+                target_after=target_after,
+                integration_commit=integration_commit,
+                exact_worker_history=exact_worker_history,
+                integrated_paths=integrated_paths,
+                excluded_paths=(),
+                uncommitted_excluded_paths=uncommitted_excluded_paths,
+                deleted_paths=deleted_paths,
+                authorized_delete_paths=authorized_delete_strings,
+                target_branch=landing_branch,
+                attempts=attempts,
             )
-        target_after = _resolve_commit(repo_root, f"refs/heads/{landing_branch}")
-        if target_after != integration_commit:
-            raise WorktreeIsolationError("integration did not land the expected commit")
-        return WorktreeIntegrationReceipt(
-            status="integrated",
-            task_id=handle.task_id,
-            base_commit=handle.base_commit,
-            worker_head=worker_head,
-            target_before=target_before,
-            target_after=target_after,
-            integration_commit=integration_commit,
-            exact_worker_history=exact_worker_history,
-            integrated_paths=integrated_paths,
-            excluded_paths=(),
-            uncommitted_excluded_paths=uncommitted_excluded_paths,
-            deleted_paths=deleted_paths,
-            authorized_delete_paths=authorized_delete_strings,
-            target_branch=landing_branch,
-        )
-    finally:
-        fcntl.flock(lock_descriptor, fcntl.LOCK_UN)
-        os.close(lock_descriptor)
+        finally:
+            fcntl.flock(lock_descriptor, fcntl.LOCK_UN)
+            os.close(lock_descriptor)
 
 
 def linked_worktree_commit_write_dirs(
@@ -2198,13 +2511,7 @@ def linked_worktree_commit_write_dirs(
     repo_root = _canonical_existing(handle.repo_root, "repo root")
     worktree_root = worktree_write_scope_paths(handle.worktree_root, repo_root)[0]
     common = git_common_dir(repo_root)
-    git_dir_result = _run_git(["rev-parse", "--git-dir"], cwd=worktree_root)
-    raw_git_dir = Path(git_dir_result.stdout.strip())
-    if git_dir_result.returncode != 0 or not str(raw_git_dir):
-        raise WorktreeIsolationError("cannot resolve linked worktree git directory")
-    if not raw_git_dir.is_absolute():
-        raw_git_dir = worktree_root / raw_git_dir
-    linked_git_dir = Path(os.path.realpath(raw_git_dir))
+    linked_git_dir = _GIT_BINDINGS[worktree_root][0]
     expected_parent = common / "worktrees"
     if (
         linked_git_dir.parent != expected_parent

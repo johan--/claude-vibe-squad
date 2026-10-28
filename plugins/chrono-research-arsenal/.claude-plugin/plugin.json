@@ -1,19 +1,14 @@
 {
   "name": "chrono-research-arsenal",
   "version": "0.2.1",
-  "description": "External research arsenal served by the local chrono-research-arsenal server: arxiv_search, xai_search, perplexity_search, and the credential-gated firecrawl_scrape / firecrawl_crawl / firecrawl_parse. Used by all chrono roles needing external data (research, scout, scraping, etc).",
+  "description": "Academic research through arxiv_search, with an OpenAlex fallback when arXiv is throttled.",
   "license": "AGPL-3.0-or-later",
   "mcpServers": {
     "chrono-research-arsenal": {
       "command": "${CLAUDE_PLUGIN_ROOT}/../../.venv/bin/python",
       "args": [
         "${CLAUDE_PLUGIN_ROOT}/mcp_server.py"
-      ],
-      "env": {
-        "XAI_API_KEY": "${XAI_API_KEY}",
-        "PERPLEXITY_API_KEY": "${PERPLEXITY_API_KEY}",
-        "FIRECRAWL_API_KEY": "${FIRECRAWL_API_KEY}"
-      }
+      ]
     }
   }
 }

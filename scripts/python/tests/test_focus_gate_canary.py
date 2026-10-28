@@ -20,7 +20,7 @@ PYTHON_DIR = ROOT / "scripts" / "python"
 if str(PYTHON_DIR) not in sys.path:
     sys.path.insert(0, str(PYTHON_DIR))
 
-from chrono_state import focus_gate, workboard  # noqa: E402
+from chrono_state import focus_gate, thread_charters, workboard  # noqa: E402
 
 
 HOOK = ROOT / "bin" / "chrono-focus-gate.sh"
@@ -175,8 +175,18 @@ class FocusGateCanaryTests(unittest.TestCase):
         }
         result = self._run_entrypoint(ledger, payload)
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual(result.stderr, "")
         rendered = json.loads(result.stdout) if result.stdout else None
+        if (event == "UserPromptSubmit" and not OUTPUT_STANDARD.is_file()
+                and ledger in (self.valid_ledger, self.idle_ledger, self.waiting_ledger)):
+            # Public clones keep the focus anchor and explicitly warn that the
+            # optional private reminder is unavailable. Continue testing the anchor.
+            self.assertIsNotNone(rendered)
+            warning = rendered["systemMessage"]
+            self.assertIn("TURN-BOUNDARY FOCUS ANCHOR", warning)
+            self.assertIn("could not read the operator output reminder", warning)
+            self.assertEqual(result.stderr, warning + "\n")
+        else:
+            self.assertEqual(result.stderr, "")
         return result, rendered
 
     def _assert_allowed(self, rendered: dict[str, object] | None) -> None:
@@ -303,6 +313,7 @@ class FocusGateCanaryTests(unittest.TestCase):
             specific["additionalContext"],
         )
 
+    @unittest.skipUnless(OUTPUT_STANDARD.exists(), "private input is not published")
     def test_valid_prompt_includes_operator_output_reminder(self) -> None:
         _, rendered = self._invoke(self.valid_ledger, "UserPromptSubmit")
         self._assert_allowed(rendered)
@@ -329,6 +340,7 @@ class FocusGateCanaryTests(unittest.TestCase):
             + " ".join(sentences),
         )
 
+    @unittest.skipUnless(OUTPUT_STANDARD.exists(), "private input is not published")
     def test_idle_and_waiting_prompts_include_the_same_reminder(self) -> None:
         _, active = self._invoke(self.valid_ledger, "UserPromptSubmit")
         active = self._required_output(active)
@@ -401,6 +413,7 @@ class FocusGateCanaryTests(unittest.TestCase):
                             rendered["systemMessage"],
                         )
 
+    @unittest.skipUnless(OUTPUT_STANDARD.exists(), "private input is not published")
     def test_broken_standard_marker_preserves_complete_focus_anchor(self) -> None:
         canonical = OUTPUT_STANDARD.read_text(encoding="utf-8")
         standard = self.root / "copied-output-standard.md"
@@ -411,9 +424,12 @@ class FocusGateCanaryTests(unittest.TestCase):
             "ACTIVE ITEM: exercise the real focus-gate entrypoint",
             "WHY: the deny path needs a permanent regression canary",
             "NEXT ACTION: run every canary verdict",
+            "NEXT ACTION SOURCE: workboard (active charters: 0, need exactly 1)",
             "Before any dispatch or mutation, classify the incoming message "
-            "as FOLD / QUEUE / DROP relative to this active thread. Do not "
-            "dispatch or mutate until that classification is explicit.",
+            "as FOLD / QUEUE / DROP relative to this active thread.",
+            "Before any packet or plan edit that adds a mechanism (a cap, key, "
+            "approval, claim step, schedule, or safety layer), quote the operator "
+            "sentence that asked for it in your message; if none exists, do not add it.",
         )
         for marker in ("start", "end"):
             with self.subTest(marker=marker):
@@ -493,6 +509,107 @@ class FocusGateCanaryTests(unittest.TestCase):
                         self.assertFalse(decision.fail_open)
                         self.assertNotIn("OPERATOR OUTPUT", decision.message)
             reader.assert_not_called()
+
+    def _charter_dir(self, ledger: Path) -> Path:
+        return ledger.parent / "thread-charters" / "active"
+
+    def _write_charter(self, ledger: Path, name: str, loops: str) -> Path:
+        directory = self._charter_dir(ledger)
+        directory.mkdir(parents=True, exist_ok=True)
+        path = directory / f"{name}.md"
+        path.write_text(
+            f"## THE ASK\nProve the anchor.\n\n## OPEN LOOPS\n{loops}\n\n"
+            "## DONE-WHEN\n- [ ] anchor equals the newest receipt\n",
+            encoding="utf-8",
+        )
+        return path
+
+    def _anchor_lines(self, ledger: Path) -> dict[str, str]:
+        _, rendered = self._invoke(ledger, "UserPromptSubmit")
+        rendered = self._required_output(rendered)
+        context = rendered["hookSpecificOutput"]["additionalContext"]
+        return {
+            line.partition(": ")[0]: line.partition(": ")[2]
+            for line in context.splitlines()
+            if line.startswith("NEXT ACTION")
+        }
+
+    def test_next_action_is_the_active_charters_newest_receipt(self) -> None:
+        # Negative control first: without a charter the workboard pointer shows.
+        lines = self._anchor_lines(self.valid_ledger)
+        self.assertEqual(lines["NEXT ACTION"], "run every canary verdict")
+        self.assertEqual(
+            lines["NEXT ACTION SOURCE"], "workboard (active charters: 0, need exactly 1)"
+        )
+
+        charter = self._write_charter(
+            self.valid_ledger,
+            "anchor-thread",
+            "- 2026-10-27T10:00:00Z | FOLD | first — why: w; resume: read the audit\n"
+            "- 2026-10-27T11:00:00Z | QUEUE Q-001 | later — why: separate; resume: write compact()",
+        )
+        lines = self._anchor_lines(self.valid_ledger)
+        self.assertEqual(lines["NEXT ACTION"], "write compact()")
+        self.assertEqual(
+            lines["NEXT ACTION SOURCE"],
+            "charter anchor-thread, receipt 2026-10-27T11:00:00Z",
+        )
+        _, rendered = self._invoke(self.valid_ledger, "UserPromptSubmit")
+        context = self._required_output(rendered)["hookSpecificOutput"]["additionalContext"]
+        self.assertNotIn("run every canary verdict", context)
+        self.assertIn("ACTIVE ITEM: exercise the real focus-gate entrypoint", context)
+
+        # The next receipt moves the anchor on the next prompt, through the real
+        # writer: no workboard event is needed for the resume point to change.
+        receipt = thread_charters.append_receipt(
+            charter, "FOLD resolves Q-001", "done — why: landed; resume: run the canary suite"
+        )
+        lines = self._anchor_lines(self.valid_ledger)
+        self.assertEqual(lines["NEXT ACTION"], "run the canary suite")
+        self.assertEqual(
+            lines["NEXT ACTION SOURCE"], f"charter anchor-thread, receipt {receipt.stamp}"
+        )
+
+    def test_ambiguous_or_receiptless_charters_fall_back_to_the_pointer(self) -> None:
+        self._write_charter(self.valid_ledger, "one", "- (none)")
+        lines = self._anchor_lines(self.valid_ledger)
+        self.assertEqual(lines["NEXT ACTION"], "run every canary verdict")
+        self.assertEqual(
+            lines["NEXT ACTION SOURCE"], "workboard (charter one has no parseable receipt)"
+        )
+        self._write_charter(
+            self.valid_ledger, "two",
+            "- 2026-10-27T10:00:00Z | FOLD | x — why: w; resume: second thread point",
+        )
+        lines = self._anchor_lines(self.valid_ledger)
+        self.assertEqual(lines["NEXT ACTION"], "run every canary verdict")
+        self.assertEqual(
+            lines["NEXT ACTION SOURCE"], "workboard (active charters: 2, need exactly 1)"
+        )
+        # A malformed newest line is skipped in favour of the newest parseable one.
+        (self._charter_dir(self.valid_ledger) / "one.md").unlink()
+        charter = self._charter_dir(self.valid_ledger) / "two.md"
+        with charter.open("a", encoding="utf-8") as handle:
+            handle.write("")
+        text = charter.read_text(encoding="utf-8").replace(
+            "second thread point", "second thread point\n- malformed receipt line"
+        )
+        charter.write_text(text, encoding="utf-8")
+        lines = self._anchor_lines(self.valid_ledger)
+        self.assertEqual(lines["NEXT ACTION"], "second thread point")
+
+    @mock.patch.object(focus_gate, "_operator_output_reminder", return_value="fixture reminder")
+    def test_charter_rail_failure_degrades_to_the_pointer_not_a_warning(self, _reminder) -> None:
+        with mock.patch.object(
+            thread_charters, "load_active_charters", side_effect=OSError("rail down")
+        ):
+            decision = focus_gate.decide(
+                focus_gate.USER_PROMPT_SUBMIT, ledger_path=self.valid_ledger
+            )
+        self.assertTrue(decision.allow)
+        self.assertFalse(decision.fail_open)
+        self.assertIn("NEXT ACTION: run every canary verdict", decision.message)
+        self.assertIn("active charter rail unreadable: rail down", decision.message)
 
     def test_declared_idle_mutation_is_allowed(self) -> None:
         _, rendered = self._invoke(

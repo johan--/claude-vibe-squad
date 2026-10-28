@@ -19,7 +19,7 @@ nothing to show. Verify the numbers against the live preflight, not from memory.
   against `assembled_prompt_limit` from the preflight; shorten the body if it refuses.
 
 ## Scope to one wall
-- The wall comes from `timeout_budget_for_mode()`: a flat 2700s for `project`, 3600s for `bounty`.
+- The wall comes from `timeout_budget_for_mode()`: a flat 5400s for `project`/`modeless`, 7200s for `bounty`.
   It is a backstop, not a per-packet dial you raise.
 - A deliverable that cannot finish in one wall is two packets, not one. Sequence them; the second
   reads the first's committed output (an uncommitted edit is invisible to the next dispatch).

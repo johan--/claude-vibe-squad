@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 import re
 import runpy
@@ -60,6 +61,42 @@ class PreCommitInstallerTests(unittest.TestCase):
         self.env = os.environ.copy()
         self.env["GIT_CONFIG_GLOBAL"] = str(self.global_config)
         self.env["GIT_CONFIG_NOSYSTEM"] = "1"
+        # These two declared Claude skills are installed by host plugins, not
+        # tracked in the repository. Model their presence in a disposable HOME
+        # so the real live-capability validator never borrows the operator's
+        # plugin cache (and still runs when the guard strips the CI flag).
+        self.home = Path(self.temporary.name) / "home"
+        self.env["HOME"] = str(self.home)
+        for skill in ("figma-code-connect", "frontend-design"):
+            manifest = self.home / ".claude/plugins/cache" / skill / "SKILL.md"
+            manifest.parent.mkdir(parents=True)
+            manifest.write_text(f"---\nname: {skill}\n---\nInstaller fixture only.\n")
+        # The live validator also checks declared host-PATH capabilities. Give
+        # it executable presence fixtures, not the developer's installed tools.
+        commands = self.home / ".local/bin"
+        commands.mkdir(parents=True)
+        # Even os.defpath exposes host tools such as pip/perf on Linux. Link
+        # only the real commands used by Git, the installer and doctor; all
+        # other declared host-PATH tools below are presence-only fixtures.
+        self.env["PATH"] = str(commands)
+        for name in ("bash", "cat", "chmod", "dirname", "git", "grep", "install",
+                     "mkdir", "mktemp", "mv", "readlink", "rm", "sh"):
+            executable = shutil.which(name)
+            self.assertIsNotNone(executable, f"required installer test command is missing: {name}")
+            (commands / name).symlink_to(executable)
+        (commands / "python3").symlink_to(sys.executable)
+        # Presence-only fixtures must never execute: this test exercises Git
+        # hooks, not providers. Keep the marker check active on failure too.
+        marker = self.home / "unexpected-tool-execution"
+        self.env["INSTALLER_TEST_TOOL_MARKER"] = str(marker)
+        self.addCleanup(lambda: self.assertFalse(marker.exists(), "a capability fixture was executed"))
+        source = json.loads((REPO_ROOT / "model-lanes/specialist-lane-capabilities.v1.json").read_text())
+        for name in sorted({ref["id"] for entry in source["entries"] for ref in entry["tools"]
+                            if ref["availability"] == "available" and ref["evidence"] == "host-PATH"}):
+            if shutil.which(name, path=self.env["PATH"]) is None:
+                stub = commands / name
+                stub.write_text('#!/bin/sh\n: > "$INSTALLER_TEST_TOOL_MARKER"\nexit 97\n')
+                stub.chmod(0o755)
         self._git("init", "-q")
         self._git("config", "user.name", "Hook Test")
         self._git("config", "user.email", "hook-test@example.invalid")
@@ -143,13 +180,14 @@ class PreCommitInstallerTests(unittest.TestCase):
         self._git("-c", "core.hooksPath=/dev/null", "commit", "-qm", "baseline")
 
     def _git(self, *args: str) -> subprocess.CompletedProcess[str]:
-        return subprocess.run(
+        result = subprocess.run(
             ["git", "-C", str(self.root), *args],
             capture_output=True,
             text=True,
-            check=True,
             env=self.env,
         )
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        return result
 
     def _install(self) -> subprocess.CompletedProcess[str]:
         return subprocess.run(
@@ -178,6 +216,41 @@ class PreCommitInstallerTests(unittest.TestCase):
             for lane in self.capability_homes["LANES"]:
                 with self.subTest(lane=lane):
                     self.assertEqual(discover(self.root, lane), discover(REPO_ROOT, lane))
+
+    def test_fixture_path_matches_declared_host_inventory(self) -> None:
+        commands = self.home / ".local/bin"
+        self.assertEqual(self.env["PATH"].split(os.pathsep), [str(commands)])
+        source = json.loads((REPO_ROOT / "model-lanes/specialist-lane-capabilities.v1.json").read_text())
+        for entry in source["entries"]:
+            for ref in entry["tools"]:
+                with self.subTest(tool=ref["id"], availability=ref["availability"]):
+                    found = shutil.which(ref["id"], path=self.env["PATH"])
+                    if ref["availability"] == "available" and ref["evidence"] == "host-PATH":
+                        self.assertEqual(found, str(commands / ref["id"]))
+                    elif ref["availability"] in {"uninstalled", "platform-unavailable"}:
+                        self.assertIsNone(found)
+
+    def test_installed_guard_refuses_unexpected_host_tools(self) -> None:
+        installed = self._install()
+        self.assertEqual(installed.returncode, 0, installed.stdout + installed.stderr)
+        # Positive control: the real validator must detect the same unexpected
+        # executables that leaked in from the Linux runner's system PATH.
+        for name in ("pip", "perf"):
+            stub = self.home / ".local/bin" / name
+            stub.write_text('#!/bin/sh\n: > "$INSTALLER_TEST_TOOL_MARKER"\nexit 97\n')
+            stub.chmod(0o755)
+        blocked = subprocess.run(
+            ["git", "-C", str(self.root), "commit", "--allow-empty", "-m", "must block"],
+            capture_output=True, text=True, env=self.env,
+        )
+        self.assertEqual(blocked.returncode, 1, blocked.stdout + blocked.stderr)
+        output = blocked.stdout + blocked.stderr
+        for identifier in ("mac-ops:claude:pip", "performance-optimizer:claude:perf",
+                           "performance-optimizer:gpt-codex:perf"):
+            self.assertIn(identifier, output)
+        self.assertIn("marked uninstalled but is now present on PATH", output)
+        self.assertIn("marked platform-unavailable but is present on PATH", output)
+        self.assertIn("live capability validation failed", output)
 
     def test_hostile_tracked_hook_cannot_replace_installed_guard(self) -> None:
         self._git("config", "core.hooksPath", ".githooks")
@@ -220,10 +293,26 @@ class PreCommitInstallerTests(unittest.TestCase):
             ["git", "-C", str(self.root), "commit", "-m", "must block"],
             capture_output=True,
             text=True,
+            env=self.env,
         )
         self.assertEqual(blocked.returncode, 1, blocked.stdout + blocked.stderr)
         self.assertIn("COMMIT BLOCKED", blocked.stderr)
         self.assertFalse(marker.exists())
+
+    def test_installed_guard_refuses_missing_host_skill_fixtures(self) -> None:
+        installed = self._install()
+        self.assertEqual(installed.returncode, 0, installed.stdout + installed.stderr)
+        empty_home = Path(self.temporary.name) / "empty-home"
+        empty_home.mkdir()
+        blocked = subprocess.run(
+            ["git", "-C", str(self.root), "commit", "--allow-empty", "-m", "must block"],
+            capture_output=True, text=True,
+            env={**self.env, "HOME": str(empty_home)},
+        )
+        self.assertEqual(blocked.returncode, 1, blocked.stdout + blocked.stderr)
+        for skill in ("figma-code-connect", "frontend-design"):
+            self.assertIn(f"ui-engineer:claude:{skill}", blocked.stdout + blocked.stderr)
+        self.assertIn("live capability validation failed", blocked.stdout + blocked.stderr)
 
     def test_unrelated_existing_hook_is_not_overwritten(self) -> None:
         hooks_dir = Path(

@@ -144,6 +144,7 @@ class DispatchPreflightTests(unittest.TestCase):
             f"id: {task_id}\n"
             "run_id: V4-PREFLIGHT-TEST\n"
             "to_model: claude\n"
+            "model_override_reason: Isolate owner advisories from runtime routing changes.\n"
             f"specialist: {specialist}\n"
             f"source_namespace: {source_namespace}\n"
             f"compatibility_namespace: {source_namespace}\n"
@@ -911,8 +912,8 @@ class DispatchOverrideTests(unittest.TestCase):
                 self.assertEqual(status, 0, verdict)
                 self.assertEqual(verdict["decision"], "allow")
                 route = next(item for item in verdict["informational"] if item["code"] == "route_resolution")
-                self.assertEqual(route["profile_id"], "claude.opus5.max")
-                self.assertEqual(route["effective_model"], "claude-opus-5")
+                self.assertEqual(route["profile_id"], "claude.opus55.max")
+                self.assertEqual(route["effective_model"], "claude-opus-5-5")
                 self.assertEqual(route["registry_model"], route["effective_model"])
                 fields, _ = preflight.context_builder._parse_task_text(packet)
                 launch_args = preflight.context_builder.trusted_lane_args_for(
@@ -926,7 +927,7 @@ class DispatchOverrideTests(unittest.TestCase):
         shutil.copy2(ROOT / relative, self.repo / relative)
         for tier, profile, model in (
             ("primary", "codex.astra.max", "gpt-6-astra"),
-            ("escalate", "codex.sol.ultra", "gpt-5.6-sol"),
+            ("escalate", "codex.sol.ultra", "gpt-6.1-sol"),
         ):
             with self.subTest(tier=tier):
                 packet = self._reason_packet(None, primary=True).replace(
@@ -952,8 +953,8 @@ class DispatchOverrideTests(unittest.TestCase):
         route = next(item for item in verdict["informational"] if item["code"] == "route_resolution")
         self.assertEqual(route, {
             "code": "route_resolution", "gate": "required",
-            "profile_id": "claude.fable.max", "registry_model": "claude-fable-5",
-            "effective_model": "claude-fable-5", "review_lane": "none",
+            "profile_id": "claude.fable.max", "registry_model": "claude-fable-5-1",
+            "effective_model": "claude-fable-5-1", "review_lane": "none",
             "model_override": True,
         })
 
@@ -1140,7 +1141,7 @@ class DispatchGuardObservabilityTests(unittest.TestCase):
 
     def _capabilities(self) -> subprocess.CompletedProcess[str]:
         start = self.sender.index('validate_task_capabilities() {')
-        end = self.sender.index('\n# ── sub-command:', start)
+        end = self.sender.index('\nPYEOF\n}', start) + len('\nPYEOF\n}')
         return self._run(self.sender[start:end] + '\nvalidate_task_capabilities "$TASK_FILE" gpt-codex')
 
     def test_absent_registry_bootstraps_only_when_nothing_has_dispatched(self) -> None:

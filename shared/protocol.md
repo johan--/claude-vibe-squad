@@ -1,6 +1,6 @@
 # Vibe Squad Protocol
 
-Every dispatch is a markdown file. Scripts validate, route, and deliver; they do not replace markdown instructions. `docs/state-model.md` stages the V4 state boundary; this file remains the live actor and wire protocol.
+Every dispatch is a markdown file. Scripts validate, route, and deliver; they do not replace markdown instructions. `docs/architecture.md` explains the runtime boundary; this file remains the live actor and wire protocol.
 
 ## Task Packet Frontmatter
 
@@ -9,11 +9,11 @@ Every dispatch is a markdown file. Scripts validate, route, and deliver; they do
 id: TASK-YYYY-MM-DD-HHMM-<hash>
 run_id: none
 from: chrono
-to_model: gpt-codex | claude | gemini | kimi | grok
+to_model: gpt-codex | claude | gemini | grok
 specialist: <canonical-specialist>
 source_namespace: coding | security | content | sysmgmt | research | shared
 compatibility_namespace: coding
-review_model: gpt-codex | claude | gemini | kimi | grok | none
+review_model: gpt-codex | claude | gemini | grok | none
 reviews: none | TASK-YYYY-MM-DD-HHMM-<suffix>
 mandatory_review: true | false
 review_triggers: []
@@ -139,7 +139,7 @@ deletion, spending, account changes, or another consequential action; those deci
 ### Held-category authority and logical scopes
 
 The live worker model **denies declared held-category authority at admission rather than asking for consent at
-action time**. `bin/board-supervisor.sh:872-880` requires authenticated `operator_gates` to equal the
+action time**. `bin/board-supervisor.sh` (authenticated authority validation block, `"lane authority must hold every effect category outside worker scope"`) requires authenticated `operator_gates` to equal the
 controller's full `HELD_CATEGORIES` set (`scripts/python/held_action_gate.py:49`) and rejects any overlap between
 that set and the worker's declared `action_scope`. This keeps all held-category tokens outside ordinary
 worker launch authority; `scripts/python/tests/test_golive_integration.py:312-342` is the positive control that
@@ -149,7 +149,7 @@ is no general per-action token check or prompt. Hard Rule 6 remains the policy C
 and routing work.
 
 Two caveats about that admission check, because its shape is easy to overstate. First, `action_scope` has exactly
-one production producer — a hardcoded literal at `scripts/python/dispatch_context_builder.py:1177` — and no
+one production producer — a hardcoded literal in `scripts/python/dispatch_context_builder.py` (launch-authority construction, `"action_scope": ["repo-read", "worktree-write", "role-mcp"]`) — and no
 consumer anywhere reads it to grant a capability; it is type-checked, sealed into the runtime envelope, and
 otherwise inert. The overlap check therefore catches a controller-side bug that began emitting a held token; it is
 not a barrier an adversary is pushing against. Second, the paragraph above deliberately states **no cardinal
@@ -178,7 +178,7 @@ On the maintainer installation, the local Git remote named `public` has `pushurl
 ordinary `git push public ...` from this checkout, but it is local Git configuration outside the repository and
 therefore is not a fresh-clone or server-side guarantee. Other public-release routes remain policy-held.
 
-The provider CLI is not the approval boundary. Claude, Gemini, Kimi, and Grok trusted launches explicitly suppress
+The provider CLI is not the approval boundary. Claude, Gemini, and Grok trusted launches explicitly suppress
 their provider consent prompts; Codex runs non-interactively with its workspace-write sandbox, and every worker
 child receives a closed stdin. No provider prompt substitutes for Hard Rule 6 or for the Git deletion gate.
 
@@ -190,7 +190,11 @@ for example `mode: project` with `capability: web-app`. Combined with `mode` it 
 slug is the final segment of the card's canonical `id: <mode>/<card>`, and passing the full `<mode>/<card>` id
 is equivalent. Omit it (or set `none`) when a packet does not run under a specific card. The card defines the
 S0–S7 workflow, `gates`, and `overlays` for that kind of work (see `shared/capabilities/_skeleton.md` +
-`shared/capabilities/_format.md`; each mode file carries a `## Capabilities` index of its cards).
+`shared/capabilities/_format.md`; each mode file carries a `## Capabilities` index of its cards). In the public
+export those cards are withheld; only documentation projections ship under `shared/capabilities/public/<mode>/`,
+which the dispatcher does not read, so on a public clone `capability:` resolves no card until you author cards
+under `shared/capabilities/<mode>/`.
+The public projection also omits the private `shared/registries/skill-tool-registry.tsv`; checks against that operational inventory require a maintainer checkout.
 
 **Selects the workflow, never the CLI lane.** `capability:` selects which validated protocol the work
 follows — the card's S0–S7 steps, gates, and overlays. It does **not** choose a model/CLI and does **not**
@@ -234,9 +238,9 @@ None of these is active today — treat them as the intended hardening roadmap, 
 6. The CLI writes the return artifact and the outbox completion envelope **inside its worktree**. The supervisor validates both, publishes the artifact first and the envelope last into the repo, and runs `scripts/python/registry_reconciler.py` to settle the registry.
 7. Chrono surfaces the result to the operator after an explicit observation path reaches it; artifact publication and registry settlement alone have no human/controller recipient.
 
-Steps 4–6 are the **board-native** transport (`bin/send-task.sh:48` defaults `SQUAD_DISPATCH_MODE=board`); it is
+Steps 4–6 are the **board-native** transport (`bin/send-task.sh` defaults `SQUAD_DISPATCH_MODE=board`); it is
 detailed in Delivery Contract below. There is no persistent model-lead window: the per-model lane windows were
-retired at the Phase-3 cutover (`bin/launch-squad.sh:624-628`), and each dispatch spawns its own CLI instead.
+retired at the Phase-3 cutover (`bin/launch-squad.sh`, Phase-3 lane-window retirement), and each dispatch spawns its own CLI instead.
 
 `source_namespace` selects the specialist markdown. Board-native transport uses the
 canonical mailbox root `departments/coding`, defined by `CANONICAL_MAILBOX_ROOT` in
@@ -308,7 +312,7 @@ Completion is validated before it is published. `dispatch_context_builder.py::pr
 reads the return artifact and the response envelope **out of the worktree**, rejects structurally malformed
 flat frontmatter or an empty summary, coerces the worker's status intent, and reconstructs all published
 identity/pin fields from the launch authority rather than trusting or requiring the worker's copies
-(`scripts/python/dispatch_context_builder.py:1600-1636,1736-1759,1968-2052`). After validating both
+(`scripts/python/dispatch_context_builder.py::prepare_worktree_outputs`, `publish_prepared_worktree_outputs`, `bridge_worktree_outputs`). After validating both
 destinations, `publish_prepared_worktree_outputs` atomically writes the artifact
 first and the envelope last, because the envelope is the outbox/filesystem watcher's publication marker.
 It is not a semantic verdict or a headless-recipient receipt. In-scope code the
@@ -367,24 +371,24 @@ that wrapper as producing a separate artifact.
 **Before** declaring a task `complete`, apply the **verify-before-claiming-done** discipline (Hard Rule 8): run
 the actual verification (commands/tests/re-reads) and confirm the claimed outcome — never emit a `complete`
 `status` on an unverified result. On the **Claude lane** this is the invokable `verification-before-completion`
-skill (`supported_lanes: claude`; codex/kimi/gemini/grok apply the same discipline via their own means, not this
+skill (`supported_lanes: claude`; codex/gemini/grok apply the same discipline via their own means, not this
 claude-only skill).
 
 On the board rail the detached supervisor invokes `scripts/python/registry_reconciler.py` for its task after
-the attempt and fenced terminal receipt finalize (`bin/board-supervisor.sh:263-278`);
+the attempt and fenced terminal receipt finalize (`bin/board-supervisor.sh`, detached settlement block invoking `"$reconciler" --task-id`);
 `bin/outbox-watcher.sh` can invoke the same reconciler earlier if it observes `<id>-response.md` during that
-window (`bin/outbox-watcher.sh:511-533`). A racing reconciliation may consume the envelope, but once the V2
+window (`bin/outbox-watcher.sh`, TASK-response handler invoking `registry-reconciler.sh --task-id`). A racing reconciliation may consume the envelope, but once the V2
 receipt exists it deliberately preempts the response candidate and becomes settlement input
-(`scripts/python/registry_reconciler.py:3257-3265,3545-3641`). The envelope is therefore the atomic publication
+(`scripts/python/registry_reconciler.py::terminal_board_receipt` and `receipt_preempts_response` branch). The envelope is therefore the atomic publication
 marker, not a guarantee that it was the settlement input and not delivery to a person or headless controller.
 
 Writing only the `return_artifact` on the board rail fails completion prevalidation because the bridge reads
-both sources before publishing either (`scripts/python/dispatch_context_builder.py:2010-2028`; the failure is
-caught at `bin/board-supervisor.sh:2758-2779`). The detached wrapper then routes it through canonical blocked
-publication (`bin/board-supervisor.sh:243-275`; `scripts/python/dispatch_context_builder.py:2382-2479`). On the
+both sources before publishing either (`scripts/python/dispatch_context_builder.py::prepare_worktree_outputs`; the failure is
+caught in `bin/board-supervisor.sh`'s `bridge_worktree_outputs` handler). The detached wrapper then routes it through canonical blocked
+publication (`bin/board-supervisor.sh` detached blocked-publication fallback; `scripts/python/dispatch_context_builder.py::publish_blocked_completion` and `main`'s `blocked` subparser). On the
 V3 compatibility rail, artifact-only completion instead depends on the preserved `work-done-no-envelope`
 backstop. That weaker backstop can only use its artifact-grace branch now that persistent per-model windows are
-retired (`scripts/python/registry_reconciler.py:3678-3725`). The fenced board receipt is the board rail's safety
+retired (`scripts/python/registry_reconciler.py`, `SETTLED_WITHOUT_ENVELOPE` and artifact/no-envelope branch). The fenced board receipt is the board rail's safety
 net when no worker-authored envelope was promoted. The staged V4 contract does not treat artifact presence,
 path, or `mtime` as settlement; migration of that runtime seam remains open.
 
@@ -396,7 +400,7 @@ Envelope schema — frontmatter, then a summary body whose first paragraph the r
 ---
 id: <id>-response
 in_response_to: <id>
-from: gpt-codex | claude | gemini | kimi | grok
+from: gpt-codex | claude | gemini | grok
 to: chrono
 type: RESULT
 status: complete | needs_review | needs_human | blocked
@@ -442,13 +446,13 @@ settlement and human/controller receipt are separate facts.
 
 | path | who receives it, and when | when nobody is there | implementation evidence |
 |---|---|---|---|
-| **Ordinary single-task response envelope as machine publication marker** | The output bridge receives the worker envelope at attempt finalization, validates its structure/summary, reconstructs canonical metadata from launch authority, and publishes it after the return artifact. A racing watcher/reconciler may consume that outbox candidate; otherwise the later fenced V2 receipt preempts it for settlement. This path's recipients are controller machinery and any explicit file reader, not a person by default. | Publication and machine settlement can finish with no human or headless controller present. A valid envelope alone gives neither one the result; one of the observation paths below must still be attended. | `scripts/python/dispatch_context_builder.py:1600-1636,1736-1759,1968-2052,2298-2353`; `bin/board-supervisor.sh:263-278`; `scripts/python/registry_reconciler.py:1055-1104,3257-3265,3445-3641` |
-| **Outbox file as stored content** | A later human/controller receives the content only when it explicitly opens or polls `departments/coding/outbox/<id>-response.md`; a running outbox watcher sees it on its replay scan or next filesystem event. The file is available after the controller's artifact-first, envelope-last publication. | If nobody opens, polls, or watches the outbox, nobody receives the content. The file remains stored; existence is not delivery. | `scripts/python/dispatch_context_builder.py::publish_prepared_worktree_outputs` / `bridge_worktree_outputs`; `bin/outbox-watcher.sh:629-652` |
-| **Chrono tmux-pane nudge** | Only the live `${SQUAD_SESSION}:chrono` pane is targeted, immediately after a completion event is reconciled or observed. An attended human/controller at that pane is the intended live recipient. | If the session/window is absent, the code sends nothing. If the pane exists but is unattended, tmux success proves only that the keystrokes and Enter were accepted; it does not prove that anyone read or acted. The reconciler persists the event's notification key before attempting the nudge, so a missing/failed pane is not retried merely because it later appears. The file and registry state remain for later inspection, and reconciler-emitted events also have a durable queue record, but there is no live recipient. | `scripts/python/registry_reconciler.py:263-328,392-424`; `bin/outbox-watcher.sh:126-171,561-626` |
-| **Registry-watch stdout (`bin/board-notify.sh`)** | A headless polling controller receives one line only if it explicitly starts this long-lived process **and consumes its stdout**. On the next poll (default interval: one second) it prints `task=<id> status=<registry-state> artifact=yes\|no` for a previously open task, or a newly appearing task, whose latest snapshot is in the notifier's deferred/terminal target set. These are not all successful completions: blocked, timed-out, review/rework, cancellation, and no-envelope states are also targets. `artifact=yes\|no` is an advisory file-presence lookup, not validation or receipt; because the notifier discards registry metadata and falls back to finding a task packet, a normal post-cleanup result can report `artifact=no` even when its promoted artifact exists. | There is no persisted cursor or downtime replay. If the notifier is not running, stdout has no reader, or the target state was already present when the initial snapshot was taken, nobody receives an event. `review-required` remains classified as live and produces no line merely because the lane reached that hold. The default squad launcher starts `outbox-watcher.sh` and the reconcile sweep, not this notifier. | `bin/board-notify.sh:17-55`; `scripts/python/chrono_state/registry.py:35-63`; `bin/launch-squad.sh:217-231`; packet cleanup/lookup: `bin/board-supervisor.sh:2938-2953`, `scripts/python/registry_reconciler.py:1828-1865` |
-| **Durable Chrono queue record** | The reconciler appends `_state/chrono-queue.md` before attempting the pane nudge. A later session/rotation reader receives that record only when it explicitly reads the file. | With no later reader it is durable storage, not a notification. Queue persistence does not make an unattended pane delivered and does not feed `board-notify.sh`. | `scripts/python/registry_reconciler.py:239-250,392-400` |
-| **Dispatching shell/session** | The send command returns after detaching the supervisor and prints a polling waiter that the caller may explicitly attach. It receives no completion callback merely because it launched the task. | If the caller does not run that waiter, consume `board-notify.sh`, inspect files, or attach to the pane, nothing re-enters or wakes the dispatching session. | `bin/send-task.sh:2495-2501,2548-2560` |
-| **Legacy `RESP-*` reply** | The outbox watcher can send its filename/path context to the Chrono pane on a filesystem event. | Unlike TASK events, it has no registry-driven queue append. If the pane is absent or unattended, only the reply file remains for an explicit later read. | `bin/outbox-watcher.sh:488-491,557-626` |
+| **Ordinary single-task response envelope as machine publication marker** | The output bridge receives the worker envelope at attempt finalization, validates its structure/summary, reconstructs canonical metadata from launch authority, and publishes it after the return artifact. A racing watcher/reconciler may consume that outbox candidate; otherwise the later fenced V2 receipt preempts it for settlement. This path's recipients are controller machinery and any explicit file reader, not a person by default. | Publication and machine settlement can finish with no human or headless controller present. A valid envelope alone gives neither one the result; one of the observation paths below must still be attended. | `scripts/python/dispatch_context_builder.py::prepare_worktree_outputs`, `publish_prepared_worktree_outputs`, `bridge_worktree_outputs`; `bin/board-supervisor.sh` (detached settlement block); `scripts/python/registry_reconciler.py::terminal_board_receipt` (`receipt_preempts_response`) |
+| **Outbox file as stored content** | A later human/controller receives the content only when it explicitly opens or polls `departments/coding/outbox/<id>-response.md`; a running outbox watcher sees it on its replay scan or next filesystem event. The file is available after the controller's artifact-first, envelope-last publication. | If nobody opens, polls, or watches the outbox, nobody receives the content. The file remains stored; existence is not delivery. | `scripts/python/dispatch_context_builder.py::publish_prepared_worktree_outputs` / `bridge_worktree_outputs`; `bin/outbox-watcher.sh` (outbox scan and event loop) |
+| **Chrono tmux-pane nudge** | Only the live `${SQUAD_SESSION}:chrono` pane is targeted, immediately after a completion event is reconciled or observed. An attended human/controller at that pane is the intended live recipient. | If the session/window is absent, the code sends nothing. If the pane exists but is unattended, tmux success proves only that the keystrokes and Enter were accepted; it does not prove that anyone read or acted. The reconciler persists the event's notification key before attempting the nudge, so a missing/failed pane is not retried merely because it later appears. The file and registry state remain for later inspection, and reconciler-emitted events also have a durable queue record, but there is no live recipient. | `scripts/python/registry_reconciler.py::notify_chrono`; `bin/outbox-watcher.sh` (`nudge_chrono_pane`) |
+| **Registry-watch stdout (`bin/board-notify.sh`)** | A headless polling controller receives one line only if it explicitly starts this long-lived process **and consumes its stdout**. On the next poll (default interval: one second) it prints `task=<id> status=<registry-state> artifact=yes\|no` for a previously open task, or a newly appearing task, whose latest snapshot is in the notifier's deferred/terminal target set. These are not all successful completions: blocked, timed-out, review/rework, cancellation, and no-envelope states are also targets. `artifact=yes\|no` is an advisory file-presence lookup, not validation or receipt; because the notifier discards registry metadata and falls back to finding a task packet, a normal post-cleanup result can report `artifact=no` even when its promoted artifact exists. | There is no persisted cursor or downtime replay. If the notifier is not running, stdout has no reader, or the target state was already present when the initial snapshot was taken, nobody receives an event. `review-required` remains classified as live and produces no line merely because the lane reached that hold. The default squad launcher starts `outbox-watcher.sh` and the reconcile sweep, not this notifier. | `bin/board-notify.sh`; `scripts/python/chrono_state/registry.py`; `bin/launch-squad.sh` (consolidated watcher startup block); packet cleanup/lookup: `bin/board-supervisor.sh` (post-settlement inbox packet unlink), `scripts/python/registry_reconciler.py` (inbox packet fallback lookup) |
+| **Durable Chrono queue record** | The reconciler appends `_state/chrono-queue.md` before attempting the pane nudge. A later session/rotation reader receives that record only when it explicitly reads the file. | With no later reader it is durable storage, not a notification. Queue persistence does not make an unattended pane delivered and does not feed `board-notify.sh`. | `scripts/python/registry_reconciler.py::append_chrono_queue` |
+| **Dispatching shell/session** | The send command returns after detaching the supervisor and prints a polling waiter that the caller may explicitly attach. It receives no completion callback merely because it launched the task. | If the caller does not run that waiter, consume `board-notify.sh`, inspect files, or attach to the pane, nothing re-enters or wakes the dispatching session. | `bin/send-task.sh` (printed polling-waiter block) |
+| **Legacy `RESP-*` reply** | The outbox watcher can send its filename/path context to the Chrono pane on a filesystem event. | Unlike TASK events, it has no registry-driven queue append. If the pane is absent or unattended, only the reply file remains for an explicit later read. | `bin/outbox-watcher.sh` (`RESP-*` handler and `nudge_chrono_pane`) |
 
 These paths are complementary, not a broadcast guarantee. In particular, the pane path does not reach a
 headless controller, and the registry watcher does not inject into tmux, parse envelopes, queue a durable
@@ -528,9 +532,11 @@ rule above tests the attempt fence, with the provenance limitation documented ab
 ### Surfacing needs to Chrono
 
 A spawned worker is **not** an orchestrator. It must not spawn sub-tasks, launch a model CLI
-(`claude`/`codex`/`gemini`/`kimi`), run `send-task.sh`, or coordinate with another specialist directly — its
-sandbox denies model-CLI exec (the attempt fails the launch → exit 75), and cross-worker coordination is
-Chrono's sole responsibility (root CLAUDE.md: Chrono is the only controller).
+(`claude`/`codex`/`agy`/`grok`), run `send-task.sh`, or coordinate with another specialist directly. Nothing on
+the default trusted host launch mechanically blocks nested CLI execution (and the opt-in strict Seatbelt profile
+still allowlists the selected lane CLI), so this prohibition is a worker contract rule: a worker that launches
+another model CLI has violated its contract, and cross-worker coordination is Chrono's sole responsibility (root
+`CLAUDE.md`: Chrono is the only controller).
 
 When a task needs something beyond the worker's scope mid-flight — a live canary/probe that requires launching
 a CLI, another specialist's help, a wider write scope, a follow-up dispatch, or it is blocked on a dependency —
@@ -596,9 +602,9 @@ The optional `artifact_bundle_sha256` frontmatter declaration and its manifest-b
 by the Completion Contract; evidence in the body does not declare that field.
 
 **Binding the pair to reproducible bytes.** A digest is not a thing you can check out: `artifact_bundle_sha256`
-is `hash_canonical(sorted({path, sha256, role}))` over an artifact list (`scripts/python/vibecoding_check.py:363-378`)
+is `hash_canonical(sorted({path, sha256, role}))` over an artifact list (`scripts/python/vibecoding_check.py::hash_canonical`, delegating to `canonical_json_bytes`)
 — a hash of a *manifest*, not a Git object. And the normal success path **releases the attempt worktree** after
-integration (`bin/board-supervisor.sh:3671-3699`), so a coordinator reading a landed finding cannot assume that
+integration (`bin/board-supervisor.sh`, terminal worktree release call `pool.release(handle)`), so a coordinator reading a landed finding cannot assume that
 tree still exists. The binding therefore names, in the finding artifact, three things the coordinator can act on
 from the document alone:
 
@@ -665,10 +671,10 @@ finding-bearing response that lands:
    coordination item — ask the specialist for the pair, do not surface the finding as proven. Do not block,
    fail, or kill it.
 2. **Materialise the bound bytes** — do not assume the attempt worktree still exists; the normal success path
-   released it (`bin/board-supervisor.sh:3671-3699`):
+   released it (`bin/board-supervisor.sh`, terminal worktree release call `pool.release(handle)`):
    1. Open `binding.manifest`. Verify it: recompute the canonical bundle digest from its
-      `artifacts: [{path, sha256, role}]` list — `hash_canonical(sorted(list, key=path))`, the algorithm at
-      `vibecoding_check.py:363-378` — and confirm it equals the manifest's own `artifact_bundle_sha256`. A
+      `artifacts: [{path, sha256, role}]` list — `hash_canonical(sorted(list, key=path))`, the algorithm in
+      `scripts/python/vibecoding_check.py::hash_canonical` (delegating to `canonical_json_bytes`) — and confirm it equals the manifest's own `artifact_bundle_sha256`. A
       manifest that does not verify is unsound → incomplete evidence.
    2. Check out `binding.commit` into a scratch checkout you control (`git worktree add <scratch> <commit>`, or
       read each file with `git show <commit>:<path>`). The commit is a real Git object; the bundle digest is
@@ -792,7 +798,7 @@ arithmetic error, a stream-merge defect), while 23 tasks that closed without rev
 the flag earns its cost only on the four triggers above.
 
 The shared review-gate that every review-overlay S5 step fires has a two-part **request → receive** discipline,
-invokable on the **Claude lane** (`supported_lanes: claude`; codex/kimi/gemini/grok apply the same discipline via
+invokable on the **Claude lane** (`supported_lanes: claude`; codex/gemini/grok apply the same discipline via
 their own means): **`requesting-code-review`** — before handing off, the author confirms the work actually meets
 the packet's requirements/scope; **`receiving-code-review`** — findings are weighed on merit (especially when a
 comment is unclear or technically questionable) before any change is made. This loop **supplements, never

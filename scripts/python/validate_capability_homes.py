@@ -46,7 +46,7 @@ from gen_runtime_tool_summary import (
 )
 
 
-LANES = ("gpt-codex", "claude", "gemini", "grok", "kimi")
+LANES = ("gpt-codex", "claude", "gemini", "grok")
 ROUTE_FIELDS = (
     "primary_lane",
     "backup_lane",
@@ -378,7 +378,7 @@ def _gemini_comment_projection(text: str, path: Path) -> dict[str, Any]:
 
 
 def _yaml_top_level(text: str, path: Path) -> dict[str, Any]:
-    """Read only top-level structured arrays from a Kimi YAML adapter."""
+    """Read only top-level structured arrays from a YAML adapter."""
     result: dict[str, Any] = {}
     for line in text.splitlines():
         if not line or line[0].isspace() or ":" not in line:
@@ -409,7 +409,6 @@ def _adapter_globs(root: Path) -> Iterable[tuple[str, Path]]:
         ("claude", root / "model-lanes/claude/.claude/agents", "*.md"),
         ("gemini", root / "model-lanes/gemini/.gemini/agents", "*.md"),
         ("grok", root / "model-lanes/grok/.grok/agents", "*.yaml"),
-        ("kimi", root / "model-lanes/kimi/.kimi/agents", "*.yaml"),
     )
     for lane, directory, pattern in locations:
         if not directory.is_dir():
@@ -1057,7 +1056,7 @@ def load_lane_inventory(root: Path) -> dict[str, dict[str, set[str]]]:
             result[lane]["tools"].add("google_web_search")
     if set(result) != set(LANES):
         raise CapabilityHomeError(
-            "lane inventory must contain exactly the five execution lanes"
+            "lane inventory must contain exactly the four execution lanes"
         )
     return result
 
@@ -1098,7 +1097,7 @@ def _explicit_catalog_lanes(section: str, block: str) -> set[str] | None:
         re.IGNORECASE,
     )
     if only_lane:
-        return {normalize_lane(only_lane.group(1).lower())}
+        return {normalize_lane(only_lane.group(1).lower())} & set(LANES)
 
     normalized = _catalog_section_name(section)
     section_defaults = {
@@ -1106,7 +1105,7 @@ def _explicit_catalog_lanes(section: str, block: str) -> set[str] | None:
         "openai / codex": {"gpt-codex"},
         "google / gemini": {"gemini"},
         "xai / grok": {"grok"},
-        "moonshot / kimi": {"kimi"},
+        "moonshot / kimi": set(),  # Retained catalog prose grants no active lane.
     }
     if normalized in section_defaults:
         return set(section_defaults[normalized])
@@ -1114,7 +1113,7 @@ def _explicit_catalog_lanes(section: str, block: str) -> set[str] | None:
         r"\b(claude|codex|gemini|grok|kimi) lane\b", normalized, re.IGNORECASE
     )
     if section_lane:
-        return {normalize_lane(section_lane.group(1).lower())}
+        return {normalize_lane(section_lane.group(1).lower())} & set(LANES)
     return None
 
 
@@ -1244,7 +1243,6 @@ def actual_skill_names(root: Path, lane: str) -> set[str]:
             root / "model-lanes/grok/.grok/skills",
             home / ".grok/skills",
         ),
-        "kimi": (root / "model-lanes/kimi/.kimi/skills",),
     }
     result: set[str] = set()
     for skill_root in roots[lane]:

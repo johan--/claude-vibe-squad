@@ -120,7 +120,6 @@ MODEL_TO_LANE = {
     "claude": "claude",
     "gemini": "gemini",
     "grok": "grok",
-    "kimi": "kimi",
 }
 LANE_TO_MODEL = {value: key for key, value in MODEL_TO_LANE.items()}
 WORKLOAD_CLASS_BY_CAPABILITY = {
@@ -142,7 +141,6 @@ LANE_NETWORK_SCOPE = {
     # the operator's OAuth session with provider API keys removed.
     "gemini": "google-oauth",
     "grok": "xai-api-key",
-    "kimi": "moonshot-subscription",
 }
 _TRUSTED_LANE_BASE_ARGS = {
     "codex": (
@@ -170,17 +168,18 @@ _TRUSTED_LANE_BASE_ARGS = {
         "--no-subagents",
         "--disable-web-search",
     ),
-    "kimi": (
-        "--yolo",
-        "--thinking",
-    ),
 }
 AGY_EXTERNAL_MCP_MAX_CALLS_FIELD = "external_mcp_max_calls"
 AGY_EXTERNAL_MCP_MAX_CALLS_MAX = 10_000
 
 
 def timeout_budget_for_mode(mode: str) -> int:
-    """Return the bounded backstop; non-bounty modes use ``"timeout_seconds": 2700``.
+    """Return the bounded backstop; non-bounty modes use ``"timeout_seconds": 5400``.
+
+    Raised from 2700 to 5400 (bounty 3600 to 7200) on 2026-09-27, operator-approved
+    ("cancel it and extend"): a testnet deploy, the launch grid and a QA review all
+    reached the 2700s wall mid-work, and the deploy had to be cancelled before its
+    host step to avoid a mid-switch kill.
 
     Raised from 1800 to 2700 for non-bounty modes on 2026-08-10, operator-approved,
     from measured distribution rather than from the wall deaths. Across 52 dispatches
@@ -191,7 +190,7 @@ def timeout_budget_for_mode(mode: str) -> int:
     Bounty stays at 3600.
     """
 
-    return 3600 if mode == "bounty" else 2700
+    return 7200 if mode == "bounty" else 5400
 
 
 def agy_external_mcp_max_calls(fields: Mapping[str, str]) -> int:
@@ -247,6 +246,7 @@ class PreparedWorktreeOutputs:
     run_id: str = ""
     evidence_outputs: tuple[PreparedEvidenceOutput, ...] = ()
     candidate_tree_health: dict[str, object] | None = None
+    status_recognized: bool = False
 
 
 def _sha256_bytes(value: bytes) -> str:
@@ -629,6 +629,9 @@ def _selected_profile(
         return profile
     matches = []
     for prefix in ROUTE_TIERS:
+        # A budget profile requires an explicit per-task throughput selection.
+        if prefix == "throughput":
+            continue
         row_lane = row.get(f"{prefix}_lane", "")
         if row_lane == lane:
             profile = row.get(f"{prefix}_profile", "")
@@ -636,7 +639,7 @@ def _selected_profile(
                 matches.append(profile)
     if not matches:
         raise DispatchContextError(f"runtime map does not select a {lane} profile")
-    # Without an explicit tier, preserve the historical first matching lane.
+    # Without an explicit tier, take the first matching non-throughput route.
     return matches[0]
 
 
@@ -765,7 +768,6 @@ def lane_policy_evidence_for(repo_root: Path, lane: str) -> dict[str, str]:
         "claude": "subscription",
         "gemini": "subscription",
         "grok": "xai-api-key",
-        "kimi": "managed-login",
     }.get(lane)
     if auth_class != expected:
         raise DispatchContextError("lane auth policy is outside the closed contract")
@@ -1420,6 +1422,27 @@ def delivery_contract_note(
     scope = ", ".join(f"`{p}`" for p in write_scope) or "(none declared)"
     split_outputs = bool(outbox_relative) and outbox_relative != return_artifact
     ways = "four" if split_outputs else "three"
+    first_write_envelope = (
+        " Because the artifact and envelope share this path, include the canonical envelope "
+        "frontmatter on the FIRST write and preserve it through every update. Fill `<id>` and "
+        "`<lane>` from the task packet and executing model lane:\n\n"
+        "```yaml\n"
+        "---\n"
+        "id: <id>-response\n"
+        "in_response_to: <id>\n"
+        "from: <lane>\n"
+        "to: chrono\n"
+        "type: RESULT\n"
+        "status: blocked\n"
+        f"return_artifact: {return_artifact}\n"
+        "---\n"
+        "```\n\n"
+        "Use `status: blocked` until there is a usable result; then choose the truthful status "
+        "under the packet's completion contract. Never fabricate a completion or a verdict.\n"
+        if outbox_relative == return_artifact
+        else ""
+    )
+    envelope_path = f"`{outbox_relative}`" if outbox_relative else "the path declared in the packet"
     envelope_item = (
         (
             f"3. **Your envelope is a SECOND file here: also write `{outbox_relative}`.** In this "
@@ -1441,11 +1464,15 @@ def delivery_contract_note(
         "is not the deliverable. An artifact still holding a placeholder, an outline, or "
         "\"in progress\" text when you exit is a FAILED task, discarded exactly as a missing one "
         "is. A lane whose artifact is missing at completion is discarded whole, however good "
-        "the fix was.\n"
+        f"the fix was.{first_write_envelope}\n"
         f"2. **Write only inside your write scope**: {scope}. Integration refuses a commit touching "
         "anything else and discards the entire attempt — it does not partially apply. If the task "
         "genuinely needs another path, stop and report it: a scope request costs one turn, a scope "
-        "violation costs the lane.\n"
+        "violation costs the lane. Never stage or commit `return_artifact` or the outbox envelope, "
+        "even when asked to commit code. Leave those files in the worktree for controller "
+        "promotion. The actual paths are: "
+        f"`return_artifact`: `{return_artifact}`; outbox envelope: {envelope_path}. "
+        "Packet-requested code commits remain allowed within the write scope.\n"
         f"{envelope_item}"
         f"{last_item}. **If you are running long, land what is complete and write the artifact "
         "anyway.** A truthful partial naming what remains is a useful result; being killed "
@@ -2082,6 +2109,7 @@ _CANONICAL_ENVELOPE_STATUSES = frozenset({*WORKER_AUTHORABLE_STATUSES, "complete
 # because it contains text such as ``complete``, ``done``, or even ``ok``.
 _RECOGNIZED_STATUS_SPELLINGS = {
     **{status: status for status in _CANONICAL_ENVELOPE_STATUSES},
+    "completed": "complete",
     "complete_with_scoped_exclusion": "complete",
     "done": "complete",
     "failed": "blocked",
@@ -2096,14 +2124,14 @@ def _coerce_status(raw: str) -> str:
     """Map a worker-authored status onto a canonical settleable value.
 
     Canonical values and a closed set of historical spellings are recognized
-    exactly (case-insensitively); the reconciler further canonicalizes
-    ``completed`` -> ``complete``. Anything else defaults to ``needs_review``
-    so questionable or unmappable work surfaces to the controller rather than
-    silently auto-closing. Never infer status intent from a substring of prose.
+    exactly (case-insensitively), including ``completed`` -> ``complete``.
+    Anything else defaults to ``blocked``
+    so an absent completion claim cannot acquire integration or settlement
+    authority. Never infer status intent from a substring of prose.
     """
 
     value = (raw or "").strip().lower()
-    return _RECOGNIZED_STATUS_SPELLINGS.get(value, "needs_review")
+    return _RECOGNIZED_STATUS_SPELLINGS.get(value, "blocked")
 
 
 # ── CC-03: reconciliation pin/fence echoes ───────────────────────────────────
@@ -3124,14 +3152,10 @@ def prepare_worktree_outputs(
         Path(worktree_root) / raw_outbox_relative
     )
     if synthesized_envelope:
-        # Not `complete`: the controller knows the artifact landed, not that the
-        # lane considered itself finished. `needs_review` is the same default
-        # `_coerce_status` already applies to an unmappable worker status, so
-        # questionable work surfaces to the controller instead of auto-closing.
-        # `registry_reconciler.resolve_worker_status` then resolves it against
-        # the task's trusted review triggers, so no review debt is manufactured
-        # or silently discarded.
-        canonical_status = "needs_review"
+        # An artifact alone is not a worker completion claim. Preserve it,
+        # but do not integrate or let reconciliation turn it into completion.
+        canonical_status = "blocked"
+        status_recognized = False
         excerpt = _artifact_summary_excerpt(result_bytes.decode("utf-8"))
         summary = (
             f"{SYNTHESIZED_ENVELOPE_MARKER} Promoted from `{result_relative}`; "
@@ -3147,7 +3171,9 @@ def prepare_worktree_outputs(
             maximum_bytes=256 * 1024,
         )
         envelope, summary = _parse_response_envelope(envelope_bytes)
-        canonical_status = _coerce_status(envelope.get("status", ""))
+        raw_status = envelope.get("status", "").strip().lower()
+        status_recognized = raw_status in _RECOGNIZED_STATUS_SPELLINGS
+        canonical_status = _coerce_status(raw_status)
     # Normalize-and-promote rather than strand: the envelope is worker-authored
     # metadata whose identity fields are fully determined by the trusted launch
     # authority. A completion that carries a real, validated artifact (checked
@@ -3292,6 +3318,7 @@ def prepare_worktree_outputs(
         result_bytes=result_bytes,
         envelope_bytes=normalized_bytes,
         status=canonical_status,
+        status_recognized=status_recognized,
         mode=mode,
         attempt_id=attempt_id,
         generation=int(generation) if isinstance(generation, int) else 0,

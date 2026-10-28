@@ -59,7 +59,6 @@ LANE_MCP = {
     "claude": "bravo",
     "gemini": "charlie",
     "grok": "echo",
-    "kimi": "delta",
 }
 
 SURFACE_HEADER = "## Expected Model Lane Tool Surface"
@@ -120,7 +119,6 @@ class DispatchToolkitSubjectTest(unittest.TestCase):
                 "charlie                  stdio  enabled  /bin/charlie\n"
             ),
             "grok": "MCP Servers (1)\n└── echo (stdio)\n",
-            "kimi": "delta /bin/delta enabled\n",
         }
         for lane, contents in fixture_by_lane.items():
             (self.inventory / f"{LANE_CLIS[lane]}.txt").write_text(
@@ -258,7 +256,6 @@ class DispatchToolkitSubjectTest(unittest.TestCase):
         """Pin expectation corrections supported by native probes + registry."""
         codex = rendered_expected_mcps("gpt-codex")
         gemini = rendered_expected_mcps("gemini")
-        kimi = rendered_expected_mcps("kimi")
 
         self.assertTrue(
             {"chrono-dedup", "chrono-recon"}.issubset(codex),
@@ -268,11 +265,6 @@ class DispatchToolkitSubjectTest(unittest.TestCase):
             "sequential-thinking",
             gemini,
             "agy's global MCP ceiling does not expose sequential-thinking",
-        )
-        self.assertIn(
-            "chrono-recon",
-            kimi,
-            "Kimi installs the registry-supported all-lane recon MCP",
         )
 
 

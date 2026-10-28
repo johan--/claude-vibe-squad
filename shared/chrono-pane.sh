@@ -54,6 +54,11 @@
 # so the focus gate returned "no coordinator" on every one of 293 operator
 # prompts and the watcher dropped every board nudge for two days, both silently.
 # Window names may contain spaces, so the fields are tab-separated.
+#
+# This function stays a pure spelling->pane map and never inspects what is
+# running: a bare `session:window` names no single pane, so it resolves to
+# nothing here. Callers that mean "wherever the coordinator is in that window"
+# want chrono_pane_resolve_coordinator_id below.
 chrono_pane_resolve_id() {
     local target="$1"
     local tmux_bin="${TMUX_BIN:-tmux}"
@@ -63,42 +68,133 @@ chrono_pane_resolve_id() {
         | awk -F '\t' -v t="$target" '$1 == t || $2 == t || $3 == t { print $1; exit }'
 }
 
+# chrono_pane_pid_runs_coordinator <pane-pid> <coordinator-pid> <start>
+# The startup record in vs-welcome.sh supplies identity. A Claude name alone
+# proves nothing: another worker or a background child must never receive keys.
+# '+' in ps stat denotes membership of the terminal's foreground process group
+# on both Darwin and Linux. A stopped/zombie process cannot receive a notice.
+chrono_pane_pid_runs_coordinator() {
+    local pane_pid="$1" coordinator_pid="${2:-}" start="${3:-}"
+    local pid="" parent="" state="" cmd="" executable="" observed_start=""
+    [[ "$pane_pid" =~ ^[0-9]+$ && "$coordinator_pid" =~ ^[0-9]+$ && -n "$start" ]] || return 1
+    observed_start="$(ps -o lstart= -p "$coordinator_pid" 2>/dev/null | tr -s '[:space:]' ' ' | sed 's/^ //; s/ $//')"
+    [[ -n "$observed_start" && "$observed_start" == "$start" ]] || return 1
+    while read -r pid parent state cmd; do
+        [[ "$pid" == "$coordinator_pid" ]] || continue
+        [[ "$pid" == "$pane_pid" || "$parent" == "$pane_pid" ]] || continue
+        [[ "$state" == *+* && "$state" != *T* && "$state" != *Z* ]] || return 1
+        executable="${cmd%%[[:space:]]*}"
+        [[ "$executable" == */claude* || "$executable" == claude ]] && return 0
+    done < <(ps -eo pid=,ppid=,stat=,command= 2>/dev/null)
+    return 1
+}
+
+# Validate one exact pane against the coordinator's own startup record. Read the
+# record as data (never source it), require a complete fingerprint, and bind its
+# recorded window/pane to this candidate as well as its PID. Missing records or
+# unavailable process observations fail closed; callers leave notices queued.
+chrono_pane_validate_coordinator() {
+    local pane_id="$1" pane_pid="" session="" pidfile="" root=""
+    local key="" value="" pid="" shape="" target="" start="" recorded=""
+    local tmux_bin="${TMUX_BIN:-tmux}"
+    pane_pid="$("$tmux_bin" display-message -p -t "$pane_id" '#{pane_pid}' 2>/dev/null)" || return 1
+    session="$("$tmux_bin" display-message -p -t "$pane_id" '#{session_name}' 2>/dev/null)" || return 1
+    [[ -n "$session" && "$session" != */* && "$session" != . && "$session" != .. ]] || return 1
+    root="${VAULT_ROOT:-$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd -P)}"
+    pidfile="${CHRONO_COORDINATOR_PIDFILE:-${root}/_state/runtime/chrono-coordinator/${session}.pid}"
+    if [[ ! -f "$pidfile" || -L "$pidfile" ]]; then
+        # Direct `claude --resume ...` launches bypass vs-welcome.sh, the
+        # record's writer. Report that lifecycle gap before process matching;
+        # widening the executable match cannot repair a missing identity.
+        printf 'chrono pane identity unavailable: pane=%s record=%s; launch/resume must register the coordinator PID and start time\n' \
+            "$pane_id" "$pidfile" >&2
+        return 1
+    fi
+    while read -r key value; do
+        case "$key" in
+            pid) [[ -z "$pid" ]] || return 1; pid="$value" ;;
+            shape) [[ -z "$shape" ]] || return 1; shape="$value" ;;
+            target) [[ -z "$target" ]] || return 1; target="$value" ;;
+            start) [[ -z "$start" ]] || return 1; start="$value" ;;
+        esac
+    done < "$pidfile"
+    [[ "$shape" == pane && -n "$target" ]] || return 1
+    recorded="$(chrono_pane_resolve_id "$target")"
+    if [[ -n "$recorded" ]]; then
+        [[ "$recorded" == "$pane_id" ]] || return 1
+    else
+        chrono_pane_window_panes "$target" | awk -F '\t' -v p="$pane_id" '$1 == p {found=1} END {exit !found}' || return 1
+    fi
+    chrono_pane_pid_runs_coordinator "$pane_pid" "$pid" "$start"
+}
+
+# chrono_pane_window_panes <tmux-target>
+# Prints "pane_id<TAB>pane_pid" for every pane of the WINDOW the target names,
+# by index (`squad:3`) or by name (`squad:chrono`). Prints nothing otherwise.
+#
+# The target is matched against whole window identities rather than parsed for a
+# trailing ".pane", because a window NAME may itself contain a dot -- splitting
+# on the last dot would silently rename `squad:my.win` into a pane request.
+chrono_pane_window_panes() {
+    local target="$1"
+    local tmux_bin="${TMUX_BIN:-tmux}"
+    [[ -n "$target" ]] || return 1
+    "$tmux_bin" list-panes -a \
+        -F $'#{pane_id}\t#{pane_pid}\t#{session_name}:#{window_index}\t#{session_name}:#{window_name}' 2>/dev/null \
+        | awk -F '\t' -v t="$target" '$3 == t || $4 == t { print $1 "\t" $2 }'
+}
+
+# chrono_pane_resolve_coordinator_id <tmux-target>
+# Prints a validated coordinator pane ID, for either a pane or a window target.
+# Exact spelling is resolved by chrono_pane_resolve_id; this function additionally
+# proves identity and foreground ownership and rejects ambiguous observations.
+#
+# Why the window fallback exists: two live callers name a window, not a pane.
+# registry_reconciler.py defaults CHRONO_TMUX_TARGET to `squad:chrono` and
+# squad-stop.sh asks about `${SESSION}:chrono`. chrono_pane_resolve_id matches
+# exact pane spellings only, so both got "no coordinator" while Chrono was
+# running: measured 2026-09-22, 138 of 260 dispatch-log nudges were recorded
+# `chrono-nudge queued-only` and never reached the operator's chat.
+#
+# Selection is by what is RUNNING, never by `#{pane_active}`. The chrono window
+# holds two panes -- .0 runs the coordinator, .1 runs the dashboard -- so
+# "the active pane" is a coin flip that types board notices into the dashboard.
+chrono_pane_resolve_coordinator_id() {
+    local target="$1" pane_id="" pane_pid="" found=""
+
+    pane_id="$(chrono_pane_resolve_id "$target")"
+    if [[ -n "$pane_id" ]]; then
+        chrono_pane_validate_coordinator "$pane_id" || return 1
+        printf '%s\n' "$pane_id"
+        return 0
+    fi
+
+    while IFS=$'\t' read -r pane_id pane_pid; do
+        [[ -n "$pane_id" && -n "$pane_pid" ]] || continue
+        if chrono_pane_validate_coordinator "$pane_id"; then
+            [[ -z "$found" ]] || return 1
+            found="$pane_id"
+        fi
+    done < <(chrono_pane_window_panes "$target")
+    [[ -n "$found" ]] || return 1
+    printf '%s\n' "$found"
+}
+
 # chrono_pane_has_coordinator <tmux-target>
 # Returns 0 when the coordinator CLI is the live foreground process there.
 chrono_pane_has_coordinator() {
-    local target="$1" pane_id="" pane_pid="" parent="" pid="" cmd="" executable=""
-    local tmux_bin="${TMUX_BIN:-tmux}"
-
-    pane_id="$(chrono_pane_resolve_id "$target")"
-    [[ -n "$pane_id" ]] || return 1
-
-    # Ask by pane id, which tmux cannot mis-resolve to some other pane.
-    pane_pid="$("$tmux_bin" display-message -p -t "$pane_id" '#{pane_pid}' 2>/dev/null)" || return 1
-    [[ -n "$pane_pid" ]] || return 1
-
-    # Use one ps snapshot for every comparison, so hook activity cannot split
-    # those observations across separate lookups.
-    while read -r pid parent cmd; do
-        # Accept either the pane process itself or one of its direct children.
-        [[ "$pid" == "$pane_pid" || "$parent" == "$pane_pid" ]] || continue
-        executable="${cmd%%[[:space:]]*}"
-        # Match the executable path, not a bare word, so an unrelated process
-        # that merely mentions "claude" in an argument cannot pass.
-        [[ "$executable" == */claude* ]] && return 0
-    done < <(ps -eo pid=,ppid=,command= 2>/dev/null)
-
-    # A pane_current_command literal fallback is deliberately absent: tmux
-    # reports a versioned executable name here, so an exact match is dead code.
-    return 1
+    chrono_pane_resolve_coordinator_id "$1" >/dev/null
 }
 
 # chrono_pane_observed_command <tmux-target>
 # What is actually there, for a diagnosable skip message.
 chrono_pane_observed_command() {
     local target="$1" pane_id=""
-    # Same exact-match resolution as the check itself, so the skip message can
-    # never describe the active pane while claiming to describe the target.
+    # Same resolution as the check itself, so the skip message can never
+    # describe the active pane while claiming to describe the target, and a
+    # bare-window target reports the pane the check actually looked at.
     pane_id="$(chrono_pane_resolve_id "$target")"
+    [[ -n "$pane_id" ]] || pane_id="$(chrono_pane_resolve_coordinator_id "$target")"
     if [[ -z "$pane_id" ]]; then
         printf 'unavailable'
         return 0

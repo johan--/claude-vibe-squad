@@ -17,8 +17,8 @@ This system has three distinct persistence layers. Knowing which to use is rule 
 | **chrono-vault** | Private Markdown + disposable FTS5/BM25 index (chrono-vault MCP) | Cross-squad durable notes | Typed attempts/findings/learnings that should be recalled across tasks. Explicit links are preserved in Markdown; graph expansion is benchmark work, not current runtime truth. |
 
 **Status of the Squad `memory.md` layer (verified against `.gitignore` and `git ls-files`).** This layer is
-**operator-local and gitignored — not tracked, not shared.** `.gitignore:86` excludes
-`departments/*/memory.md` (alongside `:85` `departments/*/current.md` and `:88` `chrono/memory.md`), so these
+**operator-local and gitignored — not tracked, not shared.** `.gitignore` excludes
+`departments/*/memory.md` (alongside `departments/*/current.md`, `chrono/current.md`, and `chrono/memory.md`), so these
 files are never committed, never published in a clone or export, and never travel to another machine or lane.
 They are created on demand and **may not exist at all** — at this writing none do. There is also **no
 `departments/shared/memory.md`**: the shared namespace has no `memory.md` file, consistent with shared

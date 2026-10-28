@@ -1410,3 +1410,77 @@ class CBSEHardeningTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class RedirectedWorkerGitTests(unittest.TestCase):
+    """Controller operations must never consult worker-selected Git config."""
+
+    def test_redirects_refuse_before_worker_filter_executes(self):
+        for redirect in ("gitfile", "commondir", "config.worktree"):
+            for operation in ("validate", "commit", "preserve", "integrate", "status"):
+                with self.subTest(redirect=redirect, operation=operation), tempfile.TemporaryDirectory() as directory:
+                    root = Path(directory).resolve()
+                    repo = _init_repo(root)
+                    pool = wti.WorktreePool(repo, root / "pool", base_branch="v2")
+                    handle = pool.provision("TASK-2026-10-27-1354-redirect", "d-" + "c" * 32)
+                    wt = handle.worktree_root
+                    marker = root / "filter-ran"
+                    evil = wt / "scratch"
+                    evil.mkdir()
+                    _git(["init", "-q"], cwd=evil)
+                    _git(["config", "filter.pwn.clean", f"touch '{marker}'; cat"], cwd=evil)
+                    (wt / ".gitattributes").write_text("* filter=pwn\n")
+                    (wt / "README.md").write_text("candidate\n")
+                    git_dir = wti.git_common_dir(repo) / "worktrees" / handle.attempt_id
+                    if redirect == "gitfile":
+                        (wt / ".git").write_text(f"gitdir: {evil / '.git'}\n")
+                    elif redirect == "commondir":
+                        (git_dir / "commondir").write_text(str(evil / ".git") + "\n")
+                    else:
+                        _git(["config", "extensions.worktreeConfig", "true"], cwd=repo)
+                        (git_dir / "config.worktree").write_text(
+                            f'[include]\n path = {evil / ".git/config"}\n')
+                    authority = dict(task_id=handle.task_id, attempt_id=handle.attempt_id,
+                                     repo_root=str(repo), pool_root=str(root / "pool"),
+                                     write_paths=["README.md"])
+                    actions = {
+                        "validate": lambda: wti.validate_worker_residue(handle, ["README.md"], (), root / "hook"),
+                        "commit": lambda: wti.commit_worker_residue(handle, ["README.md"]),
+                        "preserve": lambda: wti.preserve_terminal_evidence(authority, base_branch="v2"),
+                        "integrate": lambda: wti.integrate_worktree_commits(handle, ["README.md"]),
+                        "status": lambda: wti._run_git(["status", "--porcelain"], cwd=wt),
+                    }
+                    with self.assertRaisesRegex(wti.WorktreeIsolationError, "Git metadata"):
+                        actions[operation]()
+                    self.assertFalse(marker.exists())
+                    # Positive control demonstrates that the planted filter can
+                    # execute when Git is deliberately pointed at the evil repo.
+                    (evil / ".gitattributes").write_text("* filter=pwn\n")
+                    (evil / "probe.txt").write_text("probe\n")
+                    _git(["add", "probe.txt"], cwd=evil)
+                    self.assertTrue(marker.exists())
+
+    def test_late_config_worktree_injection_is_not_read_by_git(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            repo = _init_repo(root)
+            handle = wti.WorktreePool(repo, root / "pool", base_branch="v2").provision(
+                "TASK-2026-10-27-1354-configrace", "d-" + "d" * 32)
+            wt = handle.worktree_root
+            _git(["config", "extensions.worktreeConfig", "true"], cwd=repo)
+            git_dir = wti.git_common_dir(repo) / "worktrees" / handle.attempt_id
+            marker = root / "filter-ran"
+            (wt / ".gitattributes").write_text("* filter=pwn\n")
+            (wt / "README.md").write_text("candidate\n")
+            original = subprocess.run
+            def inject(command, **kwargs):
+                # Race the attack AFTER metadata identity checks, immediately
+                # before the controller child reads its repository config.
+                (git_dir / "config.worktree").write_text(
+                    f'[filter "pwn"]\n clean = touch {marker}; cat\n')
+                return original(command, **kwargs)
+            with mock.patch.object(wti.subprocess, "run", side_effect=inject):
+                result = wti._run_git(["add", "README.md"], cwd=wt)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertFalse(marker.exists())
+            self.assertEqual(_git(["show", ":README.md"], cwd=wt).stdout, "candidate\n")

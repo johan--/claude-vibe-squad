@@ -2,5 +2,5 @@ policy_id	family	description
 escalation.safety_floor.v1	escalation	High or heightened-risk quality floor with strongest profile and stricter review; upward signal escalation only.
 escalation.signal.v1	escalation	Deterministic signal-based upward escalation with transparent scoring and no learned router.
 failover.conservative.v1	failover	Backup selection for an explicitly authored operator/Chrono redispatch after dispatch acknowledgement failure, confirmed process exit, or typed provider error; automatic redispatch is unsupported and genuine safety refusals always surface.
-throughput.downshift_gated.v1	throughput	Kimi bulk only for low-safety, non-sensitive work with an explicit per-task Chrono bulk flag.
+throughput.downshift_gated.v1	throughput	Cheap-tier slot availability is not task eligibility: use only for low-safety, non-sensitive sub-work with an explicit per-task Chrono bulk flag; never security, privacy or financial sub-work.
 throughput.never.v1	throughput	No throughput downshift.

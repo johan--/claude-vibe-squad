@@ -61,8 +61,8 @@ class InterruptionRestartCanaries(unittest.TestCase):
             check=False,
         )
 
-    def restart_and_read_capsule(self, latest_turn: str) -> str:
-        first = self.run_session_start("--latest-turn", latest_turn)
+    def restart_and_read_capsule(self) -> str:
+        first = self.run_session_start()
         self.assertEqual(first.returncode, 0, first.stderr)
         restarted = self.run_session_start()
         self.assertEqual(restarted.returncode, 0, restarted.stderr)
@@ -179,10 +179,9 @@ class InterruptionRestartCanaries(unittest.TestCase):
                 f"handle interruption {index} after the Atlas campaign",
             )
 
-        capsule = self.restart_and_read_capsule("continue Atlas at CASE-17")
+        capsule = self.restart_and_read_capsule()
 
         self.assert_five_interrupt_restart(capsule, charter)
-        self.assertIn("continue Atlas at CASE-17", capsule)
 
     def test_five_interrupt_canary_rejects_a_stubbed_disposition_projection(self):
         """Control: removing the workboard projection makes the oracle red."""
@@ -211,9 +210,7 @@ class InterruptionRestartCanaries(unittest.TestCase):
             mock.patch.object(resume, "_archived_debt_rows", return_value=([], False)),
             mock.patch.object(resume, "open_work_items", return_value=[]),
         ):
-            stubbed = resume._render(
-                "continue Atlas", EMPTY_VIEW, max_tokens=3000
-            )
+            stubbed = resume._render(EMPTY_VIEW, max_tokens=3000)
 
         with self.assertRaises(AssertionError):
             self.assert_five_interrupt_restart(stubbed, charter)
@@ -252,7 +249,7 @@ class InterruptionRestartCanaries(unittest.TestCase):
             "reproduce the lock race in its own packet",
         )
 
-        capsule = self.restart_and_read_capsule("resume Atlas at CASE-17")
+        capsule = self.restart_and_read_capsule()
 
         self.assert_two_thread_restart(capsule)
         self.assertEqual(self.capsule, self.root / "_state" / "chrono" / "resume.md")

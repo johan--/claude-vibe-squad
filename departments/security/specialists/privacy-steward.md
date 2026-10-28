@@ -18,7 +18,7 @@ Tool permissions, data-retention paths, mailbox/vault leakage prevention, PII ha
 
 ## Tools available to me
 
-Tool, skill, and MCP capabilities are **lane-specific** and are defined authoritatively in this specialist's per-lane adapter under `model-lanes/`, bounded by the lane capability profile in `model-lanes/lane-capabilities.tsv`. This canonical base names no tool, MCP, or skill by design (the boundary test: a sentence that would be false on some lane belongs in the adapter). Read your adapter for the exact executables and MCP/skill surface available on your lane, and verify each in your live runtime before use — declare a capability gap and use the task-approved fallback if a declared capability is absent. Kimi subagents cannot hold MCP, so on the Kimi lane any MCP work is lead-brokered.
+Tool, skill, and MCP capabilities are **lane-specific** and are defined authoritatively in this specialist's per-lane adapter under `model-lanes/`, bounded by the lane capability profile in `model-lanes/lane-capabilities.tsv`. This canonical base names no tool, MCP, or skill by design (the boundary test: a sentence that would be false on some lane belongs in the adapter). Read your adapter for the exact executables and MCP/skill surface available on your lane, and verify each in your live runtime before use — declare a capability gap and use the task-approved fallback if a declared capability is absent.
 
 ## When to fan out
 
@@ -28,7 +28,7 @@ Tool, skill, and MCP capabilities are **lane-specific** and are defined authorit
 
 ## When to escalate
 
-- If a finding indicates an active PII leak (not theoretical risk — actual data exposed), stop and write to outbox with `status: needs_human` AND set priority=urgent — operator must engage Incident Mode immediately.
+- If a finding indicates an active PII leak (not theoretical risk — actual data exposed), stop and write to outbox with `status: needs_human` AND set priority=urgent — operator must engage the project Incident flow immediately.
 - If task requires capabilities outside my scoped MCPs, surface to the model lead before retrying.
 - If multi-model verification produces contradictory results past my retry budget, escalate with full evidence trail.
 

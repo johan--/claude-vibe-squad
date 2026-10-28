@@ -9,7 +9,7 @@
 # shellcheck disable=SC1091
 source "${BASH_SOURCE[0]%/*}/namespaces.sh"
 
-MODEL_LANES=(gpt-codex claude gemini grok kimi)
+MODEL_LANES=(gpt-codex claude gemini grok)
 # Backward-compatible name for callers that treated source namespaces as
 # mailbox namespaces before the compatibility/source distinction was explicit.
 SOURCE_NAMESPACES=("${COMPATIBILITY_NAMESPACES[@]}")
@@ -20,7 +20,6 @@ runtime_window_name() {
         claude) echo "claude" ;;
         gemini) echo "gemini" ;;
         grok) echo "grok" ;;
-        kimi) echo "kimi" ;;
         chrono)   echo "chrono" ;;
         watchers) echo "watchers/status" ;;
         *)        echo "$1" ;;
@@ -33,7 +32,6 @@ runtime_display_name() {
         claude) echo "Claude" ;;
         gemini) echo "Gemini" ;;
         grok) echo "Grok" ;;
-        kimi) echo "Kimi" ;;
         chrono)   echo "Chrono Coordinator" ;;
         *)        echo "$1" ;;
     esac
@@ -45,7 +43,6 @@ runtime_tagline() {
         claude) echo "judgment + safety" ;;
         gemini) echo "media + grounding" ;;
         grok) echo "independent advice" ;;
-        kimi) echo "long-context analysis" ;;
         chrono) echo "coordinator" ;;
         *) echo "specialist execution" ;;
     esac
@@ -57,7 +54,6 @@ runtime_short_name() {
         claude) echo "CLAUDE" ;;
         gemini) echo "GEMINI" ;;
         grok) echo "GROK" ;;
-        kimi) echo "KIMI" ;;
         chrono) echo "CHRONO" ;;
         watchers) echo "WATCH" ;;
         *) echo "$1" ;;
@@ -70,7 +66,6 @@ runtime_accent_color() {
         claude) echo "203" ;;         # coral
         gemini) echo "141" ;;         # violet
         grok) echo "208" ;;           # orange
-        kimi) echo "45" ;;            # cyan
         chrono) echo "39" ;;
         *) echo "250" ;;
     esac
@@ -82,7 +77,6 @@ runtime_terminal_color() {
         claude) echo "31" ;;          # red/coral
         gemini) echo "35" ;;          # magenta
         grok) echo "33" ;;            # yellow
-        kimi) echo "36" ;;            # cyan
         chrono) echo "34" ;;
         *) echo "37" ;;
     esac
@@ -93,7 +87,7 @@ namespace_default_model() {
         coding) echo "gpt-codex" ;;
         security|sysmgmt) echo "claude" ;;
         content) echo "gemini" ;;
-        research) echo "kimi" ;;
+        research) echo "gemini" ;;
         *) echo "$1" ;;
     esac
 }

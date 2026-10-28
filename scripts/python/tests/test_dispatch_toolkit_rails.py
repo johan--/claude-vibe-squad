@@ -29,7 +29,6 @@ REQUIRED_BRIEF_MARKERS = (
     "target allowlist",
     "dry_run status",
     "only writer",
-    "Kimi subagents",
     "sole writer",
     "COORDINATION REQUESTED",
     "OPERATOR DECISION REQUIRED",

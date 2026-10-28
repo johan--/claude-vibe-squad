@@ -265,6 +265,39 @@ class UnifiedTestRunnerContractTests(unittest.TestCase):
         self.assertIsNone(runner_python.SUPPORTED_VERSION_RE.fullmatch("3.14.6"))
         self.assertIsNotNone(runner_python.SUPPORTED_VERSION_RE.fullmatch("3.13.0"))
 
+    def test_provisioned_interpreter_receives_test_dependencies_and_fails_closed(self) -> None:
+        interpreter = runner_python.require_runner_python(self, ROOT)
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary).resolve()
+            (root / "bin").mkdir()
+            shutil.copy2(RUNNER, root / "bin/test")
+            (root / ".venv/bin").mkdir(parents=True)
+            for name in ("python", "python3"):
+                (root / ".venv/bin" / name).symlink_to(interpreter)
+            log = root / "uv-calls"
+            uv = root / "bin/uv"
+            uv.write_text(
+                '#!/bin/sh\nprintf "%s\\n" "$*" >> "$UV_TEST_LOG"\n'
+                'if [ "$1" = pip ]; then exit "${UV_TEST_PIP_EXIT:-0}"; fi\n'
+            )
+            uv.chmod(0o755)
+            env = {k: v for k, v in os.environ.items() if k != "PYTHON_BIN"}
+            env.update(PATH=f"{root / 'bin'}:{env['PATH']}", UV_TEST_LOG=str(log),
+                       SQUAD_RUNNER_TEST_HOST_PREFLIGHT="deny-loopback")
+            for pip_exit, expected in (("0", 0), ("19", 2)):
+                env["UV_TEST_PIP_EXIT"] = pip_exit
+                result = subprocess.run(
+                    ["bash", str(root / "bin/test"), "--runner-host-preflight"],
+                    env=env, capture_output=True, text=True, timeout=30,
+                )
+                self.assertEqual(result.returncode, expected, result.stdout + result.stderr)
+                if expected:
+                    self.assertIn("dependency:python:test-dependencies", result.stderr)
+            self.assertEqual(log.read_text().splitlines(), [
+                f"sync --locked --project {root}",
+                f"pip install --python {root}/.venv/bin/python -r {root}/requirements-dev.txt",
+            ] * 2)
+
     def test_private_projection_suite_has_an_explicit_na_contract(self) -> None:
         runner = RUNNER.read_text(encoding="utf-8")
 

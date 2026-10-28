@@ -1,11 +1,54 @@
-# Security MCP stack
+# Security MCP stack — RETIRED 2026-10-27
 
-A staged, fail-closed way to add security MCP servers (static analysis, contract audit, findings databases) to the Claude and gpt-codex lanes: stage the lane configuration, validate it with `validate_staged.py`, review it, then activate it on a lane restart. Nothing here activates by itself.
+**This stack is retired.** It staged the guarded security MCP trio —
+`guarded-semgrep`, `guarded-slither`, and `guarded-solodit`, each routed through Trail of
+Bits' `mcp-context-protector` — then retired it on 2026-10-27 and removed it from both
+lanes.
 
-> **Public distribution note.** This document describes a specific host's security-MCP
-> cutover. The lane configuration files, staged review mirrors, and stack inputs it refers
-> to as populated and retained are operator-provided and are **not part of the public
-> release** of this repository. On a public checkout the following paths are absent:
+**Run the CLIs directly instead.** Install Semgrep and Slither as ordinary command-line
+tools (both are rows in `shared/registries/recommended-toolchain.tsv`) and run them from the
+shell: no staging gate, no Context Protector wrapper, no restart ceremony. The starting
+commands are in the [security arsenal guide](../../docs/tooling/security-arsenal-guide.md).
+Solodit findings search has no CLI replacement: use a separately provisioned prior-art
+service, or search Solodit by hand, as the `dedup-prior-art-check` skill describes.
+
+## What retirement changed
+
+- `model-lanes/claude/.mcp.json` and `model-lanes/claude/.mcp.security-arsenal.staged.json`
+  now carry an empty `mcpServers` object.
+- `model-lanes/gpt-codex/.codex/config.toml` dropped the three `guarded-*` server tables
+  and keeps only its unrelated MCP servers (`playwright`, `chrome-devtools`,
+  `sequential-thinking`). `model-lanes/gpt-codex/.codex/security-arsenal.staged.toml`
+  stages no servers.
+- `plugins/security-mcp-stack/snyk-preactivation-targets.json` carries an empty
+  `mcpServers` object. The three JSON files stay byte-identical (the declared
+  `security-mcp-json-mirrors` group in `shared/registries/identical-blobs.tsv`).
+- `held-solodit.json` records `"activation": "retired"` and a `retired` block. Its dated
+  `audit` build evidence is retained as history, not as an activation instruction.
+- `preactivate-security-stack.sh` is a retired no-op that fails closed; it no longer runs
+  the Snyk pre-activation scan.
+- The `guarded-semgrep` / `guarded-slither` / `guarded-solodit` rows in the maintainer-local
+  tool registry (`shared/registries/skill-tool-registry.tsv`, withheld from the public release)
+  are marked `retired — do not invoke`, and the generated public
+  `shared/registries/recommended-toolchain.tsv` omits them.
+
+## Validator
+
+`validate_staged.py` was rewritten to enforce the retired state instead of the former
+required-and-activated trio. It now asserts the retired names are absent from every lane
+and mirror config, the staged mirrors and the Snyk target carry no servers, the three JSON
+mirrors stay semantically equal, `held-solodit.json` records `activation: retired`, and the
+preactivation gate is a retired no-op. It still fails closed on any drift back toward the
+trio.
+
+```bash
+python3 plugins/security-mcp-stack/validate_staged.py        # status: pass on the retired tree
+python3 plugins/security-mcp-stack/test_validate_staged.py    # focused tests for the contract
+```
+
+> **Public distribution note.** The lane configuration files, staged review mirrors, and
+> stack inputs below are operator-provided and are **not part of the public release** of
+> this repository. On a public checkout these paths are absent:
 >
 > - `model-lanes/claude/.mcp.json`
 > - `model-lanes/claude/.mcp.security-arsenal.staged.json`
@@ -15,49 +58,14 @@ A staged, fail-closed way to add security MCP servers (static analysis, contract
 > - `plugins/security-mcp-stack/snyk-preactivation-targets.json`
 > - `plugins/security-mcp-stack/preactivate-security-stack.sh`
 >
-> Because those files are missing, `validate_staged.py` and the cutover steps below cannot
-> run as written from a public clone — `validate_staged.py` reads the lane configs directly
-> and errors on the first absent path rather than returning a result. Treat everything below
-> as a configuration template: to use this stack, supply your own lane configs and stack
-> inputs at the paths named. The files are withheld because they encode one host's wiring,
-> not because any single value is a secret.
+> Because those files are missing, `validate_staged.py` cannot run from a public clone — it
+> reads the lane configs directly and errors on the first absent path. The files are
+> withheld because they encode one host's wiring, not because any single value is a secret.
 
-Run the fail-closed static check before review or activation:
+## History
 
-```bash
-python3 plugins/security-mcp-stack/validate_staged.py
-```
-
-The validator compares the exact ordered guarded trio across the staged mirrors, Snyk target, and restart-discoverable lane configs. Unrelated verified MCPs may coexist in a live lane config; they are excluded from this stack's semantic comparison and are never mistaken for guarded children.
-
-The restart-discoverable project-local lane configs are:
-
-- `model-lanes/claude/.mcp.json`
-- `model-lanes/gpt-codex/.codex/config.toml`
-
-The retained `*.staged.*` files are exact review mirrors, not unwired leftovers:
-
-- `model-lanes/claude/.mcp.security-arsenal.staged.json`
-- `model-lanes/gpt-codex/.codex/security-arsenal.staged.toml`
-
-All four files route Semgrep MCP, Slither MCP, and the remediated production-only Solodit MCP runtime through Trail of Bits' `mcp-context-protector`, in that order. Slither metrics are disabled; Semgrep receives no cloud token; Solodit receives no config-level env value and inherits `SOLODIT_API_KEY` only from the operator launch environment. `held-solodit.json` is now `activated-ready` and records the completed SDK 1.29.0 rebuild plus production install.
-
-Context Protector is configured for schema pinning and ANSI escape visualization. No guardrail provider is configured, so response quarantine is not active and no `--quarantine-path` is claimed. The state-local database starts with the exact upstream shape `{"servers": []}`; therefore all downstream tools fail closed until the operator reviews and pins each schema during the cutover.
-
-Snyk Agent Scan is a mandatory pre-activation gate, not an inline MCP server. `preactivate-security-stack.sh` fails closed unless inherited `SNYK_TOKEN` and `SOLODIT_API_KEY` are present, then scans the normalized `snyk-preactivation-targets.json` mirror with `--ci`. `validate_staged.py` rejects any semantic drift among the live Claude config, live Codex config, both review mirrors, and the Snyk target file.
-
-Google Model Armor was removed from this stack on 2026-08-10 (operator decision). It was a GCP project service requiring `GOOGLE_APPLICATION_CREDENTIALS` or `gcloud auth application-default login` — not an API-key endpoint — and was never activated. `held-modelarmor.json`, its validator branches, and its report key are deleted.
-
-
-## Exact operator cutover
-
-1. Obtain mandatory Claude approval for the frozen plan and artifact bundle; confirm `SOLODIT_API_KEY` and `SNYK_TOKEN` are available only in the inherited launch environment.
-2. Run `python3 plugins/chrono-vault/provider_config_check.py`; any failure aborts. A preflight `validate_staged.py` may also be run here and must report `empty-unapproved-fail-closed` before pinning.
-3. From an environment inheriting `SOLODIT_API_KEY`, run the Context Protector wrapper with `--review-server --server-config-file _state/tooling-arsenal-2026-07-18/mcp-context-protector/servers.json --command-args ...` once for each exact child command in the lane config: `/opt/homebrew/bin/semgrep mcp`, the state-local `slither-mcp --disable-metrics`, and `/opt/homebrew/bin/node` plus the production Solodit `dist/index.js`. Inspect each schema before approving it.
-4. Run `plugins/security-mcp-stack/preactivate-security-stack.sh`; its `--ci` result must be zero. Any finding, runtime failure, missing credential, or unavailable verification service aborts the restart.
-5. Run `python3 plugins/security-mcp-stack/validate_staged.py`; require `status: pass` and `context_config_state: three-reviewed-schemas-approved`.
-6. Restart Claude and gpt-codex once through the normal squad launcher. Do not manually kill individual panes. Gemini, Kimi, and Grok remain deferred.
-7. In each restarted lane, require `tools/list` plus read-only synthetic fixture calls through all three guarded servers. Retain pinning/tool-call evidence; a config/list success alone is insufficient.
-8. Run the existing chrono-vault record/recall parity probes. Promote a lane only if every applicable probe passes; otherwise restore the previously reviewed live registry inputs and perform one controlled launcher restart.
-
-No restart, live lane mutation, Snyk network scan, or Solodit API query was performed while preparing this configuration.
+Google Model Armor was removed from this stack on 2026-08-10 (operator decision); it was a
+GCP project service requiring application-default credentials, not an API-key endpoint, and
+was never activated. The guarded trio was staged through `activated-ready` (the SDK 1.29.0
+rebuild and production install are recorded in `held-solodit.json`), then retired on
+2026-10-27.

@@ -90,9 +90,9 @@ class PublicExportLinkTests(unittest.TestCase):
     def test_the_policy_really_denies_something(self) -> None:
         """Negative control: prove classify() can return non-public at all."""
         self.assertNotEqual(
-            self.policy.classify("docs/standards/settlement-guard-coverage.md"),
+            self.policy.classify("docs/design/2026-09-02-worker-sandbox-scope.md"),
             "public",
-            "the export policy no longer denies the guard census; if that is "
+            "the export policy no longer denies the private design document; if that is "
             "deliberate, this control needs a different denied path",
         )
 

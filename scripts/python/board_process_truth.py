@@ -46,6 +46,10 @@ LEGACY_OUTCOMES = {
 }
 ATTEMPT_IDENTITY_FIELDS = ("task_id", "attempt_id", "generation")
 PROCESS_IDENTITY_FIELDS = ("pid", "pgid", "process_start_token", "argv_sha256")
+# PGID is mutable routing information, not a process-incarnation fence. Keep it
+# in descriptors (whose supervisor must remain a session leader), but never use
+# it to reject an individually addressed worker that has regrouped.
+PROCESS_INCARNATION_FIELDS = ("pid", "process_start_token", "argv_sha256")
 MAX_JSON_BYTES = 1024 * 1024
 
 
@@ -701,15 +705,21 @@ def _process_rows():
     ]
 
 
+def _same_process(expected, observed):
+    return observed is not None and all(
+        expected[field] == observed[field] for field in PROCESS_INCARNATION_FIELDS
+    )
+
+
 def _signal_identity(identity, signum, *, target, operation):
     # Darwin has no pidfd: re-observe immediately before every PID signal, then
     # freeze the exact session leader before any numeric process-group signal.
     observed = observe_process(identity["pid"])
     if observed is None:
         return False
-    if observed != identity:
+    if not _same_process(identity, observed):
         mismatches = []
-        for field in PROCESS_IDENTITY_FIELDS:
+        for field in PROCESS_INCARNATION_FIELDS:
             if observed[field] == identity[field]:
                 continue
             if field == "argv_sha256":
@@ -734,7 +744,11 @@ def _signal_identity(identity, signum, *, target, operation):
                 "; ".join(mismatches),
             )
         )
-    os.kill(identity["pid"], signum)
+    try:
+        os.kill(identity["pid"], signum)
+    except ProcessLookupError:
+        # Exiting after observation is ordinary during TERM/CONT/KILL teardown.
+        return False
     return True
 
 
@@ -751,7 +765,13 @@ def _freeze_tree(expected):
     os.killpg(pgid, signal.SIGSTOP)
     try:
         for _ in range(8):
-            rows, descendants = _process_rows(), {root}
+            rows = _process_rows()
+            # The verified, frozen session leader pins this group even if a
+            # worker's parent has already exited. Include its orphaned members:
+            # the group STOP above reached them, so teardown must too.
+            descendants = {root} | {
+                pid for pid, _parent, group in rows if group == pgid
+            }
             while True:
                 found = descendants | {
                     pid for pid, parent, _group in rows if parent in descendants
@@ -814,40 +834,132 @@ def terminate_attributable_tree(expected, grace):
             raise ProcessTruthError("process-tree root is not a session leader")
     except OSError as exc:
         raise ProcessTruthError("process-tree root session is unavailable") from exc
-    members, escaped = _freeze_tree(expected)
-    for identity in escaped:
-        _signal_identity(
-            identity,
-            signal.SIGTERM,
-            target="descendant",
-            operation="terminate",
-        )
-    if observe_process(expected["pid"]) != expected:
-        raise ProcessTruthError("session leader identity changed before group signal")
-    os.killpg(expected["pgid"], signal.SIGTERM)
-    deadline = time.monotonic() + grace
-    while time.monotonic() < deadline and any(
-        observe_process(item["pid"]) == item for item in members
-    ):
-        time.sleep(0.05)
-    live = [item for item in members if observe_process(item["pid"]) == item]
-    for identity in live:
-        if identity["pgid"] != expected["pgid"]:
+    members, _escaped = _freeze_tree(expected)
+    members = {item["pid"]: item for item in members}
+    # Once the frozen tree is captured, address each incarnation individually.
+    # The root can exit during grace, so its numeric PGID is no longer a safe
+    # destination for KILL. Descendants can also regroup again after CONT.
+    signal_error = None
+    census_error = None
+    changed = set()
+    group_open = True
+
+    def signal_member(identity, signum, operation):
+        nonlocal signal_error
+        if identity["pid"] in changed:
+            return
+        try:
             _signal_identity(
-                identity,
-                signal.SIGKILL,
-                target="descendant",
-                operation="terminate",
+                identity, signum, target="tree_member", operation=operation
             )
-    if any(item["pgid"] == expected["pgid"] for item in live):
-        os.killpg(expected["pgid"], signal.SIGKILL)
-    deadline = time.monotonic() + 1
-    while time.monotonic() < deadline and any(
-        observe_process(item["pid"]) == item for item in members
+        except (OSError, ProcessTruthError) as exc:
+            # A refused member must not strand any other member. Keep the
+            # original identity (including argv) forever; never re-adopt a PID.
+            if isinstance(exc, ProcessTruthError):
+                changed.add(identity["pid"])
+            if signal_error is None:
+                signal_error = exc
+
+    for signum, operation in (
+        (signal.SIGTERM, "terminate"),
+        (signal.SIGCONT, "continue"),
     ):
+        for identity in reversed(list(members.values())):
+            signal_member(identity, signum, operation)
+
+    def remaining():
+        nonlocal signal_error, census_error, group_open
+        # Capture membership before observing identities: a worker can exit
+        # between these reads, leaving its newly forked child in the group.
+        try:
+            rows = _process_rows()
+        except (OSError, ProcessTruthError) as exc:
+            census_error = exc
+            rows = []
+        live, matching = set(), {}
+        for pid, identity in members.items():
+            observed = observe_process(pid)
+            if observed is None:
+                continue
+            live.add(pid)
+            if not _same_process(identity, observed):
+                changed.add(pid)
+                if signal_error is None:
+                    fields = ",".join(
+                        field for field in PROCESS_INCARNATION_FIELDS
+                        if identity[field] != observed[field]
+                    )
+                    signal_error = ProcessTruthError(
+                        "process identity changed during cancellation: pid=%s fields=%s"
+                        % (pid, fields)
+                    )
+            elif pid not in changed:
+                matching[pid] = identity
+
+        # Never re-open an emptied group or trust a recycled leader's group.
+        # While the original group exists its ID stays pinned, including when
+        # all previously captured members exited and only a late orphan lives.
+        if expected["pid"] in changed or not any(
+            group == expected["pgid"] for _pid, _parent, group in rows
+        ):
+            group_open = False
+        while True:
+            added = False
+            for pid, parent, group in rows:
+                if pid in members:
+                    continue
+                in_group = group_open and group == expected["pgid"]
+                parent_identity = matching.get(parent)
+                if not in_group and parent_identity is None:
+                    continue
+                observed = observe_process(pid)
+                if observed is None:
+                    continue
+                # Recheck the membership witness too. A dead/reused parent
+                # cannot authorize signalling its replacement's children.
+                in_group = in_group and observed["pgid"] == expected["pgid"]
+                if not in_group and not (
+                    parent_identity is not None
+                    and _same_process(parent_identity, observe_process(parent))
+                ):
+                    continue
+                members[pid] = observed
+                matching[pid] = observed
+                live.add(pid)
+                added = True
+            if not added:
+                return list(matching.values()), live
+
+    deadline = time.monotonic() + grace
+    while time.monotonic() < deadline:
+        if not remaining()[1]:
+            break
+        time.sleep(0.05)
+
+    # CONT permits new forks. Re-census before every KILL pass and after the
+    # last pass, even if the original census is empty. Both time and pass count
+    # bound teardown; an unkillable or changed member must prevent success.
+    deadline = time.monotonic() + 1
+    for _ in range(64):
+        matching, live = remaining()
+        if not live:
+            break
+        for identity in reversed(matching):
+            signal_member(identity, signal.SIGKILL, "terminate")
         time.sleep(0.02)
-    if any(observe_process(item["pid"]) == item for item in members):
-        raise ProcessTruthError("verified process tree survived cancellation")
+        if time.monotonic() >= deadline:
+            break
+    _matching, live = remaining()
+    if live:
+        detail = "; %s" % signal_error if signal_error is not None else ""
+        raise ProcessTruthError(
+            "verified process tree survived cancellation: pids=%s%s"
+            % (",".join(map(str, sorted(live))), detail)
+        )
+    if census_error is not None:
+        raise census_error
+    if signal_error is not None:
+        raise signal_error
 
 
 def cancel_attempt(dispatch_path, grace):

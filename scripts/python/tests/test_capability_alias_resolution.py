@@ -21,6 +21,7 @@ from capability_dispatch import resolve_snapshot  # noqa: E402
 
 
 class TestCapabilityAliasResolution(unittest.TestCase):
+    @unittest.skipUnless((REPO_ROOT / "shared/capabilities/project").exists(), "private input is not published")
     def test_every_legacy_id_maps_to_an_existing_project_card(self) -> None:
         for legacy_id, canonical in CAPABILITY_ALIASES.items():
             with self.subTest(legacy_id=legacy_id):
@@ -78,6 +79,7 @@ class TestCapabilityAliasResolution(unittest.TestCase):
             ("project", "project/image", True),
         )
 
+    @unittest.skipUnless((REPO_ROOT / "shared/capabilities/project").exists(), "private input is not published")
     def test_snapshot_resolves_legacy_and_preserves_gates(self) -> None:
         snap = resolve_snapshot(REPO_ROOT, "content", "content/image")
         self.assertEqual(snap["capability_id"], "project/image")
@@ -86,6 +88,7 @@ class TestCapabilityAliasResolution(unittest.TestCase):
         self.assertIn("paid_media", snap["capability_gates"])
         self.assertIn("public_release", snap["capability_gates"])
 
+    @unittest.skipUnless((REPO_ROOT / "shared/capabilities/project").exists(), "private input is not published")
     def test_every_legacy_id_resolves_via_dispatch(self) -> None:
         for legacy_id, canonical in CAPABILITY_ALIASES.items():
             with self.subTest(legacy_id=legacy_id):

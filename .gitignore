@@ -137,3 +137,8 @@ model-lanes/*/.gemini/settings.json
 # it again. Deliberately unnamed: this file publishes, and a client project's
 # name is the client's to disclose, not ours.
 apps/
+
+# Product media is maintained in a separate repository.
+/media/launch-video/
+/media/x-*/
+/media/x-*.jpg

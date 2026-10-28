@@ -40,8 +40,6 @@ reviews:
     - "!model-lanes/gemini/.gemini/agents/*.md"
     - "!model-lanes/grok/.grok/agents/*.yaml"
     - "!model-lanes/grok/.grok/prompts/*.md"
-    - "!model-lanes/kimi/.kimi/agents/*.yaml"
-    - "!model-lanes/kimi/.kimi/prompts/*.md"
     # .claude/skills is canonical (model-lanes/SKILL-HOMES.md).
     # validate_skill_wiring.py enforces root mirror bytes and legacy flat bodies.
     # shared/skills/_retired remains reviewable.

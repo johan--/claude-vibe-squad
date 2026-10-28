@@ -6,7 +6,7 @@ generated_by: lane-capability-registry/v1
 capability_registry_sha256: 268b6f90a9c6eb271bab4d6099c584332059c6b21404bece9775ccc25de296d6
 # BEGIN SPECIALIST CAPABILITY PROJECTION
 capability_source: model-lanes/specialist-lane-capabilities.v1.json
-capability_source_sha256: c16dad3b4285660ca0e18b0b7ac0a60fca55c745f1656f2f300e65918b773f20
+capability_source_sha256: efea0007013e967a9c4ceadcc3c7573485671b1ad465f6602c386ead95a96b1f
 skills: ["agentic-safety-audit","chain-construct","chain-construct-smart-contract","cosmos-sdk-audit-checklist","cross-chain-bridge-audit","defi-invariant-check","dependency-health-triage","evm-audit-flow","findings-filter","known-advisory-backport-check","multi-stance-audit-fanout","osint-platform-audit","pre-audit-threat-model","review-severity-ladder","security-ownership-map","security-threat-model","semgrep-rule-author","solana-audit-flow","supply-chain-audit","systematic-attacking","systematic-bug-hunting","variant-analysis","vulnhunter-solana"]
 tools: ["aderyn","amass","anchor","angr","anvil","bandit","cargo-audit","cargo-fuzz","cargo-geiger","cast","chisel","curl","echidna","forge","gdb","golangci-lint","gosec","gowitness","grype","halmos","hardhat","httpx","medusa","myth","nikto","nmap","nuclei","osv-scanner","playwright","radare2","semgrep","slither","snyk","solana","staticcheck","subfinder","trident","trivy"]
 mcps: ["chrono-recon","chrono-research-arsenal","chrono-vault","sequential-thinking"]

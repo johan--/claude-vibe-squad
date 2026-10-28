@@ -40,7 +40,7 @@ class LaunchClearanceTests(unittest.TestCase):
                     "${GPT_CODEX_WIN}",
                     "${CLAUDE_WIN}",
                     "${GEMINI_WIN}",
-                    "${KIMI_WIN}",
+                    "${GROK_WIN}",
                 )
                 for line in clearance_lines
             )

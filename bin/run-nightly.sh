@@ -9,7 +9,7 @@
 # summary that can disagree with the thing it summarises is worse than no
 # summary (CLAUDE.md hard rule 10: one fact, one home).
 #   Sunday only: the weekly deep run (bin/run-weekly.sh).
-#   Email brief is retained as a manual fallback, no longer invoked by default.
+#   The local morning brief is produced by bin/morning-brief.sh.
 #   DEPRECATED: dream-light, improvement-extractor, newsletter-format, podcast-script, newsletter-tts, telegram-deliver.
 #
 # Each phase logs separately. Failures don't block subsequent phases, but they
@@ -21,7 +21,7 @@
 
 set -uo pipefail  # NOT -e — we want phases to continue even if one fails
 
-# launchd's spawn shell needs ~/.local/bin (claude, kimi) + brew paths.
+# launchd's spawn shell needs ~/.local/bin (claude) + brew paths.
 # Child phase scripts inherit this PATH.
 export PATH="${HOME}/.local/bin:/opt/homebrew/bin:/opt/homebrew/sbin:${PATH}"
 
@@ -182,6 +182,10 @@ run_phase "memory-audit"         "${VAULT_ROOT}/bin/memory-audit.sh"
 run_phase "curation-review"      "${VAULT_ROOT}/bin/curation-review.sh"
 run_phase "sweep-active"         "${VAULT_ROOT}/bin/sweep-active.sh"
 run_phase "browser-keep-alive"   "${VAULT_ROOT}/bin/browser-keep-alive.sh"
+# Check the existing session before kickstart's asynchronous browser startup.
+# The refresh defers for live board browser lanes; set CHRONO_SKIP_CHROME_REFRESH=1
+# to disable it. A successful kickstart is not a post-restart CDP health probe.
+run_phase "chrome-refresh"       "${VAULT_ROOT}/bin/chrome-refresh.sh"
 # Board scratch and settled worktrees. The reaper existed but nothing invoked
 # it -- measured 2026-08-15: 430 orphaned attempt roots and 4.2 GiB in /tmp/vs,
 # because the create path and the teardown path are not the same path (a lane
@@ -200,6 +204,7 @@ run_phase "prune-board-scratch"  "${VAULT_ROOT}/bin/prune-board-worktrees.sh" --
 # clean hour. Rotation is also report-only without --apply.
 run_phase "rotate-logs"          "${VAULT_ROOT}/bin/rotate-logs.sh" --apply
 run_phase "system-cleanup"       "${VAULT_ROOT}/bin/system-cleanup.sh"
+run_phase "uv-cache-prune"       "${VAULT_ROOT}/bin/uv-cache-prune.sh"
 run_phase "brain-cleanup"        "${VAULT_ROOT}/bin/brain-cleanup.sh"
 # The feed/triage/processing/synthesis pipeline was removed 2026-08-16. It was
 # ~3,000 lines encoding a content workflow -- fetch feeds, rank items against
@@ -219,7 +224,7 @@ fi
 # and SKIP records directly; run-nightly supplies a minimal fallback only when
 # the reader itself is the failed phase.
 run_phase "morning-brief"        "${VAULT_ROOT}/bin/morning-brief.sh"
-# Email fallback retained but retired from default nightly delivery.
+# If this phase fails, write the minimal local brief below.
 
 if [[ "${MORNING_BRIEF_FAILED}" -eq 1 ]]; then
     write_brief_placeholder \

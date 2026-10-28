@@ -99,7 +99,7 @@ class CleanupReportOnlyTest(unittest.TestCase):
                 ),
             ):
                 result = run_weekly.subscription_audit()
-        for lane in ("claude", "codex", "gemini", "kimi"):
+        for lane in ("claude", "codex", "gemini"):
             self.assertEqual(result[lane], "✓ subscription auth OK")
 
     def test_system_cleanup_cannot_apply_to_old_or_ambiguous_paths(self):

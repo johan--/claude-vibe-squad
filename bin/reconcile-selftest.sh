@@ -33,9 +33,18 @@ case "${1:-}" in
             printf '❯\n'
         fi
         ;;
+    list-panes)
+        if [[ "$*" == *'#{pane_pid}'* ]]; then
+            printf '%%7\t999999\tselftest:0\tselftest:chrono\n'
+        else
+            printf '%%7\tselftest:0.0\tselftest:chrono.0\n'
+        fi
+        ;;
     display-message)
         if [[ "$*" == *'#{pane_pid}'* ]]; then
             printf '999999\n'
+        elif [[ "$*" == *'#{session_name}'* ]]; then
+            printf 'selftest\n'
         else
             printf 'claude\n'
         fi
@@ -49,6 +58,23 @@ case "${1:-}" in
 esac
 TMUX_EOF
 chmod +x "${FAKE_TMUX}"
+# Process observations are fixture data; no host process identity is assumed.
+mkdir -p "${FIXTURE_ROOT}/tools"
+cat > "${FIXTURE_ROOT}/tools/ps" <<'PS_EOF'
+#!/bin/bash
+if [[ "$1" == -o ]]; then
+    echo fixture-start
+else
+    echo '999999 1 S+ /fixture/claude'
+fi
+PS_EOF
+chmod +x "${FIXTURE_ROOT}/tools/ps"
+export PATH="${FIXTURE_ROOT}/tools:${PATH}"
+export CHRONO_COORDINATOR_PIDFILE="${FIXTURE_ROOT}/coordinator.pid"
+printf 'pid 999999\nshape pane\ntarget selftest:chrono\nstart fixture-start\n' > "$CHRONO_COORDINATOR_PIDFILE"
+# The fake tmux executable is the only transport this selftest can invoke.
+export SQUAD_TEST_ISOLATION=0
+
 
 cat > "${STATE_DIR}/active-tasks.json" <<'JSON_EOF'
 {
@@ -118,6 +144,28 @@ status: completed
 ---
 Historical completed response still closes to complete.
 RESPONSE_EOF
+
+# Transport quarantine must obey the same packet trigger boundary.
+python3 - "${FIXTURE_ROOT}" <<'PY_QUARANTINE'
+import json
+from pathlib import Path
+import sys
+root = Path(sys.argv[1])
+registry_path = root / "_state/active-tasks.json"
+registry = json.loads(registry_path.read_text())
+for triggered in (False, True):
+    task = "TASK-2099-01-01-0008-quarantine-" + str(triggered).lower()
+    registry[task] = {"status": "in-flight", "to_model": "gpt-codex",
+                      "mandatory_review": triggered,
+                      "review_triggers": ["blast_radius"] if triggered else [],
+                      "review_model": "claude" if triggered else "none",
+                      "dispatched_at": "2020-01-01T00:00:00+00:00"}
+    (root / "departments/coding/outbox" / f"{task}-response.md").write_text(
+        "---\nstatus: needs_review\n---\n\n"
+        "controller_quarantine: validated-artifact-after-cli-transport-failure/v1\n\n"
+        "Validated transport recovery.\n")
+registry_path.write_text(json.dumps(registry))
+PY_QUARANTINE
 
 printf '%s\n' '# Return artifact exists without an envelope' > "${STATE_DIR}/artifacts/no-envelope.md"
 
@@ -200,6 +248,16 @@ assert "coordination_requested" not in triggered
 assert not triggered.get("completed_at")
 print("PASS triggered needs_review remains held for distinct-family review")
 
+recovered = registry["TASK-2099-01-01-0008-quarantine-false"]
+assert recovered["status"] == "complete"
+assert recovered["review_disposition"] == "not-required"
+assert recovered["coordination_request_source"] == "legacy-needs_review-status"
+assert recovered["coordination_requested"] is True
+held = registry["TASK-2099-01-01-0008-quarantine-true"]
+assert held["status"] == "review-required"
+assert held["review_required_by"] == "claude"
+print("PASS untriggered quarantine completes with coordination; triggered quarantine stays held")
+
 print("PASS registry statuses: complete / blocked cross-namespace / work-done-no-envelope / review-required")
 
 stale = registry["TASK-2099-01-01-0005-stale-active"]
@@ -225,8 +283,8 @@ grep -q '| COORDINATION-REQUESTED | security/TASK-2099-01-01-0001-needs |' "${ST
 grep -q '| REVIEW-REQUIRED | security/TASK-2099-01-01-0007-triggered |' "${STATE_DIR}/chrono-queue.md"
 ! grep -q '| needs_review | security/TASK-2099-01-01-0001-needs |' "${STATE_DIR}/chrono-queue.md"
 grep -q '| work-done-no-envelope | coding/TASK-2099-01-01-0003-no-envelope |' "${STATE_DIR}/chrono-queue.md"
-grep -q -- '-t selftest:chrono' "${TMUX_LOG}"
-printf '%s\n' "PASS chrono queue audit and named-window nudge"
+grep -q -- '-t %7' "${TMUX_LOG}"
+printf '%s\n' "PASS chrono queue audit and fixture coordinator nudge"
 
 NUDGE_LINES_BEFORE="$(wc -l < "${TMUX_LOG}" | tr -d ' ')"
 SECOND_OUTPUT="$(

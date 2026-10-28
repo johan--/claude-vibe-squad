@@ -14,7 +14,7 @@ imports, not a parallel reimplementation of them.
 from __future__ import annotations
 
 import copy
-from dataclasses import replace
+from dataclasses import asdict, replace
 import hashlib
 import json
 import os
@@ -177,7 +177,7 @@ def _run_trusted_launch(
 
 # Issued-token shapes for the credentials this rail actually handles -- the
 # managed set in `bin/board-supervisor.sh` (`SOLODIT_API_KEY`, `XAI_API_KEY`,
-# `PERPLEXITY_API_KEY`, `GITHUB_PERSONAL_ACCESS_TOKEN`) is issued under exactly
+# `GITHUB_PERSONAL_ACCESS_TOKEN`) is issued under exactly
 # these prefixes. Matched against receipt VALUES only, and deliberately unable
 # to match a 64-character sha256 digest, of which the receipt carries many.
 _CREDENTIAL_VALUE_PATTERNS = (
@@ -739,9 +739,9 @@ class TrustedLaunchTests(unittest.TestCase):
             "after a successful tool_result and RECON_UNAVAILABLE only if no "
             "chrono-recon tool is exposed. Finally, use ToolSearch exactly once "
             "for each of these exact queries: 'claude.ai Gmail', 'claude.ai "
-            "Google Drive', and 'claude.ai Google Calendar'. Report "
-            "GOOGLE_CONNECTORS_UNAVAILABLE only if every one returns no matches. "
-            "Do not call a Google connector and do not use any other tool."
+            "Google Drive', 'claude.ai Google Calendar', and 'claude.ai ElevenLabs'. "
+            "Report FIRST_PARTY_CONNECTORS_UNAVAILABLE only if every one returns "
+            "no matches. Do not call a first-party connector or use any other tool."
         )
         completed = subprocess.run(
             [
@@ -762,7 +762,8 @@ class TrustedLaunchTests(unittest.TestCase):
                     "Agent,mcp__plugin_chrono-recon_chrono-recon__*,"
                     "mcp__claude_ai_Gmail__*,"
                     "mcp__claude_ai_Google_Drive__*,"
-                    "mcp__claude_ai_Google_Calendar__*"
+                    "mcp__claude_ai_Google_Calendar__*,"
+                    "mcp__claude_ai_ElevenLabs__*"
                 ),
             ],
             check=False,
@@ -801,6 +802,7 @@ class TrustedLaunchTests(unittest.TestCase):
         self.assertIn("claude.ai Gmail", init_servers)
         self.assertIn("claude.ai Google Drive", init_servers)
         self.assertIn("claude.ai Google Calendar", init_servers)
+        self.assertIn("claude.ai ElevenLabs", init_servers)
         vault_uses = [
             block
             for event in events
@@ -841,19 +843,20 @@ class TrustedLaunchTests(unittest.TestCase):
                 if isinstance(block, dict) and block.get("type") == "tool_use"
             )
         )
-        google_queries = {
+        connector_queries = {
             "claude.ai Gmail",
             "claude.ai Google Drive",
             "claude.ai Google Calendar",
+            "claude.ai ElevenLabs",
         }
-        empty_google_queries = {
+        empty_connector_queries = {
             event["tool_use_result"].get("query")
             for event in events
             if isinstance(event.get("tool_use_result"), dict)
-            and event["tool_use_result"].get("query") in google_queries
+            and event["tool_use_result"].get("query") in connector_queries
             and event["tool_use_result"].get("matches") == []
         }
-        self.assertEqual(empty_google_queries, google_queries)
+        self.assertEqual(empty_connector_queries, connector_queries)
         self.assertFalse(
             any(
                 block.get("name", "").startswith("mcp__claude_ai_")
@@ -885,14 +888,10 @@ def _supervisor_region(marker: str) -> str:
 
 
 class CommittedWorkRecoveryTests(unittest.TestCase):
-    """V113-18 (b): a blocked RETURN path must not strand committed work.
+    """Failed returns preserve committed and dirty evidence without landing it.
 
-    Three lanes (`w8a`, `w8e`, `wb2`) finished and committed, then lost the
-    return path -- two at the lane wall, one on a nested-YAML envelope. Recovery
-    meant a human spotting a `PRESERVED WORK` line and running `git cherry-pick`.
-
-    Every test here drives the SHIPPED `recover_committed_work_for_block` over
-    real git, through the same `worktree_isolation` the supervisor imports.
+    Every test drives the shipped recovery region against real Git. A preserved
+    ref is discoverable recovery output; it is never an integration receipt.
     """
 
     TASK_ID = "TASK-2026-08-28-9918-recovery"
@@ -922,11 +921,16 @@ class CommittedWorkRecoveryTests(unittest.TestCase):
         notes: list[str] = []
         namespace = {
             "os": os,
+            "asdict": asdict,
             "wti": wti,
             "launch_mode": "trusted",
             "execution_kind": "lane",
             "handle": handle,
             "authority": {
+                "task_id": handle.task_id,
+                "attempt_id": handle.attempt_id,
+                "repo_root": str(repo),
+                "pool_root": str(handle.worktree_root.parent),
                 "write_paths": list(self.SCOPE),
                 "expected_result_path": self.ARTIFACT,
                 "expected_outbox_path": self.ARTIFACT,
@@ -989,7 +993,7 @@ class CommittedWorkRecoveryTests(unittest.TestCase):
             == 0
         )
 
-    def test_a_failed_return_path_lands_the_workers_committed_code(self) -> None:
+    def test_a_failed_return_path_preserves_the_workers_committed_code(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             repo, handle = self._fixture(Path(directory))
             worker_head = self._worker_commits(
@@ -1002,16 +1006,15 @@ class CommittedWorkRecoveryTests(unittest.TestCase):
             namespace["_work_recovery_window"][0] = True
             recovery = namespace["recover_committed_work_for_block"]()
 
-            self.assertEqual(recovery["status"], "integrated")
-            self.assertEqual(recovery["integrated_paths"], ["scripts/python/thing.py"])
-            self.assertNotEqual(self._branch_head(repo), before)
-            self.assertTrue(self._reachable(repo, worker_head))
-            self.assertEqual(
-                (repo / "scripts" / "python" / "thing.py").read_text(encoding="utf-8"),
-                "the real fix\n",
-            )
+            self.assertEqual(recovery["status"], "preserved")
+            self.assertEqual(self._branch_head(repo), before)
+            self.assertFalse(self._reachable(repo, worker_head))
+            self.assertFalse((repo / "scripts/python/thing.py").exists())
+            evidence = recovery["evidence_preservation"]
+            self.assertEqual(evidence["evidence_ref"], f"refs/heads/{handle.branch}")
+            self.assertEqual(evidence["evidence_commit"], worker_head)
 
-    def test_inverted_control_the_same_commit_is_stranded_without_the_window(
+    def test_closed_window_skips_preservation_without_integrating(
         self,
     ) -> None:
         """Break the recovery path; the identical case strands again."""
@@ -1037,8 +1040,9 @@ class CommittedWorkRecoveryTests(unittest.TestCase):
             # Restore it: the same fixture, the same commit, now recovered.
             namespace["_work_recovery_window"][0] = True
             recovered = namespace["recover_committed_work_for_block"]()
-            self.assertEqual(recovered["status"], "integrated")
-            self.assertTrue(self._reachable(repo, worker_head))
+            self.assertEqual(recovered["status"], "preserved")
+            self.assertFalse(self._reachable(repo, worker_head))
+            self.assertEqual(self._branch_head(repo), before)
 
     def test_recovery_runs_at_most_once_per_attempt(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -1048,7 +1052,7 @@ class CommittedWorkRecoveryTests(unittest.TestCase):
             namespace["_work_recovery_window"][0] = True
 
             self.assertEqual(
-                namespace["recover_committed_work_for_block"]()["status"], "integrated"
+                namespace["recover_committed_work_for_block"]()["status"], "preserved"
             )
             landed = self._branch_head(repo)
             self.assertEqual(
@@ -1057,7 +1061,7 @@ class CommittedWorkRecoveryTests(unittest.TestCase):
             )
             self.assertEqual(self._branch_head(repo), landed)
 
-    def test_uncommitted_residue_is_declined_rather_than_half_landed(self) -> None:
+    def test_uncommitted_residue_is_preserved_without_landing(self) -> None:
         """A lane killed mid-edit must not push an unreviewable file to the branch."""
 
         with tempfile.TemporaryDirectory() as directory:
@@ -1071,11 +1075,13 @@ class CommittedWorkRecoveryTests(unittest.TestCase):
             namespace["_work_recovery_window"][0] = True
             declined = namespace["recover_committed_work_for_block"]()
 
-            self.assertEqual(declined["status"], "declined")
-            self.assertIn("uncommitted in-scope", declined["reason"])
+            self.assertEqual(declined["status"], "preserved")
+            evidence = declined["evidence_preservation"]
+            self.assertTrue(evidence["snapshot_created"])
+            self.assertIn("scripts/python/thing.py", evidence["preserved_paths"])
             self.assertEqual(self._branch_head(repo), before)
 
-    def test_a_worker_that_committed_nothing_recovers_nothing(self) -> None:
+    def test_a_worker_that_committed_nothing_preserves_without_snapshot(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             repo, handle = self._fixture(Path(directory))
             before = self._branch_head(repo)
@@ -1084,11 +1090,12 @@ class CommittedWorkRecoveryTests(unittest.TestCase):
 
             recovery = namespace["recover_committed_work_for_block"]()
 
-            self.assertEqual(recovery["status"], "nothing-to-integrate")
+            self.assertEqual(recovery["status"], "preserved")
+            self.assertFalse(recovery["evidence_preservation"]["snapshot_created"])
             self.assertEqual(self._branch_head(repo), before)
 
-    def test_out_of_scope_commits_are_still_categorically_refused(self) -> None:
-        """Recovery inherits every integration gate; it does not bypass them."""
+    def test_out_of_scope_commits_are_preserved_without_landing(self) -> None:
+        """Out-of-scope evidence stays on the attempt branch for inspection."""
 
         with tempfile.TemporaryDirectory() as directory:
             repo, handle = self._fixture(Path(directory))
@@ -1099,8 +1106,9 @@ class CommittedWorkRecoveryTests(unittest.TestCase):
             namespace["_work_recovery_window"][0] = True
             refused = namespace["recover_committed_work_for_block"]()
 
-            self.assertEqual(refused["status"], "declined")
-            self.assertIn("outside the integration scope", refused["reason"])
+            self.assertEqual(refused["status"], "preserved")
+            self.assertIn(handle.branch, refused["evidence_preservation"]["evidence_ref"])
+            self.assertFalse((repo / "bin/not-in-my-scope.sh").exists())
             self.assertEqual(self._branch_head(repo), before)
 
 

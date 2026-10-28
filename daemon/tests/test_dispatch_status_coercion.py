@@ -30,12 +30,13 @@ class DispatchStatusCoercionTests(unittest.TestCase):
         )
         for worker_status in worker_statuses:
             with self.subTest(worker_status=worker_status):
-                self.assertEqual(dcb._coerce_status(worker_status), "needs_review")
+                # Unrecognized prose must not acquire settlement authority.
+                self.assertEqual(dcb._coerce_status(worker_status), "blocked")
 
     def test_canonical_status_controls_pass_through(self) -> None:
         controls = (
             ("complete", "complete"),
-            ("completed", "completed"),
+            ("completed", "complete"),
             ("needs_review", "needs_review"),
             ("needs_human", "needs_human"),
             ("blocked", "blocked"),

@@ -272,7 +272,6 @@ class VerificationContractTests(unittest.TestCase):
             "codex": "openai",
             "gemini": "google",
             "grok": "xai",
-            "kimi": "kimi",
         }
         for lane, family in cases.items():
             with self.subTest(lane=lane):

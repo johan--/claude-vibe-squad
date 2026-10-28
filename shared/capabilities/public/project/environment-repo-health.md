@@ -16,7 +16,7 @@ gates: [production_mutation, credential_change, public_release, delete, cleanup]
 
 ## Availability in a fresh clone
 
-A zero-key checkout gets this protocol and its validation metadata as documentation; automated dispatch is `needs_tool`. To make it runnable, install and authenticate the selected model CLI, configure every MCP declared by the dispatched specialists, bind the private vault (`CHRONO_VAULT_ROOT`; Kimi also requires its exact vault context), install any required host-local binaries, and provide approved credentials plus a bounded budget for any metered provider named below. After setup, re-run the production role planner and validators on that host; availability remains subject to the narrower gaps and operator gates documented in this card.
+A zero-key checkout gets this protocol and its validation metadata as documentation; automated dispatch is `needs_tool`. To make it runnable, install and authenticate the selected model CLI, configure every MCP declared by the dispatched specialists, bind the private vault (`CHRONO_VAULT_ROOT`), install any required host-local binaries, and provide approved credentials plus a bounded budget for any metered provider named below. After setup, re-run the production role planner and validators on that host; availability remains subject to the narrower gaps and operator gates documented in this card.
 
 **When to use:** repo and environment hygiene — dependency upgrades, dead-code/artifact cleanup, refactors,
 and health audits. Maintenance lifecycle: planned inventory → risk grouping → approval → batch execution →
@@ -40,4 +40,4 @@ secret/token rotation, `production_mutation` for any change to a live (non-relea
 for anything shipped publicly. Subscription-cost weighing lost its dedicated analyst in the 2026-08-14 roster
 consolidation (P13.64 — role retired, zero dispatches since 2026-05-02, no successor named): weigh upgrade
 cost impact explicitly at S1 (`product-manager`) and surface material cost questions to the operator. Incident/repair
-of a suspected compromise is `incident` mode, not here.
+of a suspected compromise is the project Incident flow, not here.

@@ -18,7 +18,6 @@ import tempfile
 from dataclasses import asdict, dataclass
 from pathlib import Path, PurePosixPath
 
-import target_scan
 from path_policy import Policy, PolicyError, load_policy
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "model-lanes"))
@@ -77,7 +76,6 @@ LANE_AUTHOR_FAMILIES = {
     "codex": "openai",
     "gemini": "google",
     "grok": "xai",
-    "kimi": "moonshot",
 }
 
 
@@ -110,6 +108,58 @@ def _base_environment() -> dict[str, str]:
 
 class ProjectorError(RuntimeError):
     """Projection cannot continue without weakening a release invariant."""
+
+
+def _load_target_scanner():
+    """Keep public imports usable; actual publication requires the private scanner."""
+    try:
+        import target_scan
+    except ModuleNotFoundError as error:
+        if error.name != "target_scan":
+            raise
+        raise ProjectorError(
+            "publication requires private tools/export/target_scan.py; "
+            "the public checkout supports inspection, not release projection"
+        ) from error
+    return target_scan
+
+
+def project_public_duplicate_registry(candidate: Path, policy: Policy) -> tuple[str, ...]:
+    """Keep identity declarations without publishing withheld artifact inventories."""
+    from check_duplicate_blobs import REGISTRY_COLUMNS, load_registry_bytes
+
+    relative = "shared/registries/identical-blobs.tsv"
+    path = candidate / relative
+    if not path.exists():
+        return ()
+    if path.is_symlink() or policy.classify(relative) != "public":
+        raise ProjectorError("duplicate registry is not a regular public file")
+    original = path.read_bytes()
+    entries = load_registry_bytes(original, source=relative)
+    lines = ["\t".join(REGISTRY_COLUMNS)]
+    for entry in entries:
+        members = [p for p in entry.member_paths
+                   if policy.classify(p) == "public" and (candidate / p).is_file()]
+        if len(members) < 2:
+            continue
+        enforcers = [p for p in entry.enforced_by
+                     if policy.classify(p) == "public" and (candidate / p).is_file()]
+        winner = entry.winner_path if entry.winner_path in members else members[0]
+        # Identifiers and explanatory prose can themselves name private assets.
+        group = "public-duplicate-" + hashlib.sha256(
+            json.dumps(members, separators=(",", ":")).encode()
+        ).hexdigest()[:12]
+        lines.append("\t".join((
+            group, json.dumps(winner), json.dumps(members, separators=(",", ":")),
+            json.dumps(enforcers, separators=(",", ":")), entry.disposition,
+            "Public subset of a source identity declaration; the named winner and enforcers govern these copies.",
+        )))
+    rendered = ("\n".join(lines) + "\n").encode()
+    load_registry_bytes(rendered, source=relative)  # Missing public enforcers fail closed.
+    if original == rendered:
+        return ()
+    path.write_bytes(rendered)
+    return (relative,)
 
 
 @dataclass(frozen=True)
@@ -928,6 +978,7 @@ def project(
     expected_public_tip: str,
     environment: dict[str, str] | None = None,
 ) -> ProjectionResult:
+    target_scan = _load_target_scanner()
     root = _git_top_level(root.resolve(strict=True))
     _require_clean_source(root)
     source_sha = _resolve_commit(root, source)
@@ -1001,7 +1052,8 @@ def project(
                     raise ValueError(f"public capability promises remain: {issues}")
         except (OSError, ValueError, RuntimeError) as error:
             raise ProjectorError(f"capability projection failed: {error}") from error
-        for path in capability_paths:
+        projected_paths = (*capability_paths, *project_public_duplicate_registry(candidate, policy))
+        for path in projected_paths:
             blob = _git(root, ["hash-object", "-w", "--stdin"],
                         input_bytes=(candidate / path).read_bytes()).decode().strip()
             _git(root, ["update-index", "--cacheinfo", f"100644,{blob},{path}"],

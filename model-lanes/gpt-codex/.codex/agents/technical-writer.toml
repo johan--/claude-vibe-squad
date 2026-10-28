@@ -1,11 +1,10 @@
 # generated_by=lane-capability-registry/v1 registry_sha256=83bf08d4eb6d20c92f79809010e2930e2332b1371c1e68b8de6143697c1187ac
 name = "technical_writer"
 description = "Thin Codex adapter for technical-writer; canonical brief is authoritative."
-model_reasoning_effort = "high"
 sandbox_mode = "workspace-write"
 # BEGIN SPECIALIST CAPABILITY PROJECTION
 capability_source = "model-lanes/specialist-lane-capabilities.v1.json"
-capability_source_sha256 = "c16dad3b4285660ca0e18b0b7ac0a60fca55c745f1656f2f300e65918b773f20"
+capability_source_sha256 = "efea0007013e967a9c4ceadcc3c7573485671b1ad465f6602c386ead95a96b1f"
 mcps = ["chrono-vault","sequential-thinking"]
 # END SPECIALIST CAPABILITY PROJECTION
 developer_instructions = """

@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import signal
 from pathlib import Path
 import subprocess
 import sys
@@ -17,12 +18,33 @@ VAULT_ROOT = Path(os.environ.get("VAULT_ROOT", REPO_ROOT)).resolve()
 
 
 def reconcile_once() -> dict[str, object]:
-    timeout = float(os.environ.get("SQUAD_RECONCILE_SWEEP_TIMEOUT_SECONDS", "30"))
+    timeout = float(os.environ.get("SQUAD_RECONCILE_SWEEP_TIMEOUT_SECONDS", "120"))
     command = [str(VAULT_ROOT / "bin/registry-reconciler.sh")]
+    # The wrapper execs `uv run`, which runs the reconciler as a grandchild.
+    # Run it in its own process group and kill the whole group on timeout:
+    # killing only the direct child orphaned the reconciler, which then queued
+    # on the registry lock, one leak per cycle (2026-10-04: 47 orphans stalled
+    # board dispatch for an hour).
+    proc = subprocess.Popen(
+        command,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        start_new_session=True,
+    )
     try:
-        result = subprocess.run(command, capture_output=True, text=True, timeout=timeout)
-        return {"ok": result.returncode == 0, "returncode": result.returncode}
+        returncode = proc.wait(timeout=timeout)
+        return {"ok": returncode == 0, "returncode": returncode}
     except subprocess.TimeoutExpired:
+        for sig in (signal.SIGTERM, signal.SIGKILL):
+            try:
+                os.killpg(proc.pid, sig)
+            except ProcessLookupError:
+                break
+            try:
+                proc.wait(timeout=5)
+                break
+            except subprocess.TimeoutExpired:
+                continue
         return {"ok": False, "timeout": True}
 
 

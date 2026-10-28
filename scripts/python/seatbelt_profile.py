@@ -155,7 +155,13 @@ DEFAULT_LANE_PATH = os.pathsep.join(
 
 
 CANONICAL_SANDBOX_EXEC = Path("/usr/bin/sandbox-exec")
-KNOWN_MACOS_BUILDS = frozenset({"25E253"})
+# Exact builds only. 25E253 at introduction. 26A428 (macOS 27.0) passed the full
+# docs/design/2026-09-02-worker-sandbox-scope.md section 4 list on 2026-09-27
+# (qualify_macos_build.py, every lane at the time). Strict (blind) launches stay HELD on
+# every build: lane runtimes need sysctl-read to start, and that grant lets a
+# confined lane read other same-user processes' argv and environment through
+# KERN_PROCARGS2, which a sysctl-name deny did not block.
+KNOWN_MACOS_BUILDS = frozenset({"25E253", "26A428"})
 # This canary proves only that the pinned sandbox-exec binary still compiles a
 # profile and launches a harmless binary. Enforcement is proven separately by
 # the deny-default effect probes; keeping the compatibility canary permissive
@@ -188,7 +194,6 @@ LANE_CLI_PATHS = {
     # now the executable vehicle for that lane.
     "gemini": LOCAL_BIN_ROOT / "agy",
     "grok": GROK_BIN_ROOT / "grok",
-    "kimi": LOCAL_BIN_ROOT / "kimi",
 }
 CODEX_NATIVE_EXECUTABLE = Path(
     "/opt/homebrew/lib/node_modules/@openai/codex/node_modules/"
@@ -1135,7 +1140,11 @@ def compile_profile(
             or bool(set(selected_lanes) & {"codex", "gemini", "grok"})
             or bool(selection and selection.broker_relay)
         ),
-        allow_sysctl_read=spec.allow_sysctl_read,
+        # Every lane runtime reads kernel parameters at startup: without this
+        # grant claude (Bun), codex and agy (Abseil allocator) and grok (Rust
+        # guard page) abort on macOS 27.0 26A428. sysctl-read is
+        # read-only; the offline probe and ordinary profiles stay without it.
+        allow_sysctl_read=spec.allow_sysctl_read or bool(selected_lanes),
         broker_port=spec.broker_port,
         denied_subtrees=denied_subtrees,
     )

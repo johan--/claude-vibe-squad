@@ -87,6 +87,15 @@ MIGRATION_WHY = (
 )
 MIGRATION_COMPLETED_ACTION = "item was already checked before workboard migration"
 MIGRATION_MARKER_PREFIX = f"<!-- {MIGRATION_SCHEMA} "
+COMPACTION_SCHEMA = "workboard-compaction/v1"
+COMPACTION_MARKER_PREFIX = f"<!-- {COMPACTION_SCHEMA} "
+# The header every fresh ledger starts with, whether append_event creates it or
+# compaction re-emits it. One copy, so the two writers cannot drift apart.
+OPEN_WORK_HEADER = (
+    "# Open Work\n\n"
+    "Append-only machine facts. Add state only through "
+    "`chrono_state.workboard.append_event` (shell: `bin/workboard-append.sh`).\n\n"
+)
 HEADER_CONTRACT_VERSION = "append-only-events/v1"
 HEADER_CONTRACT_REPLACEMENTS = (
     (
@@ -239,6 +248,14 @@ class WorkboardMigrationError(WorkboardConsistencyError):
         self.report = dict(report or {})
 
 
+class WorkboardCompactionError(WorkboardConsistencyError):
+    """Raised when compaction cannot prove the live projection survives intact."""
+
+    def __init__(self, message: str, report: Mapping[str, object] | None = None):
+        super().__init__(message)
+        self.report = dict(report or {})
+
+
 @dataclass(frozen=True)
 class WorkEvent:
     """One parsed structured event line."""
@@ -343,6 +360,17 @@ class WorkboardMigrationPlan:
     migration_id: str
     source_bytes: bytes
     target_bytes: bytes
+    report: Mapping[str, object]
+
+
+@dataclass(frozen=True)
+class WorkboardCompactionPlan:
+    """A proven partition of one ledger into a live projection and an archive."""
+
+    plan_sha256: str
+    source_bytes: bytes
+    target_bytes: bytes
+    archive_bytes: bytes
     report: Mapping[str, object]
 
 
@@ -1674,13 +1702,7 @@ def append_event(
             rendered_event, rendered_issues = _parse_event_line(line.rstrip("\n"), 1)
             if rendered_event is None or rendered_issues:
                 raise AssertionError("formatted event did not round-trip")
-            header = ""
-            if not existing:
-                header = (
-                    "# Open Work\n\n"
-                    "Append-only machine facts. Add state only through "
-                    "`chrono_state.workboard.append_event`.\n\n"
-                )
+            header = "" if existing else OPEN_WORK_HEADER
             candidate_text = current_text + header + line
             after_document = _parse_workboard_text(dest, candidate_text)
             after_projection = project_workboard(after_document)
@@ -2312,6 +2334,510 @@ def audit_workboard_migration(
     return report
 
 
+def _compaction_source_text(source: bytes, path: Path) -> str:
+    try:
+        text = source.decode("utf-8")
+    except UnicodeDecodeError as exc:
+        raise WorkboardCompactionError(
+            f"{path} is not valid UTF-8; refusing compaction ({exc})"
+        ) from exc
+    if "\r" in text:
+        raise WorkboardCompactionError(
+            "compaction requires canonical LF line endings so the archive is line-exact"
+        )
+    if source and not source.endswith(b"\n"):
+        raise WorkboardCompactionError(
+            "compaction requires a final LF so the archive is line-exact"
+        )
+    return text
+
+
+def _item_identity_facts(item: WorkItem) -> dict[str, str]:
+    """Return the identity facts that re-address *item* in a new event."""
+    if _WORK_ID_RE.fullmatch(item.work_id):
+        return {"work_id": item.work_id}
+    return {"item_id": item.alias}
+
+
+def _opening_facts(record: WorkEvent) -> tuple[str, str, str]:
+    """Return the (summary, why, resume) an opening event declared."""
+    fields = record.fields
+    resume = fields["next_action"] if record.kind == "start" else fields["resume_action"]
+    return fields["summary"], fields["why"], resume
+
+
+def _projection_shape(projection: WorkboardProjection) -> dict[str, object]:
+    """The facts compaction must preserve, free of event-spine bookkeeping."""
+    return {
+        "items": sorted(
+            (
+                item.work_id,
+                item.alias,
+                item.summary,
+                item.why,
+                item.resume_action,
+                item.state,
+            )
+            for item in projection.items
+        ),
+        "active_work_id": projection.active_work_id,
+        "active_item_id": projection.active_item_id,
+        "next_action": projection.next_action,
+        "idle": projection.idle,
+        "waiting_work_id": projection.waiting_work_id,
+    }
+
+
+def _build_compaction_plan(
+    source: bytes, path: Path, archive_path: Path, now: str
+) -> WorkboardCompactionPlan:
+    """Partition the ledger: open items stay live, everything else is archived.
+
+    Each open item keeps its ORIGINAL opening line's ``event_id`` and ``at``
+    (re-emitted as ``queue`` with the opening's own summary/why/resume), so
+    identity and creation time survive. Content or state that later events
+    changed is re-established by ``CMP-`` events stamped with the ``at`` of the
+    item's last event -- the time the fact actually changed, never the clock at
+    compaction. The archive is the original file minus exactly the moved
+    opening lines, so ``archive ∪ live`` carries every historical item once.
+    Only ``compare_item_censuses`` over that union plus projection equality can
+    admit the plan; anything else is refused with the report attached.
+    """
+    text = _compaction_source_text(source, path)
+    before = _parse_workboard_text(path, text)
+    before_projection = project_workboard(before)
+    before_issues = validate_workboard(before, before_projection)
+    source_sha256 = _sha256_bytes(source)
+    report: dict[str, object] = {
+        "schema": COMPACTION_SCHEMA,
+        "action": "compact",
+        "source_sha256": source_sha256,
+        "archive_path": str(archive_path),
+        "bytes_in": len(source),
+    }
+    if not before.has_structured_events:
+        raise WorkboardCompactionError(
+            "ledger has no structured events; run the migration first", report
+        )
+    if before_issues:
+        report["validation_issues"] = list(before_issues)
+        raise WorkboardCompactionError(
+            "ledger is not valid; repair it before compacting: "
+            + "; ".join(before_issues),
+            report,
+        )
+
+    records = before.records
+    openings: dict[str, WorkEvent] = {}
+    for record in records:
+        if isinstance(record, WorkEvent) and record.kind in {"start", "queue"}:
+            if "work_id" in record.fields:
+                identity = record.fields["work_id"]
+            else:
+                identity = _legacy_work_id(record.fields["item_id"])
+            openings.setdefault(identity, record)
+
+    unsupported: list[str] = []
+    for item in before_projection.items:
+        if item.disposition not in {"start", "queue"}:
+            unsupported.append(f"{item.alias} ({item.disposition} opening)")
+        elif item.state == "waiting":
+            unsupported.append(
+                f"{item.alias} (declared waiting; switch or block first -- a waiting "
+                "focus cannot be re-emitted without inventing an item)"
+            )
+        elif item.work_id not in openings:
+            unsupported.append(f"{item.alias} (opening event not found)")
+    if unsupported:
+        report["unsupported_items"] = unsupported
+        raise WorkboardCompactionError(
+            "compaction v1 cannot re-emit: " + "; ".join(unsupported), report
+        )
+
+    seed = source_sha256[:16]
+    ordinal = 0
+
+    def synthesized(kind: str, at: str, **facts: str) -> str:
+        nonlocal ordinal
+        ordinal += 1
+        return format_event(kind, event_id=f"CMP-{seed}-{ordinal:04d}", at=at, **facts)
+
+    def last_at(item: WorkItem) -> str:
+        record = records[item.last_index]
+        return record.at if isinstance(record, WorkEvent) else MIGRATION_AT
+
+    moved_lines: set[int] = set()
+    body_lines: list[str] = []
+    ordered_items = sorted(
+        before_projection.items, key=lambda item: openings[item.work_id].line_number
+    )
+    for item in ordered_items:
+        opening = openings[item.work_id]
+        moved_lines.add(opening.line_number)
+        summary, why, resume = _opening_facts(opening)
+        identity = _item_identity_facts(item)
+        alias = {"alias": item.alias} if "work_id" in identity else {}
+        body_lines.append(
+            format_event(
+                "queue",
+                event_id=opening.event_id,
+                at=opening.at,
+                **identity,
+                **alias,
+                summary=summary,
+                why=why,
+                resume_action=resume,
+            )
+        )
+        if (item.summary, item.why, item.resume_action) != (summary, why, resume):
+            body_lines.append(
+                synthesized(
+                    "restate",
+                    last_at(item),
+                    **identity,
+                    summary=item.summary,
+                    why=item.why or why,
+                    next_action=item.resume_action or resume,
+                )
+            )
+    for item in ordered_items:
+        if item.state == "blocked" and before_projection.waiting_work_id != item.work_id:
+            body_lines.append(
+                synthesized(
+                    "block",
+                    last_at(item),
+                    **_item_identity_facts(item),
+                    resume_action=item.resume_action,
+                )
+            )
+    focus = "none"
+    if before_projection.active_work_id is not None:
+        active = next(
+            item
+            for item in before_projection.items
+            if item.work_id == before_projection.active_work_id
+        )
+        body_lines.append(
+            synthesized(
+                "switch",
+                last_at(active),
+                **_item_identity_facts(active),
+                next_action=before_projection.next_action,
+            )
+        )
+        focus = f"active:{active.alias}"
+    elif before_projection.waiting_work_id is not None:
+        waiting = next(
+            item
+            for item in before_projection.items
+            if item.work_id == before_projection.waiting_work_id
+        )
+        body_lines.append(
+            synthesized(
+                "switch",
+                last_at(waiting),
+                **_item_identity_facts(waiting),
+                next_action=waiting.resume_action,
+            )
+        )
+        body_lines.append(
+            synthesized(
+                "block",
+                last_at(waiting),
+                **_item_identity_facts(waiting),
+                resume_action=waiting.resume_action,
+            )
+        )
+        focus = f"waiting:{waiting.alias}"
+    elif before_projection.idle:
+        last_event = next(
+            (record for record in reversed(records) if isinstance(record, WorkEvent)),
+            None,
+        )
+        body_lines.append(
+            synthesized("idle", last_event.at if last_event else MIGRATION_AT)
+        )
+        focus = "idle"
+
+    plan_sha256 = _canonical_json_sha256(
+        {
+            "schema": COMPACTION_SCHEMA,
+            "source_sha256": source_sha256,
+            "archive_name": archive_path.name,
+            "moved_openings": sorted(moved_lines),
+            "body_sha256": _sha256_bytes("".join(body_lines).encode("utf-8")),
+        }
+    )
+    body_lines.append(format_event(COMPACTION_KIND, event_id=f"CMP-{seed}-COMPACT", at=now))
+    marker = (
+        f"{COMPACTION_MARKER_PREFIX}plan_sha256={plan_sha256} "
+        f"source_sha256={source_sha256} archive={archive_path.name} at={now} -->\n"
+    )
+    target_text = OPEN_WORK_HEADER + marker + "".join(body_lines)
+
+    source_lines = text.splitlines(keepends=True)
+    archive_lines = [
+        line
+        for number, line in enumerate(source_lines, start=1)
+        if number not in moved_lines
+    ]
+    archive_trailer = (
+        f"\n{COMPACTION_MARKER_PREFIX}action=archive at={now} "
+        f"source_sha256={source_sha256} moved_openings={len(moved_lines)} "
+        f"live={path.name} -->\n"
+    )
+    archive_text = "".join(archive_lines) + archive_trailer
+
+    after = _parse_workboard_text(path, target_text)
+    after_projection = project_workboard(after)
+    after_issues = validate_workboard(after, after_projection)
+    combined = _parse_workboard_text(path, archive_text + target_text)
+    census = compare_item_censuses(before, combined)
+
+    original_ids = {r.event_id for r in records if isinstance(r, WorkEvent)}
+    archive_ids = {
+        r.event_id
+        for r in _parse_workboard_text(path, archive_text).records
+        if isinstance(r, WorkEvent)
+    }
+    live_ids = {r.event_id for r in after.records if isinstance(r, WorkEvent)}
+    carried_ids = {event_id for event_id in live_ids if not event_id.startswith("CMP-")}
+    partition_ok = (
+        archive_ids.isdisjoint(carried_ids)
+        and archive_ids | carried_ids == original_ids
+        and len(archive_lines) + len(moved_lines) == len(source_lines)
+    )
+    shape_before = _projection_shape(before_projection)
+    shape_after = _projection_shape(after_projection)
+
+    report.update(
+        {
+            "plan_sha256": plan_sha256,
+            "target_sha256": _sha256_bytes(target_text.encode("utf-8")),
+            "archive_sha256": _sha256_bytes(archive_text.encode("utf-8")),
+            "bytes_out": len(target_text.encode("utf-8")),
+            "bytes_archived": len(archive_text.encode("utf-8")),
+            "lines_in": len(source_lines),
+            "lines_out": target_text.count("\n"),
+            "lines_archived": len(archive_lines),
+            "events_in": len(original_ids),
+            "events_out": len(live_ids),
+            "events_archived": len(archive_ids),
+            "openings_moved": len(moved_lines),
+            "synthesized_events": ordinal + 1,
+            "open_items": len(before_projection.items),
+            "focus": focus,
+            "active_id_in": before_projection.active_item_id or "",
+            "active_id_out": after_projection.active_item_id or "",
+            "validation_issues": list(after_issues),
+            "partition_ok": partition_ok,
+            "projection_preserved": shape_before == shape_after,
+            "lock": "exclusive flock on stable workboard parent-directory inode",
+            "atomic_publish": "archive first, then same-directory temp + fsync + rename",
+            **census,
+        }
+    )
+    if after.issues or after_projection.transition_issues or after_issues:
+        raise WorkboardCompactionError(
+            "compacted candidate does not validate: "
+            + "; ".join((*after.issues, *after_projection.transition_issues, *after_issues)),
+            report,
+        )
+    if shape_before != shape_after:
+        raise WorkboardCompactionError(
+            "compacted candidate changes the live projection; refusing", report
+        )
+    if not (census["ok"] and census["state_preserved"]):
+        raise WorkboardCompactionError(
+            "item census differs between the original and archive ∪ live; refusing",
+            report,
+        )
+    if not partition_ok:
+        raise WorkboardCompactionError(
+            "archive and live do not partition the original events; refusing", report
+        )
+    return WorkboardCompactionPlan(
+        plan_sha256=plan_sha256,
+        source_bytes=source,
+        target_bytes=target_text.encode("utf-8"),
+        archive_bytes=archive_text.encode("utf-8"),
+        report=report,
+    )
+
+
+def default_archive_path(path: Path | str | None = None, now: str | None = None) -> Path:
+    """``OPEN-WORK-archive-<UTC date>.md`` beside the ledger, git-ignored with it."""
+    dest = Path(path) if path is not None else WORKBOARD_PATH
+    stamp = (now or _now())[:10]
+    return dest.parent / f"{dest.stem}-archive-{stamp}{dest.suffix}"
+
+
+def compact(
+    path: Path | str | None = None,
+    archive_path: Path | str | None = None,
+    *,
+    dry_run: bool = True,
+    expect_source_sha256: str = "",
+) -> dict[str, object]:
+    """Compact the ledger to its live projection; dry-run unless told to apply.
+
+    Refuses when the archive already exists, when the ledger changed since the
+    SHA-256 a dry-run reported (if given), and whenever ``_build_compaction_plan``
+    cannot prove the census and projection survive. Apply writes the archive
+    first so no fact is ever only in memory, then replaces the live file with
+    a compensating restore if verification fails.
+    """
+    if expect_source_sha256 and not _HEX_SHA256_RE.fullmatch(expect_source_sha256):
+        raise WorkboardCompactionError("expected source SHA-256 must be lowercase 64-hex")
+    dest = Path(path) if path is not None else WORKBOARD_PATH
+    now = _now()
+    archive = Path(archive_path) if archive_path is not None else default_archive_path(dest, now)
+    with _locked_workboard_registry(dest, create_parent=False):
+        if dest.is_symlink() or not dest.is_file():
+            raise WorkboardCompactionError(
+                f"compaction target must be an existing regular file: {dest}"
+            )
+        if archive.exists() or archive.is_symlink():
+            raise WorkboardCompactionError(
+                f"archive path already exists; choose another: {archive}"
+            )
+        if archive.resolve().parent != dest.resolve().parent:
+            raise WorkboardCompactionError(
+                "archive must live beside the ledger so the same ignore rule covers both"
+            )
+        source = dest.read_bytes()
+        mode = stat.S_IMODE(dest.stat().st_mode)
+        if expect_source_sha256 and _sha256_bytes(source) != expect_source_sha256:
+            raise WorkboardCompactionError(
+                "ledger changed since the dry-run; run a fresh dry-run",
+                {"source_sha256": _sha256_bytes(source)},
+            )
+        plan = _build_compaction_plan(source, dest, archive, now)
+        report = dict(plan.report)
+        if dry_run:
+            report["outcome"] = "dry-run"
+            return report
+        _atomic_replace_bytes(archive, plan.archive_bytes, mode)
+        if archive.read_bytes() != plan.archive_bytes:
+            try:
+                archive.unlink()
+            finally:
+                pass
+            raise WorkboardCompactionError("archive verification failed; nothing compacted")
+        try:
+            _atomic_replace_bytes(dest, plan.target_bytes, mode)
+            observed = dest.read_bytes()
+        except Exception as exc:
+            observed = None
+            failure: Exception | None = exc
+        else:
+            failure = None
+        if failure is not None or observed != plan.target_bytes:
+            restore_error: Exception | None = None
+            try:
+                if dest.read_bytes() != plan.source_bytes:
+                    _atomic_replace_bytes(dest, plan.source_bytes, mode)
+                archive.unlink()
+            except Exception as restore_exc:
+                restore_error = restore_exc
+            detail = f"{failure}" if failure is not None else "verification mismatch"
+            if restore_error is not None:
+                raise WorkboardCompactionError(
+                    f"compaction failed ({detail}) and restore failed: {restore_error}"
+                ) from failure
+            raise WorkboardCompactionError(
+                f"compaction failed ({detail}); original restored, archive removed"
+            ) from failure
+        report["outcome"] = "applied"
+        report["applied_sha256"] = _sha256_bytes(observed)
+        return report
+
+
+# Flags each ``append`` kind must carry. The library still validates the full
+# schema (and the projection postcondition); this table only turns a missing
+# flag into a one-line usage error before any file is opened.
+_APPEND_REQUIRED_FLAGS: dict[str, tuple[str, ...]] = {
+    "queue": ("--alias", "--summary", "--why", "--resume"),
+    "start": ("--alias", "--summary", "--why", "--next"),
+    "restate": ("--alias|--work-id", "--summary", "--why", "--next"),
+    "advance": ("--alias|--work-id", "--next"),
+    "switch": ("--alias|--work-id", "--next"),
+    "block": ("--alias|--work-id", "--resume"),
+    "complete": ("--alias|--work-id",),
+    "archive": ("--alias|--work-id",),
+    "drop": ("--alias|--work-id", "--summary", "--why"),
+    "fold": ("--request-id", "--target", "--summary", "--why", "--next"),
+    IDLE_KIND: (),
+}
+APPEND_KINDS = tuple(_APPEND_REQUIRED_FLAGS)
+
+
+def _related_identity(value: str, work_key: str, alias_key: str) -> dict[str, str]:
+    return {work_key: value} if _WORK_ID_RE.fullmatch(value) else {alias_key: value}
+
+
+def append_facts_from_flags(kind: str, flags: Mapping[str, object]) -> dict[str, str]:
+    """Translate ``append`` CLI flags into ``append_event`` facts, or raise.
+
+    Identity flags map by kind: ``--alias`` opens a new alias for ``queue`` and
+    ``start``, names the request for ``drop``, and resolves an open item
+    everywhere else. ``--successor`` / ``--waiting`` / ``--target`` accept an
+    alias or an opaque ``W-`` id and choose the matching schema key.
+    """
+    if kind not in _APPEND_REQUIRED_FLAGS:
+        raise WorkboardConsistencyError(
+            f"append kind must be one of {', '.join(APPEND_KINDS)}; got {kind!r}"
+        )
+    value = {key: val for key, val in flags.items() if val not in (None, False)}
+    alias = value.get("alias")
+    work_id = value.get("work_id")
+    if alias is not None and work_id is not None:
+        raise WorkboardConsistencyError("pass either --alias or --work-id, not both")
+    missing: list[str] = []
+    for flag in _APPEND_REQUIRED_FLAGS[kind]:
+        if flag == "--alias|--work-id":
+            if alias is None and work_id is None:
+                missing.append(flag)
+        elif value.get(flag.lstrip("-").replace("-", "_")) is None:
+            missing.append(flag)
+    if missing:
+        raise WorkboardConsistencyError(
+            f"{kind} requires {' '.join(_APPEND_REQUIRED_FLAGS[kind])}; "
+            f"missing {' '.join(missing)}"
+        )
+
+    facts: dict[str, str] = {}
+    if kind in {"queue", "start"}:
+        facts["alias"] = str(alias)
+    elif kind == "drop":
+        if work_id is not None:
+            facts["work_id"] = str(work_id)
+        else:
+            facts["request_id"] = str(alias)
+    elif kind != IDLE_KIND and kind != "fold":
+        if work_id is not None:
+            facts["work_id"] = str(work_id)
+        elif alias is not None:
+            facts["item_id"] = str(alias)
+    if kind == "fold":
+        facts["request_id"] = str(value["request_id"])
+        facts.update(_related_identity(str(value["target"]), "target_work_id", "target_id"))
+    for flag, fact in (("summary", "summary"), ("why", "why"), ("next", "next_action"), ("resume", "resume_action")):
+        if value.get(flag) is not None:
+            facts[fact] = str(value[flag])
+    if value.get("successor") is not None:
+        facts.update(
+            _related_identity(str(value["successor"]), "successor_work_id", "successor_id")
+        )
+    if value.get("waiting") is not None:
+        facts.update(
+            _related_identity(str(value["waiting"]), "waiting_work_id", "waiting_id")
+        )
+    if value.get("idle"):
+        facts["focus_state"] = "idle"
+    return facts
+
+
 def _clip(text: str, limit: int) -> str:
     compact = " ".join(text.split())
     if len(compact) <= limit:
@@ -2459,6 +2985,44 @@ def _cli_parser() -> argparse.ArgumentParser:
     )
     census.add_argument("--path", type=Path, default=WORKBOARD_PATH)
     census.add_argument("--migration-id", required=True, metavar="SHA256")
+
+    compaction = subcommands.add_parser(
+        "compact",
+        help="re-emit the open items + focus; archive every other line (dry-run "
+        "unless --apply)",
+    )
+    compaction.add_argument("--path", type=Path, default=WORKBOARD_PATH)
+    compaction.add_argument(
+        "--archive",
+        type=Path,
+        default=None,
+        help="archive file beside the ledger (default OPEN-WORK-archive-<UTC date>.md)",
+    )
+    compaction.add_argument("--apply", action="store_true", help="write; default is dry-run")
+    compaction.add_argument(
+        "--expect-source-sha256",
+        metavar="SHA256",
+        default="",
+        help="refuse if the ledger no longer has the SHA-256 the dry-run reported",
+    )
+
+    append = subcommands.add_parser(
+        "append",
+        help="append one event through append_event (the only workboard writer)",
+    )
+    append.add_argument("kind", choices=APPEND_KINDS)
+    append.add_argument("--path", type=Path, default=WORKBOARD_PATH)
+    append.add_argument("--alias", help="new alias (queue/start), request (drop), or open item")
+    append.add_argument("--work-id", dest="work_id", help="opaque W-… id of an open item")
+    append.add_argument("--summary")
+    append.add_argument("--why")
+    append.add_argument("--next", help="next_action (start/switch/advance/restate/fold/successor)")
+    append.add_argument("--resume", help="resume_action (queue/block/waiting)")
+    append.add_argument("--request-id", dest="request_id", help="fold: the folded request alias")
+    append.add_argument("--target", help="fold: the active item (alias or W-… id)")
+    append.add_argument("--successor", help="terminal/block: item to activate (alias or W-… id)")
+    append.add_argument("--waiting", help="terminal: item to wait on (alias or W-… id)")
+    append.add_argument("--idle", action="store_true", help="terminal/block: declare idle")
     return parser
 
 
@@ -2472,12 +3036,40 @@ def main(argv: list[str] | None = None) -> int:
                 rollback_migration_id=args.rollback_migration_id,
                 path=args.path,
             )
-        else:
+        elif args.command == "census":
             report = audit_workboard_migration(args.migration_id, args.path)
-    except WorkboardMigrationError as exc:
+        elif args.command == "compact":
+            report = compact(
+                args.path,
+                args.archive,
+                dry_run=not args.apply,
+                expect_source_sha256=args.expect_source_sha256,
+            )
+        else:
+            facts = append_facts_from_flags(args.kind, vars(args))
+            event = append_event(args.kind, path=args.path, **facts)
+            report = {
+                "action": "append",
+                "path": str(args.path),
+                "event_id": event.event_id,
+                "at": event.at,
+                "kind": event.kind,
+                **{
+                    key: event.fields[key]
+                    for key in ("work_id", "item_id", "alias", "request_id")
+                    if key in event.fields
+                },
+                "line": format_event(
+                    event.kind, event_id=event.event_id, at=event.at, **event.fields
+                ).rstrip("\n"),
+            }
+    except (WorkboardMigrationError, WorkboardCompactionError) as exc:
         if exc.report:
             print(json.dumps(exc.report, ensure_ascii=False, sort_keys=True))
-        print(f"workboard migration ERROR: {exc}", file=os.sys.stderr)
+        print(f"workboard {args.command} ERROR: {exc}", file=os.sys.stderr)
+        return 3
+    except WorkboardConsistencyError as exc:
+        print(f"workboard {args.command} ERROR: {exc}", file=os.sys.stderr)
         return 3
     print(json.dumps(report, ensure_ascii=False, sort_keys=True))
     return 0

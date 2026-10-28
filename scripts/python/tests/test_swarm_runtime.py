@@ -10,6 +10,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+import unittest.mock
 from unittest.mock import patch
 
 
@@ -23,10 +24,47 @@ spec.loader.exec_module(runtime)
 
 class SwarmRuntimeTest(unittest.TestCase):
     def test_reconcile_sweep_times_out_hung_process_and_keeps_control(self):
+        hung = unittest.mock.MagicMock(pid=999999)
+        hung.wait.side_effect = subprocess.TimeoutExpired([], .01)
         with patch.dict(os.environ, {"SQUAD_RECONCILE_SWEEP_TIMEOUT_SECONDS": "0.01"}), \
-             patch.object(runtime.subprocess, "run", side_effect=subprocess.TimeoutExpired([], .01)):
+             patch.object(runtime.subprocess, "Popen", return_value=hung), \
+             patch.object(runtime.os, "killpg", side_effect=ProcessLookupError):
             result = runtime.reconcile_once()
         self.assertEqual(result, {"ok": False, "timeout": True})
+
+    def test_reconcile_sweep_timeout_kills_wrapped_grandchild(self):
+        # bin/registry-reconciler.sh execs `uv run`, which spawns the real
+        # Python reconciler as a grandchild. Killing only the direct child
+        # orphaned that grandchild, which then queued on the registry lock;
+        # one leaked per sweep cycle (measured 2026-10-04: 47 orphans, board
+        # dispatch stalled for an hour).
+        with tempfile.TemporaryDirectory(prefix="reconcile-orphan-") as raw:
+            root = Path(raw)
+            (root / "bin").mkdir()
+            pid_file = root / "grandchild.pid"
+            script = root / "bin/registry-reconciler.sh"
+            script.write_text(
+                "#!/bin/bash\n"
+                f"sleep 30 & echo $! > {pid_file}\n"
+                "wait\n",
+                encoding="utf-8",
+            )
+            script.chmod(0o755)
+            with patch.object(runtime, "VAULT_ROOT", root), \
+                 patch.dict(os.environ, {"SQUAD_RECONCILE_SWEEP_TIMEOUT_SECONDS": "1"}):
+                result = runtime.reconcile_once()
+            self.assertEqual(result, {"ok": False, "timeout": True})
+            grandchild = int(pid_file.read_text(encoding="utf-8"))
+            for _ in range(50):
+                try:
+                    os.kill(grandchild, 0)
+                except ProcessLookupError:
+                    break
+                import time
+                time.sleep(0.1)
+            else:
+                os.kill(grandchild, 9)
+                self.fail("sweep timeout left the wrapped reconciler running")
 
     def test_reconcile_sweep_settles_preexisting_response_without_watcher_event(self):
         with tempfile.TemporaryDirectory(prefix="reconcile-sweep-") as raw:

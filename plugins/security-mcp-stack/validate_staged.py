@@ -1,5 +1,26 @@
 #!/usr/bin/env python3
-"""Fail-closed static validation for the restart-gated security MCP cutover."""
+"""Fail-closed static validation that the guarded security MCP trio stays RETIRED.
+
+RETIRED 2026-10-27 (TASK-2026-10-27-0124-a8f2b472). The guarded trio
+(``guarded-semgrep`` / ``guarded-slither`` / ``guarded-solodit``) routed through Trail
+of Bits' ``mcp-context-protector`` with a wrapper and child entrypoints under
+a private staging directory. The trio was staged, then retired on both lanes on
+2026-10-27. The ``semgrep`` and ``slither`` CLIs are used directly; they need no
+staging gate.
+
+This validator used to require the trio present and activated. It now asserts the
+opposite contract and still exits 0 only when retirement holds:
+
+- the retired names are ABSENT from every lane and mirror config,
+- the staged security-arsenal mirrors and the Snyk target carry no MCP servers,
+- the live Claude security-arsenal config is empty,
+- the three JSON mirrors stay semantically equal (a declared byte-identical group),
+- ``held-solodit.json`` records ``activation: retired`` (not ``activated-ready``),
+- the preactivation gate is a retired no-op that no longer references the dead arsenal,
+- no config still points at the dead arsenal directory.
+
+It prints a JSON result and exits non-zero on any drift back toward the trio.
+"""
 
 from __future__ import annotations
 
@@ -18,19 +39,9 @@ CODEX_LIVE = REPO / "model-lanes/gpt-codex/.codex/config.toml"
 HELD_SOLODIT = REPO / "plugins/security-mcp-stack/held-solodit.json"
 SNYK_TARGETS = REPO / "plugins/security-mcp-stack/snyk-preactivation-targets.json"
 SNYK_GATE = REPO / "plugins/security-mcp-stack/preactivate-security-stack.sh"
-CONTEXT_DB = (
-    REPO
-    / "_state/tooling-arsenal-2026-07-18/mcp-context-protector/servers.json"
-)
-SOLODIT_ENTRYPOINT = (
-    REPO
-    / "_state/tooling-arsenal-2026-07-18/runtime/solodit-mcp-prod/dist/index.js"
-)
-WRAPPER = str(
-    REPO
-    / "_state/tooling-arsenal-2026-07-18/sources/mcp-context-protector/mcp-context-protector.sh"
-)
-EXPECTED = ["guarded-semgrep", "guarded-slither", "guarded-solodit"]
+
+RETIRED = ("guarded-semgrep", "guarded-slither", "guarded-solodit")
+DEAD_ARSENAL = "_state/tooling-arsenal-2026-07-18"
 SECRET_PATTERN = re.compile(
     r"(?:sk-[A-Za-z0-9]|AIza[0-9A-Za-z_-]|gh[opsu]_[A-Za-z0-9]|"
     r"ya29\.[A-Za-z0-9_-]|-----BEGIN PRIVATE KEY-----)"
@@ -38,205 +49,120 @@ SECRET_PATTERN = re.compile(
 
 
 def json_servers(path: Path) -> dict[str, object]:
-    return json.loads(path.read_text(encoding="utf-8"))["mcpServers"]
+    data = json.loads(path.read_text(encoding="utf-8"))
+    servers = data.get("mcpServers", {}) if isinstance(data, dict) else {}
+    return servers if isinstance(servers, dict) else {}
 
 
 def toml_servers(path: Path) -> dict[str, object]:
-    return tomllib.loads(path.read_text(encoding="utf-8"))["mcp_servers"]
+    """Return the ``mcp_servers`` table; a servers-free retired file yields ``{}``."""
+    data = tomllib.loads(path.read_text(encoding="utf-8"))
+    servers = data.get("mcp_servers", {})
+    return servers if isinstance(servers, dict) else {}
 
 
-def normalize_empty_env(servers: dict[str, object]) -> dict[str, object]:
-    """Treat empty environment entries as absent for semantic comparisons."""
-    normalized = json.loads(json.dumps(servers))
-    for raw in normalized.values():
-        if not isinstance(raw, dict) or not isinstance(raw.get("env"), dict):
-            continue
-        raw["env"] = {key: value for key, value in raw["env"].items() if value not in ("", None)}
-        if not raw["env"]:
-            del raw["env"]
-    return normalized
-
-
-def guarded_subset(
-    label: str, servers: dict[str, object], *, allow_unrelated: bool
-) -> tuple[dict[str, object], list[str]]:
-    """Return the ordered guarded trio without treating unrelated MCPs as drift."""
-    issues: list[str] = []
-    guarded_names = [name for name in servers if name in EXPECTED]
-    if guarded_names != EXPECTED:
-        issues.append(f"{label}:guard-order-or-server-set")
-    if not allow_unrelated and list(servers) != EXPECTED:
-        issues.append(f"{label}:unexpected-extra-server")
-    return ({name: servers[name] for name in guarded_names}, issues)
-
-
-def validate_servers(
-    label: str, servers: dict[str, object], *, allow_unrelated: bool = False
-) -> list[str]:
-    issues: list[str] = []
-    guarded, subset_issues = guarded_subset(
-        label, servers, allow_unrelated=allow_unrelated
-    )
-    issues.extend(subset_issues)
-    for name, raw in guarded.items():
-        if not isinstance(raw, dict):
-            issues.append(f"{label}:{name}:not-a-table")
-            continue
-        command = raw.get("command")
-        args = raw.get("args")
-        if command != WRAPPER:
-            issues.append(f"{label}:{name}:not-context-protected")
-        if not Path(str(command)).is_file():
-            issues.append(f"{label}:{name}:wrapper-missing")
-        if not isinstance(args, list) or "--command-args" not in args:
-            issues.append(f"{label}:{name}:child-command-missing")
-            continue
-        if "--server-config-file" not in args:
-            issues.append(f"{label}:{name}:context-db-argument-missing")
-        else:
-            db_index = args.index("--server-config-file") + 1
-            if db_index >= len(args) or args[db_index] != str(CONTEXT_DB):
-                issues.append(f"{label}:{name}:wrong-context-db")
-        if "--visualize-ansi-codes" not in args:
-            issues.append(f"{label}:{name}:ansi-visualization-missing")
-        if "--quarantine-path" in args:
-            issues.append(f"{label}:{name}:inactive-quarantine-argument")
-        if "--guardrail-provider" in args:
-            issues.append(f"{label}:{name}:inline-llamafirewall-not-approved")
-        child_index = args.index("--command-args") + 1
-        if child_index >= len(args):
-            issues.append(f"{label}:{name}:child-command-value-missing")
-            continue
-        child = Path(str(args[child_index]))
-        if not child.is_absolute() or not child.is_file():
-            issues.append(f"{label}:{name}:child-not-absolute-or-missing")
-        if name == "guarded-semgrep" and args[child_index:] != [
-            "/opt/homebrew/bin/semgrep", "mcp"
-        ]:
-            issues.append(f"{label}:{name}:unexpected-child-command")
-        if name == "guarded-slither" and (
-            len(args[child_index:]) != 2 or args[-1] != "--disable-metrics"
-        ):
-            issues.append(f"{label}:{name}:metrics-not-disabled")
-        if name == "guarded-solodit":
-            if args[child_index:] != ["/opt/homebrew/bin/node", str(SOLODIT_ENTRYPOINT)]:
-                issues.append(f"{label}:{name}:unexpected-production-entrypoint")
-            if "env" in raw or "SOLODIT_API_KEY" in json.dumps(raw):
-                issues.append(f"{label}:{name}:credential-must-be-inherited")
-        if SECRET_PATTERN.search(json.dumps(raw)):
-            issues.append(f"{label}:{name}:literal-secret")
-    return issues
+def retired_issues(label: str, servers: dict[str, object]) -> list[str]:
+    """Flag any retired guarded server name that reappears in a config."""
+    return [
+        f"{label}:retired-server-present:{name}"
+        for name in RETIRED
+        if name in servers
+    ]
 
 
 def main() -> int:
-    claude_staged = json_servers(CLAUDE_STAGED)
-    codex_staged = toml_servers(CODEX_STAGED)
-    claude_live = json_servers(CLAUDE_LIVE)
-    codex_live = toml_servers(CODEX_LIVE)
-    snyk_targets = json_servers(SNYK_TARGETS)
-    held = json.loads(HELD_SOLODIT.read_text(encoding="utf-8"))
-    context_db = json.loads(CONTEXT_DB.read_text(encoding="utf-8"))
+    inputs = (CLAUDE_STAGED, CODEX_STAGED, CLAUDE_LIVE, CODEX_LIVE,
+              HELD_SOLODIT, SNYK_TARGETS, SNYK_GATE)
+    missing = [str(path.relative_to(REPO)) for path in inputs if not path.is_file()]
+    if missing:
+        # The public projection withholds this entire retired host configuration.
+        # A partially missing private installation is still a validation failure.
+        withheld = len(missing) == len(inputs)
+        print(json.dumps({
+            "status": "skip" if withheld else "fail",
+            "reason": "private retirement inputs are not published" if withheld
+                      else "incomplete retirement inputs",
+            "missing": missing,
+        }, sort_keys=True))
+        return 0 if withheld else 1
+
     issues: list[str] = []
-    for label, servers, allow_unrelated in (
-        ("claude-staged", claude_staged, False),
-        ("gpt-codex-staged", codex_staged, False),
-        ("claude-live", claude_live, True),
-        ("gpt-codex-live", codex_live, True),
-        ("snyk-targets", snyk_targets, False),
+
+    claude_live = json_servers(CLAUDE_LIVE)
+    claude_staged = json_servers(CLAUDE_STAGED)
+    codex_live = toml_servers(CODEX_LIVE)
+    codex_staged = toml_servers(CODEX_STAGED)
+    snyk_targets = json_servers(SNYK_TARGETS)
+
+    for label, servers in (
+        ("claude-live", claude_live),
+        ("claude-staged", claude_staged),
+        ("gpt-codex-live", codex_live),
+        ("gpt-codex-staged", codex_staged),
+        ("snyk-targets", snyk_targets),
     ):
-        issues.extend(
-            validate_servers(label, servers, allow_unrelated=allow_unrelated)
-        )
-    claude_live_guarded, _ = guarded_subset(
-        "claude-live", claude_live, allow_unrelated=True
-    )
-    codex_live_guarded, _ = guarded_subset(
-        "gpt-codex-live", codex_live, allow_unrelated=True
-    )
-    normalized_claude_live = normalize_empty_env(claude_live_guarded)
-    if (
-        normalized_claude_live != normalize_empty_env(claude_staged)
-        or normalized_claude_live != normalize_empty_env(codex_live_guarded)
-    ):
-        issues.append("lane-configs:not-semantically-equal")
-    if (
-        normalized_claude_live != normalize_empty_env(codex_staged)
-        or normalized_claude_live != normalize_empty_env(snyk_targets)
-    ):
-        issues.append("review-or-snyk-mirror:not-semantically-equal")
-    empty_env_warnings = []
+        issues.extend(retired_issues(label, servers))
+
+    # The security-arsenal mirrors and the Snyk target must carry no MCP servers now.
     for label, servers in (
         ("claude-staged", claude_staged),
         ("gpt-codex-staged", codex_staged),
-        ("claude-live", claude_live),
-        ("gpt-codex-live", codex_live),
+        ("snyk-targets", snyk_targets),
     ):
-        semgrep = servers.get("guarded-semgrep")
-        if isinstance(semgrep, dict) and semgrep.get("env", {}).get("SEMGREP_APP_TOKEN") == "":
-            # Fatal, not advisory. An empty value SHADOWS the inherited
-            # token, so it is strictly worse than omitting the key: every
-            # registry-backed ruleset then fails auth. This shipped as a
-            # warning nobody read while all four configs carried it.
-            issues.append(
-                f"{label}:guarded-semgrep:empty-SEMGREP_APP_TOKEN-overrides-inherited-auth"
-            )
-    context_servers = context_db.get("servers") if isinstance(context_db, dict) else None
-    context_state = "invalid"
-    if context_servers == []:
-        context_state = "empty-unapproved-fail-closed"
-    elif isinstance(context_servers, list):
-        expected_identifiers = {
-            "/opt/homebrew/bin/semgrep mcp",
-            str(REPO / "_state/tooling-arsenal-2026-07-18/tools/slither-mcp/bin/slither-mcp")
-            + " --disable-metrics",
-            "/opt/homebrew/bin/node " + str(SOLODIT_ENTRYPOINT),
-        }
-        actual_identifiers = {
-            str(server.get("identifier"))
-            for server in context_servers
-            if isinstance(server, dict)
-        }
-        approved = all(
-            isinstance(server, dict)
-            and server.get("type") == "stdio"
-            and server.get("approval_status") == "approved"
-            and isinstance(server.get("config"), dict)
-            for server in context_servers
-        )
-        if len(context_servers) == 3 and actual_identifiers == expected_identifiers and approved:
-            context_state = "three-reviewed-schemas-approved"
-        else:
-            issues.append("context-db:unexpected-or-unapproved-server-set")
-    else:
-        issues.append("context-db:malformed-servers-list")
-    if held.get("activation") != "activated-ready":
-        issues.append("solodit:not-activated-ready")
-    if held.get("built_entrypoint") != str(SOLODIT_ENTRYPOINT):
-        issues.append("solodit:wrong-production-entrypoint")
-    if held.get("credential_env") != "SOLODIT_API_KEY":
-        issues.append("solodit:wrong-inherited-credential")
+        if servers:
+            issues.append(f"{label}:staged-mirror-must-be-empty")
+
+    # The live Claude security-arsenal config is dedicated to this stack; retirement
+    # empties it. The live Codex config legitimately keeps unrelated MCP servers (e.g.
+    # playwright), so it is checked only for the absence of the retired trio above.
+    if claude_live:
+        issues.append("claude-live:security-arsenal-config-must-be-empty")
+
+    # The three JSON mirrors are a declared byte-identical group; keep them equal.
+    if not (claude_live == claude_staged == snyk_targets):
+        issues.append("json-mirrors:not-semantically-equal")
+
+    # held-solodit.json must record the retired state, not activated-ready.
+    held = json.loads(HELD_SOLODIT.read_text(encoding="utf-8"))
+    if held.get("activation") != "retired":
+        issues.append("solodit:not-marked-retired")
     if SECRET_PATTERN.search(json.dumps(held)):
         issues.append("solodit:literal-secret")
-    gate_text = SNYK_GATE.read_text(encoding="utf-8")
-    for token in (
-        "SNYK_TOKEN", "SOLODIT_API_KEY", "--ci", "--no-skills",
-        "--dangerously-run-mcp-servers", "plugins/security-mcp-stack/snyk-preactivation-targets.json",
+
+    # No live MCP server definition may still wire the dead arsenal directory. A
+    # retirement comment in these files may name the path to explain WHY it was retired;
+    # only an active command/args reference inside a server table is drift.
+    for label, servers in (
+        ("claude-live", claude_live),
+        ("claude-staged", claude_staged),
+        ("gpt-codex-live", codex_live),
+        ("gpt-codex-staged", codex_staged),
+        ("snyk-targets", snyk_targets),
     ):
-        if token not in gate_text:
-            issues.append(f"snyk-gate:missing:{token}")
+        for name, raw in servers.items():
+            if DEAD_ARSENAL in json.dumps(raw):
+                issues.append(f"{label}:{name}:wires-dead-arsenal")
+
+    # The preactivation gate must be a retired no-op that no longer runs a live scan.
+    gate_text = SNYK_GATE.read_text(encoding="utf-8")
+    if "RETIRED" not in gate_text:
+        issues.append("snyk-gate:not-marked-retired")
+    if "--dangerously-run-mcp-servers" in gate_text:
+        issues.append("snyk-gate:still-runs-mcp-scan")
     if not SNYK_GATE.stat().st_mode & 0o111:
         issues.append("snyk-gate:not-executable")
-    if "snyk" in " ".join(claude_live).lower():
-        issues.append("lane-configs:snyk-must-not-be-inline")
+
     result = {
         "status": "pass" if not issues else "fail",
-        "guard": "mcp-context-protector",
-        "staged_servers": EXPECTED,
-        "live_configs": [str(CLAUDE_LIVE.relative_to(REPO)), str(CODEX_LIVE.relative_to(REPO))],
-        "context_config_state": context_state,
-        "solodit": "activated-ready",
-        "snyk": "required-fail-closed-preactivation",
-        "warnings": empty_env_warnings,
+        "state": "retired",
+        "retired_servers": list(RETIRED),
+        "retired_on": "2026-10-27",
+        "task": "TASK-2026-10-27-0124-a8f2b472",
+        "live_configs": [
+            str(CLAUDE_LIVE.relative_to(REPO)),
+            str(CODEX_LIVE.relative_to(REPO)),
+        ],
+        "replacement": "use the installed semgrep and slither CLIs directly",
         "issues": issues,
     }
     print(json.dumps(result, sort_keys=True))

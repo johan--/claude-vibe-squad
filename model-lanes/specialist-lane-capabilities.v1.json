@@ -4,9 +4,14 @@
   "description": "Authoring source for specialist-by-lane role capabilities; adapters and the cross-lane index are derived.",
   "projection_compatible_source_sha256s": [
     "146310977227fae7833652053265e5f7f29bde12d6a39192ced810eeb32e58fd",
+    "26c3e87b3fdc13417ffca24888cd5254677cd59b8c5a726ae81781e56576b741",
     "42c525a072e7fcc579f8688947dac7eb60070a9a4959cc13f214a12c1b19fdc7",
+    "44c3fdf562004b86c874b007af9a324636fa03683b6cd35cca82f2e6c521cf98",
     "5e1f2282f7294d6d764a550c1b1851b943709a9637bcb51b1bfb02f15968c70e",
-    "b5693bab7ccdccf6ab1c1e1018fb93e3153a9fd1883e97f1f31c4fa4aee26e53"
+    "7baac88435cf62cec4caffc20e7bec1a38d5c51625d397982bbc18a0fe2e0af2",
+    "b5693bab7ccdccf6ab1c1e1018fb93e3153a9fd1883e97f1f31c4fa4aee26e53",
+    "cc4e72166543a809b3cf4e0a88257978238dbf7488bd047c8389ea78eba3c2ba",
+    "f7f7637688f7d5ded461db13c7dc3ff98a6485f16d41d21c367da60a493f0706"
   ],
   "coverage_policy": {
     "primary": "full: required capabilities must resolve in the primary execution plan",
@@ -29,16 +34,7 @@
     {
       "id": "chrono-research-arsenal",
       "provides": [
-        "arxiv_search",
-        "firecrawl_scrape",
-        "perplexity_search",
-        "xai_search"
-      ]
-    },
-    {
-      "id": "lead:chrono-dedup",
-      "provides": [
-        "prior_art_check"
+        "arxiv_search"
       ]
     }
   ],
@@ -243,13 +239,6 @@
           "evidence": "host-PATH"
         },
         {
-          "id": "perplexity_search",
-          "requirement": "preferred",
-          "availability": "mcp-operation",
-          "evidence": "chrono-research-arsenal",
-          "provided_by": "chrono-research-arsenal"
-        },
-        {
           "id": "pgrep",
           "requirement": "required",
           "availability": "available",
@@ -272,13 +261,6 @@
           "requirement": "preferred",
           "availability": "harness-only",
           "evidence": "runtime-map:requires_approval"
-        },
-        {
-          "id": "xai_search",
-          "requirement": "preferred",
-          "availability": "mcp-operation",
-          "evidence": "chrono-research-arsenal",
-          "provided_by": "chrono-research-arsenal"
         }
       ],
       "mcps": [
@@ -380,24 +362,10 @@
           "provided_by": "chrono-research-arsenal"
         },
         {
-          "id": "perplexity_search",
-          "requirement": "preferred",
-          "availability": "mcp-operation",
-          "evidence": "chrono-research-arsenal",
-          "provided_by": "chrono-research-arsenal"
-        },
-        {
           "id": "WebFetch",
           "requirement": "preferred",
           "availability": "harness-only",
           "evidence": "runtime-map:requires_approval"
-        },
-        {
-          "id": "xai_search",
-          "requirement": "preferred",
-          "availability": "mcp-operation",
-          "evidence": "chrono-research-arsenal",
-          "provided_by": "chrono-research-arsenal"
         }
       ],
       "mcps": [
@@ -479,24 +447,10 @@
           "provided_by": "chrono-research-arsenal"
         },
         {
-          "id": "perplexity_search",
-          "requirement": "preferred",
-          "availability": "mcp-operation",
-          "evidence": "chrono-research-arsenal",
-          "provided_by": "chrono-research-arsenal"
-        },
-        {
           "id": "WebFetch",
           "requirement": "preferred",
           "availability": "harness-only",
           "evidence": "runtime-map:requires_approval"
-        },
-        {
-          "id": "xai_search",
-          "requirement": "preferred",
-          "availability": "mcp-operation",
-          "evidence": "chrono-research-arsenal",
-          "provided_by": "chrono-research-arsenal"
         }
       ],
       "mcps": [
@@ -572,24 +526,10 @@
           "provided_by": "chrono-research-arsenal"
         },
         {
-          "id": "perplexity_search",
-          "requirement": "preferred",
-          "availability": "mcp-operation",
-          "evidence": "chrono-research-arsenal",
-          "provided_by": "chrono-research-arsenal"
-        },
-        {
           "id": "WebFetch",
           "requirement": "preferred",
           "availability": "harness-only",
           "evidence": "runtime-map:requires_approval"
-        },
-        {
-          "id": "xai_search",
-          "requirement": "preferred",
-          "availability": "mcp-operation",
-          "evidence": "chrono-research-arsenal",
-          "provided_by": "chrono-research-arsenal"
         }
       ],
       "mcps": [
@@ -607,6 +547,43 @@
         },
         {
           "id": "context7",
+          "requirement": "preferred",
+          "availability": "available",
+          "evidence": "lane-inventory"
+        },
+        {
+          "id": "sequential-thinking",
+          "requirement": "preferred",
+          "availability": "available",
+          "evidence": "lane-inventory"
+        }
+      ]
+    },
+    {
+      "specialist": "architect",
+      "lane": "gemini",
+      "coverage": "partial",
+      "limitations": [
+        "Best-effort non-primary route; verify native tools and declared MCPs in the dispatched runtime before use."
+      ],
+      "skills": [
+        {
+          "id": "interface-ambiguity-check",
+          "requirement": "required",
+          "availability": "available",
+          "evidence": "shared-registry:authored"
+        }
+      ],
+      "tools": [],
+      "mcps": [
+        {
+          "id": "chrono-research-arsenal",
+          "requirement": "preferred",
+          "availability": "available",
+          "evidence": "lane-inventory"
+        },
+        {
+          "id": "chrono-vault",
           "requirement": "preferred",
           "availability": "available",
           "evidence": "lane-inventory"
@@ -840,13 +817,6 @@
           "provided_by": "chrono-research-arsenal"
         },
         {
-          "id": "perplexity_search",
-          "requirement": "preferred",
-          "availability": "mcp-operation",
-          "evidence": "chrono-research-arsenal",
-          "provided_by": "chrono-research-arsenal"
-        },
-        {
           "id": "playwright",
           "requirement": "required",
           "availability": "available",
@@ -857,13 +827,6 @@
           "requirement": "preferred",
           "availability": "harness-only",
           "evidence": "runtime-map:requires_approval"
-        },
-        {
-          "id": "xai_search",
-          "requirement": "preferred",
-          "availability": "mcp-operation",
-          "evidence": "chrono-research-arsenal",
-          "provided_by": "chrono-research-arsenal"
         }
       ],
       "mcps": [
@@ -881,6 +844,43 @@
         },
         {
           "id": "context7",
+          "requirement": "preferred",
+          "availability": "available",
+          "evidence": "lane-inventory"
+        },
+        {
+          "id": "sequential-thinking",
+          "requirement": "preferred",
+          "availability": "available",
+          "evidence": "lane-inventory"
+        }
+      ]
+    },
+    {
+      "specialist": "backend-engineer",
+      "lane": "gemini",
+      "coverage": "partial",
+      "limitations": [
+        "Best-effort non-primary route; verify native tools and declared MCPs in the dispatched runtime before use."
+      ],
+      "skills": [
+        {
+          "id": "data-flow-trace",
+          "requirement": "preferred",
+          "availability": "available",
+          "evidence": "shared-registry:authored"
+        }
+      ],
+      "tools": [],
+      "mcps": [
+        {
+          "id": "chrono-research-arsenal",
+          "requirement": "preferred",
+          "availability": "available",
+          "evidence": "lane-inventory"
+        },
+        {
+          "id": "chrono-vault",
           "requirement": "preferred",
           "availability": "available",
           "evidence": "lane-inventory"
@@ -951,13 +951,6 @@
           "provided_by": "chrono-research-arsenal"
         },
         {
-          "id": "perplexity_search",
-          "requirement": "preferred",
-          "availability": "mcp-operation",
-          "evidence": "chrono-research-arsenal",
-          "provided_by": "chrono-research-arsenal"
-        },
-        {
           "id": "playwright",
           "requirement": "required",
           "availability": "available",
@@ -968,13 +961,6 @@
           "requirement": "preferred",
           "availability": "harness-only",
           "evidence": "runtime-map:requires_approval"
-        },
-        {
-          "id": "xai_search",
-          "requirement": "preferred",
-          "availability": "mcp-operation",
-          "evidence": "chrono-research-arsenal",
-          "provided_by": "chrono-research-arsenal"
         }
       ],
       "mcps": [
@@ -1096,9 +1082,9 @@
       "limitations": [
         "best-effort non-primary (escalate) route; required capabilities remain anchored to the primary execution plan (gemini)",
         "grok 1.0.5 inspect enumerated 289 skills, 28 agents, and 15 MCP servers on 2026-09-01, including the bundled imagine skill; the sealed per-role capability plan and packet authority still decide what a worker may invoke",
-        "web_search / web_fetch exist in the grok CLI but the launcher passes --disable-web-search, so no general web retrieval is available to a worker on this lane",
+        "web_search / web_fetch exist in the grok CLI but the launcher passes --disable-web-search, which removes only general web retrieval; native x_keyword_search and x_thread_fetch remain available under the launcher contract; a current authorized probe must confirm their availability",
         "read_file hard-fails a 343KB document at a 25,000-token ceiling (it errors rather than truncating); this role returns cited grounded leads rather than ingesting whole corpora, but any single supplied audit/report above the ceiling must stay on the primary grounded route rather than escalate to grok",
-        "authentication is the SuperGrok subscription session, not XAI_API_KEY"
+        "board authentication requires xai-api-key authority, not a SuperGrok consumer web session"
       ],
       "skills": [],
       "tools": [],
@@ -1295,13 +1281,6 @@
           "provided_by": "chrono-research-arsenal"
         },
         {
-          "id": "perplexity_search",
-          "requirement": "preferred",
-          "availability": "mcp-operation",
-          "evidence": "chrono-research-arsenal",
-          "provided_by": "chrono-research-arsenal"
-        },
-        {
           "id": "semgrep",
           "requirement": "preferred",
           "availability": "available",
@@ -1312,13 +1291,6 @@
           "requirement": "preferred",
           "availability": "harness-only",
           "evidence": "runtime-map:requires_approval"
-        },
-        {
-          "id": "xai_search",
-          "requirement": "preferred",
-          "availability": "mcp-operation",
-          "evidence": "chrono-research-arsenal",
-          "provided_by": "chrono-research-arsenal"
         }
       ],
       "mcps": [
@@ -1402,13 +1374,6 @@
           "provided_by": "chrono-research-arsenal"
         },
         {
-          "id": "perplexity_search",
-          "requirement": "preferred",
-          "availability": "mcp-operation",
-          "evidence": "chrono-research-arsenal",
-          "provided_by": "chrono-research-arsenal"
-        },
-        {
           "id": "semgrep",
           "requirement": "preferred",
           "availability": "available",
@@ -1419,13 +1384,6 @@
           "requirement": "preferred",
           "availability": "harness-only",
           "evidence": "runtime-map:requires_approval"
-        },
-        {
-          "id": "xai_search",
-          "requirement": "preferred",
-          "availability": "mcp-operation",
-          "evidence": "chrono-research-arsenal",
-          "provided_by": "chrono-research-arsenal"
         }
       ],
       "mcps": [
@@ -1479,24 +1437,10 @@
           "provided_by": "chrono-research-arsenal"
         },
         {
-          "id": "perplexity_search",
-          "requirement": "preferred",
-          "availability": "mcp-operation",
-          "evidence": "chrono-research-arsenal",
-          "provided_by": "chrono-research-arsenal"
-        },
-        {
           "id": "WebFetch",
           "requirement": "preferred",
           "availability": "harness-only",
           "evidence": "runtime-map:requires_approval"
-        },
-        {
-          "id": "xai_search",
-          "requirement": "preferred",
-          "availability": "mcp-operation",
-          "evidence": "chrono-research-arsenal",
-          "provided_by": "chrono-research-arsenal"
         }
       ],
       "mcps": [
@@ -1548,24 +1492,10 @@
           "provided_by": "chrono-research-arsenal"
         },
         {
-          "id": "perplexity_search",
-          "requirement": "preferred",
-          "availability": "mcp-operation",
-          "evidence": "chrono-research-arsenal",
-          "provided_by": "chrono-research-arsenal"
-        },
-        {
           "id": "WebFetch",
           "requirement": "preferred",
           "availability": "harness-only",
           "evidence": "runtime-map:requires_approval"
-        },
-        {
-          "id": "xai_search",
-          "requirement": "preferred",
-          "availability": "mcp-operation",
-          "evidence": "chrono-research-arsenal",
-          "provided_by": "chrono-research-arsenal"
         }
       ],
       "mcps": [
@@ -1621,24 +1551,10 @@
           "provided_by": "chrono-research-arsenal"
         },
         {
-          "id": "perplexity_search",
-          "requirement": "preferred",
-          "availability": "mcp-operation",
-          "evidence": "chrono-research-arsenal",
-          "provided_by": "chrono-research-arsenal"
-        },
-        {
           "id": "WebFetch",
           "requirement": "preferred",
           "availability": "harness-only",
           "evidence": "runtime-map:requires_approval"
-        },
-        {
-          "id": "xai_search",
-          "requirement": "preferred",
-          "availability": "mcp-operation",
-          "evidence": "chrono-research-arsenal",
-          "provided_by": "chrono-research-arsenal"
         }
       ],
       "mcps": [
@@ -1780,13 +1696,6 @@
           "evidence": "host-PATH"
         },
         {
-          "id": "perplexity_search",
-          "requirement": "preferred",
-          "availability": "mcp-operation",
-          "evidence": "chrono-research-arsenal",
-          "provided_by": "chrono-research-arsenal"
-        },
-        {
           "id": "polars",
           "requirement": "preferred",
           "availability": "available",
@@ -1809,13 +1718,6 @@
           "requirement": "preferred",
           "availability": "harness-only",
           "evidence": "runtime-map:requires_approval"
-        },
-        {
-          "id": "xai_search",
-          "requirement": "preferred",
-          "availability": "mcp-operation",
-          "evidence": "chrono-research-arsenal",
-          "provided_by": "chrono-research-arsenal"
         }
       ],
       "mcps": [
@@ -1916,8 +1818,10 @@
     {
       "specialist": "detection-engineer",
       "lane": "claude",
-      "coverage": "full",
-      "limitations": [],
+      "coverage": "partial",
+      "limitations": [
+        "best-effort non-primary route; required capabilities remain anchored to the primary execution plan"
+      ],
       "skills": [
         {
           "id": "attack-coverage-map",
@@ -1964,11 +1868,16 @@
     {
       "specialist": "detection-engineer",
       "lane": "gpt-codex",
-      "coverage": "partial",
-      "limitations": [
-        "best-effort non-primary route; required capabilities remain anchored to the primary execution plan"
+      "coverage": "full",
+      "limitations": [],
+      "skills": [
+        {
+          "id": "detection-as-code",
+          "requirement": "required",
+          "availability": "available",
+          "evidence": "shared-registry:authored"
+        }
       ],
-      "skills": [],
       "tools": [],
       "mcps": [
         {
@@ -2042,6 +1951,44 @@
     },
     {
       "specialist": "devops-engineer",
+      "lane": "gemini",
+      "coverage": "partial",
+      "limitations": [
+        "Best-effort non-primary route; verify native tools and declared MCPs in the dispatched runtime before use.",
+        "The Codex sandbox-provision-discipline skill is not wired on this lane; provisioning requiring that skill must report needs_tool and await a scoped controller handoff."
+      ],
+      "skills": [
+        {
+          "id": "sandbox-provision-discipline",
+          "requirement": "preferred",
+          "availability": "uninstalled",
+          "evidence": "lane-not-wired"
+        }
+      ],
+      "tools": [],
+      "mcps": [
+        {
+          "id": "chrono-research-arsenal",
+          "requirement": "preferred",
+          "availability": "available",
+          "evidence": "lane-inventory"
+        },
+        {
+          "id": "chrono-vault",
+          "requirement": "preferred",
+          "availability": "available",
+          "evidence": "lane-inventory"
+        },
+        {
+          "id": "sequential-thinking",
+          "requirement": "preferred",
+          "availability": "available",
+          "evidence": "lane-inventory"
+        }
+      ]
+    },
+    {
+      "specialist": "devops-engineer",
       "lane": "gpt-codex",
       "coverage": "full",
       "limitations": [],
@@ -2062,24 +2009,10 @@
           "provided_by": "chrono-research-arsenal"
         },
         {
-          "id": "perplexity_search",
-          "requirement": "preferred",
-          "availability": "mcp-operation",
-          "evidence": "chrono-research-arsenal",
-          "provided_by": "chrono-research-arsenal"
-        },
-        {
           "id": "WebFetch",
           "requirement": "preferred",
           "availability": "harness-only",
           "evidence": "runtime-map:requires_approval"
-        },
-        {
-          "id": "xai_search",
-          "requirement": "preferred",
-          "availability": "mcp-operation",
-          "evidence": "chrono-research-arsenal",
-          "provided_by": "chrono-research-arsenal"
         }
       ],
       "mcps": [
@@ -2619,13 +2552,6 @@
           "evidence": "host-PATH"
         },
         {
-          "id": "perplexity_search",
-          "requirement": "preferred",
-          "availability": "mcp-operation",
-          "evidence": "chrono-research-arsenal",
-          "provided_by": "chrono-research-arsenal"
-        },
-        {
           "id": "playwright",
           "requirement": "required",
           "availability": "available",
@@ -2702,13 +2628,6 @@
           "requirement": "preferred",
           "availability": "harness-only",
           "evidence": "runtime-map:requires_approval"
-        },
-        {
-          "id": "xai_search",
-          "requirement": "preferred",
-          "availability": "mcp-operation",
-          "evidence": "chrono-research-arsenal",
-          "provided_by": "chrono-research-arsenal"
         }
       ],
       "mcps": [
@@ -2739,20 +2658,20 @@
         {
           "id": "guarded-semgrep",
           "requirement": "preferred",
-          "availability": "needs-operator-install",
-          "evidence": "operator-install-required"
+          "availability": "superseded",
+          "evidence": "superseded"
         },
         {
           "id": "guarded-slither",
           "requirement": "preferred",
-          "availability": "needs-operator-install",
-          "evidence": "operator-install-required"
+          "availability": "superseded",
+          "evidence": "superseded"
         },
         {
           "id": "guarded-solodit",
           "requirement": "preferred",
-          "availability": "needs-operator-install",
-          "evidence": "operator-install-required"
+          "availability": "superseded",
+          "evidence": "superseded"
         },
         {
           "id": "sequential-thinking",
@@ -3161,13 +3080,6 @@
           "evidence": "host-PATH"
         },
         {
-          "id": "perplexity_search",
-          "requirement": "preferred",
-          "availability": "mcp-operation",
-          "evidence": "chrono-research-arsenal",
-          "provided_by": "chrono-research-arsenal"
-        },
-        {
           "id": "playwright",
           "requirement": "preferred",
           "availability": "available",
@@ -3262,13 +3174,6 @@
           "requirement": "preferred",
           "availability": "harness-only",
           "evidence": "runtime-map:requires_approval"
-        },
-        {
-          "id": "xai_search",
-          "requirement": "preferred",
-          "availability": "mcp-operation",
-          "evidence": "chrono-research-arsenal",
-          "provided_by": "chrono-research-arsenal"
         }
       ],
       "mcps": [
@@ -3299,545 +3204,23 @@
         {
           "id": "guarded-semgrep",
           "requirement": "preferred",
-          "availability": "needs-operator-install",
-          "evidence": "operator-install-required"
+          "availability": "superseded",
+          "evidence": "superseded"
         },
         {
           "id": "guarded-slither",
           "requirement": "preferred",
-          "availability": "needs-operator-install",
-          "evidence": "operator-install-required"
+          "availability": "superseded",
+          "evidence": "superseded"
         },
         {
           "id": "guarded-solodit",
           "requirement": "preferred",
-          "availability": "needs-operator-install",
-          "evidence": "operator-install-required"
+          "availability": "superseded",
+          "evidence": "superseded"
         },
         {
           "id": "sequential-thinking",
-          "requirement": "preferred",
-          "availability": "available",
-          "evidence": "lane-inventory"
-        }
-      ]
-    },
-    {
-      "specialist": "experimental-attacker",
-      "lane": "kimi",
-      "coverage": "partial",
-      "limitations": [
-        "all shared authored audit and exploit-construction skills are live on this lane, but Kimi exposes no shell or local executable surface; every host CLI is tracked as lane-not-wired and intentionally omitted from the live adapter projection",
-        "research MCP operations are lead-brokered and unavailable inside Kimi subagents; the tracked operation ids require a Kimi-lead or Chrono handoff rather than a direct child tool call",
-        "prior_art_check remains lead-brokered; board workers are network-isolated and only the local chrono-vault source is expected to succeed, while web sources including Solodit require Chrono-side invocation",
-        "WebFetch remains harness-only, and active scanners or exploit execution remain bounded by target scope, rules of engagement, and the offensive_execution operator gate",
-        "chrono-dedup is available in the private runtime; public export withholds its assignments while retaining the provider operation catalogue. Use manual prior-art searches where the plugin is absent."
-      ],
-      "skills": [
-        {
-          "id": "agentic-safety-audit",
-          "requirement": "required",
-          "availability": "available",
-          "evidence": "shared-registry:authored"
-        },
-        {
-          "id": "chain-construct",
-          "requirement": "preferred",
-          "availability": "available",
-          "evidence": "shared-registry:authored"
-        },
-        {
-          "id": "chain-construct-smart-contract",
-          "requirement": "preferred",
-          "availability": "available",
-          "evidence": "shared-registry:authored"
-        },
-        {
-          "id": "cosmos-sdk-audit-checklist",
-          "requirement": "preferred",
-          "availability": "available",
-          "evidence": "shared-registry:authored"
-        },
-        {
-          "id": "cross-chain-bridge-audit",
-          "requirement": "preferred",
-          "availability": "available",
-          "evidence": "shared-registry:authored"
-        },
-        {
-          "id": "defi-invariant-check",
-          "requirement": "preferred",
-          "availability": "available",
-          "evidence": "shared-registry:authored"
-        },
-        {
-          "id": "dependency-health-triage",
-          "requirement": "required",
-          "availability": "available",
-          "evidence": "shared-registry:authored"
-        },
-        {
-          "id": "evm-audit-flow",
-          "requirement": "preferred",
-          "availability": "available",
-          "evidence": "shared-registry:authored"
-        },
-        {
-          "id": "findings-filter",
-          "requirement": "required",
-          "availability": "available",
-          "evidence": "shared-registry:authored"
-        },
-        {
-          "id": "known-advisory-backport-check",
-          "requirement": "preferred",
-          "availability": "available",
-          "evidence": "shared-registry:authored"
-        },
-        {
-          "id": "multi-stance-audit-fanout",
-          "requirement": "preferred",
-          "availability": "available",
-          "evidence": "shared-registry:authored"
-        },
-        {
-          "id": "osint-platform-audit",
-          "requirement": "required",
-          "availability": "available",
-          "evidence": "shared-registry:authored"
-        },
-        {
-          "id": "pre-audit-threat-model",
-          "requirement": "preferred",
-          "availability": "available",
-          "evidence": "shared-registry:authored"
-        },
-        {
-          "id": "review-severity-ladder",
-          "requirement": "required",
-          "availability": "available",
-          "evidence": "shared-registry:authored"
-        },
-        {
-          "id": "security-ownership-map",
-          "requirement": "required",
-          "availability": "available",
-          "evidence": "shared-registry:authored"
-        },
-        {
-          "id": "security-threat-model",
-          "requirement": "required",
-          "availability": "available",
-          "evidence": "shared-registry:authored"
-        },
-        {
-          "id": "semgrep-rule-author",
-          "requirement": "required",
-          "availability": "available",
-          "evidence": "shared-registry:authored"
-        },
-        {
-          "id": "solana-audit-flow",
-          "requirement": "preferred",
-          "availability": "available",
-          "evidence": "shared-registry:authored"
-        },
-        {
-          "id": "supply-chain-audit",
-          "requirement": "required",
-          "availability": "available",
-          "evidence": "shared-registry:authored"
-        },
-        {
-          "id": "systematic-attacking",
-          "requirement": "required",
-          "availability": "available",
-          "evidence": "shared-registry:authored"
-        },
-        {
-          "id": "systematic-bug-hunting",
-          "requirement": "required",
-          "availability": "available",
-          "evidence": "shared-registry:authored"
-        },
-        {
-          "id": "variant-analysis",
-          "requirement": "required",
-          "availability": "available",
-          "evidence": "shared-registry:authored"
-        },
-        {
-          "id": "vulnhunter-solana",
-          "requirement": "preferred",
-          "availability": "available",
-          "evidence": "shared-registry:authored"
-        }
-      ],
-      "tools": [
-        {
-          "id": "aderyn",
-          "requirement": "preferred",
-          "availability": "available",
-          "evidence": "host-PATH"
-        },
-        {
-          "id": "amass",
-          "requirement": "preferred",
-          "availability": "available",
-          "evidence": "host-PATH"
-        },
-        {
-          "id": "anchor",
-          "requirement": "preferred",
-          "availability": "available",
-          "evidence": "host-PATH"
-        },
-        {
-          "id": "angr",
-          "requirement": "preferred",
-          "availability": "available",
-          "evidence": "host-PATH"
-        },
-        {
-          "id": "anvil",
-          "requirement": "preferred",
-          "availability": "available",
-          "evidence": "host-PATH"
-        },
-        {
-          "id": "arxiv_search",
-          "requirement": "preferred",
-          "availability": "uninstalled",
-          "evidence": "host-PATH:absent"
-        },
-        {
-          "id": "bandit",
-          "requirement": "preferred",
-          "availability": "available",
-          "evidence": "host-PATH"
-        },
-        {
-          "id": "brakeman",
-          "requirement": "preferred",
-          "availability": "needs-operator-install",
-          "evidence": "operator-install-required"
-        },
-        {
-          "id": "cargo-audit",
-          "requirement": "preferred",
-          "availability": "available",
-          "evidence": "host-PATH"
-        },
-        {
-          "id": "cargo-fuzz",
-          "requirement": "preferred",
-          "availability": "available",
-          "evidence": "host-PATH"
-        },
-        {
-          "id": "cargo-geiger",
-          "requirement": "preferred",
-          "availability": "available",
-          "evidence": "host-PATH"
-        },
-        {
-          "id": "cast",
-          "requirement": "preferred",
-          "availability": "available",
-          "evidence": "host-PATH"
-        },
-        {
-          "id": "chisel",
-          "requirement": "preferred",
-          "availability": "available",
-          "evidence": "host-PATH"
-        },
-        {
-          "id": "curl",
-          "requirement": "preferred",
-          "availability": "available",
-          "evidence": "host-PATH"
-        },
-        {
-          "id": "dnsx",
-          "requirement": "preferred",
-          "availability": "available",
-          "evidence": "host-PATH"
-        },
-        {
-          "id": "echidna",
-          "requirement": "preferred",
-          "availability": "available",
-          "evidence": "host-PATH"
-        },
-        {
-          "id": "eslint-security",
-          "requirement": "preferred",
-          "availability": "project-dependency",
-          "evidence": "project-dependency"
-        },
-        {
-          "id": "ffuf",
-          "requirement": "preferred",
-          "availability": "available",
-          "evidence": "host-PATH"
-        },
-        {
-          "id": "forge",
-          "requirement": "preferred",
-          "availability": "available",
-          "evidence": "host-PATH"
-        },
-        {
-          "id": "gau",
-          "requirement": "preferred",
-          "availability": "available",
-          "evidence": "host-PATH"
-        },
-        {
-          "id": "gdb",
-          "requirement": "preferred",
-          "availability": "available",
-          "evidence": "host-PATH"
-        },
-        {
-          "id": "ghidra",
-          "requirement": "preferred",
-          "availability": "uninstalled",
-          "evidence": "host-PATH:absent"
-        },
-        {
-          "id": "gitleaks",
-          "requirement": "preferred",
-          "availability": "available",
-          "evidence": "host-PATH"
-        },
-        {
-          "id": "golangci-lint",
-          "requirement": "preferred",
-          "availability": "available",
-          "evidence": "host-PATH"
-        },
-        {
-          "id": "gosec",
-          "requirement": "preferred",
-          "availability": "available",
-          "evidence": "host-PATH"
-        },
-        {
-          "id": "gowitness",
-          "requirement": "preferred",
-          "availability": "available",
-          "evidence": "host-PATH"
-        },
-        {
-          "id": "grype",
-          "requirement": "preferred",
-          "availability": "available",
-          "evidence": "host-PATH"
-        },
-        {
-          "id": "halmos",
-          "requirement": "preferred",
-          "availability": "available",
-          "evidence": "host-PATH"
-        },
-        {
-          "id": "hardhat",
-          "requirement": "preferred",
-          "availability": "available",
-          "evidence": "host-PATH"
-        },
-        {
-          "id": "httpx",
-          "requirement": "preferred",
-          "availability": "available",
-          "evidence": "host-PATH"
-        },
-        {
-          "id": "interactsh-client",
-          "requirement": "preferred",
-          "availability": "available",
-          "evidence": "host-PATH"
-        },
-        {
-          "id": "katana",
-          "requirement": "preferred",
-          "availability": "available",
-          "evidence": "host-PATH"
-        },
-        {
-          "id": "libfuzzer",
-          "requirement": "preferred",
-          "availability": "uninstalled",
-          "evidence": "host-PATH:absent"
-        },
-        {
-          "id": "litesvm",
-          "requirement": "preferred",
-          "availability": "project-dependency",
-          "evidence": "project-dependency"
-        },
-        {
-          "id": "medusa",
-          "requirement": "preferred",
-          "availability": "available",
-          "evidence": "host-PATH"
-        },
-        {
-          "id": "myth",
-          "requirement": "preferred",
-          "availability": "available",
-          "evidence": "host-PATH"
-        },
-        {
-          "id": "naabu",
-          "requirement": "preferred",
-          "availability": "available",
-          "evidence": "host-PATH"
-        },
-        {
-          "id": "nikto",
-          "requirement": "preferred",
-          "availability": "available",
-          "evidence": "host-PATH"
-        },
-        {
-          "id": "nmap",
-          "requirement": "preferred",
-          "availability": "available",
-          "evidence": "host-PATH"
-        },
-        {
-          "id": "nuclei",
-          "requirement": "preferred",
-          "availability": "available",
-          "evidence": "host-PATH"
-        },
-        {
-          "id": "osv-scanner",
-          "requirement": "preferred",
-          "availability": "available",
-          "evidence": "host-PATH"
-        },
-        {
-          "id": "playwright",
-          "requirement": "preferred",
-          "availability": "available",
-          "evidence": "host-PATH"
-        },
-        {
-          "id": "prior_art_check",
-          "requirement": "preferred",
-          "availability": "uninstalled",
-          "evidence": "host-PATH:absent"
-        },
-        {
-          "id": "pwntools",
-          "requirement": "preferred",
-          "availability": "uninstalled",
-          "evidence": "host-PATH:absent"
-        },
-        {
-          "id": "radare2",
-          "requirement": "preferred",
-          "availability": "available",
-          "evidence": "host-PATH"
-        },
-        {
-          "id": "semgrep",
-          "requirement": "preferred",
-          "availability": "available",
-          "evidence": "host-PATH"
-        },
-        {
-          "id": "slither",
-          "requirement": "preferred",
-          "availability": "available",
-          "evidence": "host-PATH"
-        },
-        {
-          "id": "snyk",
-          "requirement": "preferred",
-          "availability": "available",
-          "evidence": "host-PATH"
-        },
-        {
-          "id": "solana",
-          "requirement": "preferred",
-          "availability": "available",
-          "evidence": "host-PATH"
-        },
-        {
-          "id": "sqlmap",
-          "requirement": "preferred",
-          "availability": "available",
-          "evidence": "host-PATH"
-        },
-        {
-          "id": "staticcheck",
-          "requirement": "preferred",
-          "availability": "available",
-          "evidence": "host-PATH"
-        },
-        {
-          "id": "subfinder",
-          "requirement": "preferred",
-          "availability": "available",
-          "evidence": "host-PATH"
-        },
-        {
-          "id": "trident",
-          "requirement": "preferred",
-          "availability": "available",
-          "evidence": "host-PATH"
-        },
-        {
-          "id": "trivy",
-          "requirement": "preferred",
-          "availability": "available",
-          "evidence": "host-PATH"
-        },
-        {
-          "id": "trufflehog",
-          "requirement": "preferred",
-          "availability": "available",
-          "evidence": "host-PATH"
-        },
-        {
-          "id": "waybackurls",
-          "requirement": "preferred",
-          "availability": "available",
-          "evidence": "host-PATH"
-        },
-        {
-          "id": "WebFetch",
-          "requirement": "preferred",
-          "availability": "harness-only",
-          "evidence": "runtime-map:requires_approval"
-        },
-        {
-          "id": "xai_search",
-          "requirement": "preferred",
-          "availability": "uninstalled",
-          "evidence": "host-PATH:absent"
-        }
-      ],
-      "mcps": [
-        {
-          "id": "lead:chrono-dedup",
-          "requirement": "preferred",
-          "availability": "needs-operator-install",
-          "evidence": "operator-install-required"
-        },
-        {
-          "id": "lead:chrono-vault",
-          "requirement": "preferred",
-          "availability": "available",
-          "evidence": "lane-inventory"
-        },
-        {
-          "id": "lead:sequential-thinking",
           "requirement": "preferred",
           "availability": "available",
           "evidence": "lane-inventory"
@@ -4042,13 +3425,6 @@
           "evidence": "host-PATH"
         },
         {
-          "id": "perplexity_search",
-          "requirement": "preferred",
-          "availability": "mcp-operation",
-          "evidence": "chrono-research-arsenal",
-          "provided_by": "chrono-research-arsenal"
-        },
-        {
           "id": "playwright",
           "requirement": "preferred",
           "availability": "available",
@@ -4089,13 +3465,6 @@
           "requirement": "preferred",
           "availability": "harness-only",
           "evidence": "runtime-map:requires_approval"
-        },
-        {
-          "id": "xai_search",
-          "requirement": "preferred",
-          "availability": "mcp-operation",
-          "evidence": "chrono-research-arsenal",
-          "provided_by": "chrono-research-arsenal"
         }
       ],
       "mcps": [
@@ -4114,20 +3483,20 @@
         {
           "id": "guarded-semgrep",
           "requirement": "preferred",
-          "availability": "needs-operator-install",
-          "evidence": "operator-install-required"
+          "availability": "superseded",
+          "evidence": "superseded"
         },
         {
           "id": "guarded-slither",
           "requirement": "preferred",
-          "availability": "needs-operator-install",
-          "evidence": "operator-install-required"
+          "availability": "superseded",
+          "evidence": "superseded"
         },
         {
           "id": "guarded-solodit",
           "requirement": "preferred",
-          "availability": "needs-operator-install",
-          "evidence": "operator-install-required"
+          "availability": "superseded",
+          "evidence": "superseded"
         },
         {
           "id": "sequential-thinking",
@@ -4312,13 +3681,6 @@
           "evidence": "host-PATH"
         },
         {
-          "id": "perplexity_search",
-          "requirement": "preferred",
-          "availability": "mcp-operation",
-          "evidence": "chrono-research-arsenal",
-          "provided_by": "chrono-research-arsenal"
-        },
-        {
           "id": "playwright",
           "requirement": "preferred",
           "availability": "available",
@@ -4359,13 +3721,6 @@
           "requirement": "preferred",
           "availability": "harness-only",
           "evidence": "runtime-map:requires_approval"
-        },
-        {
-          "id": "xai_search",
-          "requirement": "preferred",
-          "availability": "mcp-operation",
-          "evidence": "chrono-research-arsenal",
-          "provided_by": "chrono-research-arsenal"
         }
       ],
       "mcps": [
@@ -4390,20 +3745,20 @@
         {
           "id": "guarded-semgrep",
           "requirement": "preferred",
-          "availability": "needs-operator-install",
-          "evidence": "operator-install-required"
+          "availability": "superseded",
+          "evidence": "superseded"
         },
         {
           "id": "guarded-slither",
           "requirement": "preferred",
-          "availability": "needs-operator-install",
-          "evidence": "operator-install-required"
+          "availability": "superseded",
+          "evidence": "superseded"
         },
         {
           "id": "guarded-solodit",
           "requirement": "preferred",
-          "availability": "needs-operator-install",
-          "evidence": "operator-install-required"
+          "availability": "superseded",
+          "evidence": "superseded"
         },
         {
           "id": "sequential-thinking",
@@ -4461,24 +3816,10 @@
           "provided_by": "chrono-research-arsenal"
         },
         {
-          "id": "perplexity_search",
-          "requirement": "preferred",
-          "availability": "mcp-operation",
-          "evidence": "chrono-research-arsenal",
-          "provided_by": "chrono-research-arsenal"
-        },
-        {
           "id": "WebFetch",
           "requirement": "preferred",
           "availability": "harness-only",
           "evidence": "runtime-map:requires_approval"
-        },
-        {
-          "id": "xai_search",
-          "requirement": "preferred",
-          "availability": "mcp-operation",
-          "evidence": "chrono-research-arsenal",
-          "provided_by": "chrono-research-arsenal"
         }
       ],
       "mcps": [
@@ -4537,24 +3878,10 @@
           "provided_by": "chrono-research-arsenal"
         },
         {
-          "id": "perplexity_search",
-          "requirement": "preferred",
-          "availability": "mcp-operation",
-          "evidence": "chrono-research-arsenal",
-          "provided_by": "chrono-research-arsenal"
-        },
-        {
           "id": "WebFetch",
           "requirement": "preferred",
           "availability": "harness-only",
           "evidence": "runtime-map:requires_approval"
-        },
-        {
-          "id": "xai_search",
-          "requirement": "preferred",
-          "availability": "mcp-operation",
-          "evidence": "chrono-research-arsenal",
-          "provided_by": "chrono-research-arsenal"
         }
       ],
       "mcps": [
@@ -4851,30 +4178,6 @@
       ]
     },
     {
-      "specialist": "growth-and-search-analyst",
-      "lane": "kimi",
-      "coverage": "partial",
-      "limitations": [
-        "best-effort non-primary route; required capabilities remain anchored to the primary execution plan"
-      ],
-      "skills": [],
-      "tools": [],
-      "mcps": [
-        {
-          "id": "lead:chrono-vault",
-          "requirement": "preferred",
-          "availability": "available",
-          "evidence": "lane-inventory"
-        },
-        {
-          "id": "lead:sequential-thinking",
-          "requirement": "preferred",
-          "availability": "available",
-          "evidence": "lane-inventory"
-        }
-      ]
-    },
-    {
       "specialist": "harness-optimizer",
       "lane": "claude",
       "coverage": "full",
@@ -4908,24 +4211,10 @@
           "provided_by": "chrono-research-arsenal"
         },
         {
-          "id": "perplexity_search",
-          "requirement": "preferred",
-          "availability": "mcp-operation",
-          "evidence": "chrono-research-arsenal",
-          "provided_by": "chrono-research-arsenal"
-        },
-        {
           "id": "WebFetch",
           "requirement": "preferred",
           "availability": "harness-only",
           "evidence": "runtime-map:requires_approval"
-        },
-        {
-          "id": "xai_search",
-          "requirement": "preferred",
-          "availability": "mcp-operation",
-          "evidence": "chrono-research-arsenal",
-          "provided_by": "chrono-research-arsenal"
         }
       ],
       "mcps": [
@@ -5182,13 +4471,6 @@
           "provided_by": "chrono-research-arsenal"
         },
         {
-          "id": "perplexity_search",
-          "requirement": "preferred",
-          "availability": "mcp-operation",
-          "evidence": "chrono-research-arsenal",
-          "provided_by": "chrono-research-arsenal"
-        },
-        {
           "id": "prior_art_check",
           "requirement": "preferred",
           "availability": "needs-operator-install",
@@ -5199,13 +4481,6 @@
           "requirement": "preferred",
           "availability": "harness-only",
           "evidence": "runtime-map:requires_approval"
-        },
-        {
-          "id": "xai_search",
-          "requirement": "preferred",
-          "availability": "mcp-operation",
-          "evidence": "chrono-research-arsenal",
-          "provided_by": "chrono-research-arsenal"
         }
       ],
       "mcps": [
@@ -5431,10 +4706,8 @@
     {
       "specialist": "kestrel",
       "lane": "claude",
-      "coverage": "partial",
-      "limitations": [
-        "best-effort non-primary route; required capabilities remain anchored to the primary execution plan"
-      ],
+      "coverage": "full",
+      "limitations": [],
       "skills": [],
       "tools": [],
       "mcps": [
@@ -5458,24 +4731,6 @@
       "mcps": [
         {
           "id": "chrono-vault",
-          "requirement": "preferred",
-          "availability": "available",
-          "evidence": "lane-inventory"
-        }
-      ]
-    },
-    {
-      "specialist": "kestrel",
-      "lane": "kimi",
-      "coverage": "full",
-      "limitations": [
-        "MCP operations are lead-brokered and unavailable inside Kimi subagents; chrono-vault requires a Kimi-lead or Chrono handoff rather than a direct child tool call"
-      ],
-      "skills": [],
-      "tools": [],
-      "mcps": [
-        {
-          "id": "lead:chrono-vault",
           "requirement": "preferred",
           "availability": "available",
           "evidence": "lane-inventory"
@@ -5534,24 +4789,10 @@
           "evidence": "host-PATH"
         },
         {
-          "id": "perplexity_search",
-          "requirement": "preferred",
-          "availability": "mcp-operation",
-          "evidence": "chrono-research-arsenal",
-          "provided_by": "chrono-research-arsenal"
-        },
-        {
           "id": "WebFetch",
           "requirement": "preferred",
           "availability": "harness-only",
           "evidence": "runtime-map:requires_approval"
-        },
-        {
-          "id": "xai_search",
-          "requirement": "preferred",
-          "availability": "mcp-operation",
-          "evidence": "chrono-research-arsenal",
-          "provided_by": "chrono-research-arsenal"
         },
         {
           "id": "zotero",
@@ -5675,24 +4916,10 @@
           "provided_by": "chrono-research-arsenal"
         },
         {
-          "id": "perplexity_search",
-          "requirement": "preferred",
-          "availability": "mcp-operation",
-          "evidence": "chrono-research-arsenal",
-          "provided_by": "chrono-research-arsenal"
-        },
-        {
           "id": "WebFetch",
           "requirement": "preferred",
           "availability": "harness-only",
           "evidence": "runtime-map:requires_approval"
-        },
-        {
-          "id": "xai_search",
-          "requirement": "preferred",
-          "availability": "mcp-operation",
-          "evidence": "chrono-research-arsenal",
-          "provided_by": "chrono-research-arsenal"
         }
       ],
       "mcps": [
@@ -5770,24 +4997,10 @@
           "provided_by": "chrono-research-arsenal"
         },
         {
-          "id": "perplexity_search",
-          "requirement": "preferred",
-          "availability": "mcp-operation",
-          "evidence": "chrono-research-arsenal",
-          "provided_by": "chrono-research-arsenal"
-        },
-        {
           "id": "WebFetch",
           "requirement": "preferred",
           "availability": "harness-only",
           "evidence": "runtime-map:requires_approval"
-        },
-        {
-          "id": "xai_search",
-          "requirement": "preferred",
-          "availability": "mcp-operation",
-          "evidence": "chrono-research-arsenal",
-          "provided_by": "chrono-research-arsenal"
         }
       ],
       "mcps": [
@@ -6068,24 +5281,10 @@
           "provided_by": "chrono-research-arsenal"
         },
         {
-          "id": "perplexity_search",
-          "requirement": "preferred",
-          "availability": "mcp-operation",
-          "evidence": "chrono-research-arsenal",
-          "provided_by": "chrono-research-arsenal"
-        },
-        {
           "id": "WebFetch",
           "requirement": "preferred",
           "availability": "harness-only",
           "evidence": "runtime-map:requires_approval"
-        },
-        {
-          "id": "xai_search",
-          "requirement": "preferred",
-          "availability": "mcp-operation",
-          "evidence": "chrono-research-arsenal",
-          "provided_by": "chrono-research-arsenal"
         }
       ],
       "mcps": [
@@ -6239,13 +5438,6 @@
           "evidence": "host-PATH"
         },
         {
-          "id": "perplexity_search",
-          "requirement": "preferred",
-          "availability": "mcp-operation",
-          "evidence": "chrono-research-arsenal",
-          "provided_by": "chrono-research-arsenal"
-        },
-        {
           "id": "pip",
           "requirement": "preferred",
           "availability": "uninstalled",
@@ -6280,13 +5472,6 @@
           "requirement": "preferred",
           "availability": "harness-only",
           "evidence": "runtime-map:requires_approval"
-        },
-        {
-          "id": "xai_search",
-          "requirement": "preferred",
-          "availability": "mcp-operation",
-          "evidence": "chrono-research-arsenal",
-          "provided_by": "chrono-research-arsenal"
         }
       ],
       "mcps": [
@@ -6374,24 +5559,10 @@
           "provided_by": "chrono-research-arsenal"
         },
         {
-          "id": "perplexity_search",
-          "requirement": "preferred",
-          "availability": "mcp-operation",
-          "evidence": "chrono-research-arsenal",
-          "provided_by": "chrono-research-arsenal"
-        },
-        {
           "id": "WebFetch",
           "requirement": "preferred",
           "availability": "harness-only",
           "evidence": "runtime-map:requires_approval"
-        },
-        {
-          "id": "xai_search",
-          "requirement": "preferred",
-          "availability": "mcp-operation",
-          "evidence": "chrono-research-arsenal",
-          "provided_by": "chrono-research-arsenal"
         }
       ],
       "mcps": [
@@ -6638,13 +5809,6 @@
           "evidence": "platform-incompatible"
         },
         {
-          "id": "perplexity_search",
-          "requirement": "preferred",
-          "availability": "mcp-operation",
-          "evidence": "chrono-research-arsenal",
-          "provided_by": "chrono-research-arsenal"
-        },
-        {
           "id": "pprof",
           "requirement": "required",
           "availability": "available",
@@ -6661,13 +5825,6 @@
           "requirement": "preferred",
           "availability": "harness-only",
           "evidence": "runtime-map:requires_approval"
-        },
-        {
-          "id": "xai_search",
-          "requirement": "preferred",
-          "availability": "mcp-operation",
-          "evidence": "chrono-research-arsenal",
-          "provided_by": "chrono-research-arsenal"
         }
       ],
       "mcps": [
@@ -6779,13 +5936,6 @@
           "evidence": "platform-incompatible"
         },
         {
-          "id": "perplexity_search",
-          "requirement": "preferred",
-          "availability": "mcp-operation",
-          "evidence": "chrono-research-arsenal",
-          "provided_by": "chrono-research-arsenal"
-        },
-        {
           "id": "pprof",
           "requirement": "required",
           "availability": "available",
@@ -6802,13 +5952,6 @@
           "requirement": "preferred",
           "availability": "harness-only",
           "evidence": "runtime-map:requires_approval"
-        },
-        {
-          "id": "xai_search",
-          "requirement": "preferred",
-          "availability": "mcp-operation",
-          "evidence": "chrono-research-arsenal",
-          "provided_by": "chrono-research-arsenal"
         }
       ],
       "mcps": [
@@ -6937,24 +6080,10 @@
           "provided_by": "chrono-research-arsenal"
         },
         {
-          "id": "perplexity_search",
-          "requirement": "preferred",
-          "availability": "mcp-operation",
-          "evidence": "chrono-research-arsenal",
-          "provided_by": "chrono-research-arsenal"
-        },
-        {
           "id": "WebFetch",
           "requirement": "preferred",
           "availability": "harness-only",
           "evidence": "runtime-map:requires_approval"
-        },
-        {
-          "id": "xai_search",
-          "requirement": "preferred",
-          "availability": "mcp-operation",
-          "evidence": "chrono-research-arsenal",
-          "provided_by": "chrono-research-arsenal"
         }
       ],
       "mcps": [
@@ -7060,24 +6189,10 @@
           "provided_by": "chrono-research-arsenal"
         },
         {
-          "id": "perplexity_search",
-          "requirement": "preferred",
-          "availability": "mcp-operation",
-          "evidence": "chrono-research-arsenal",
-          "provided_by": "chrono-research-arsenal"
-        },
-        {
           "id": "WebFetch",
           "requirement": "preferred",
           "availability": "harness-only",
           "evidence": "runtime-map:requires_approval"
-        },
-        {
-          "id": "xai_search",
-          "requirement": "preferred",
-          "availability": "mcp-operation",
-          "evidence": "chrono-research-arsenal",
-          "provided_by": "chrono-research-arsenal"
         }
       ],
       "mcps": [
@@ -7330,13 +6445,6 @@
           "evidence": "project-dependency"
         },
         {
-          "id": "perplexity_search",
-          "requirement": "preferred",
-          "availability": "mcp-operation",
-          "evidence": "chrono-research-arsenal",
-          "provided_by": "chrono-research-arsenal"
-        },
-        {
           "id": "pylint",
           "requirement": "preferred",
           "availability": "available",
@@ -7371,13 +6479,6 @@
           "requirement": "preferred",
           "availability": "harness-only",
           "evidence": "runtime-map:requires_approval"
-        },
-        {
-          "id": "xai_search",
-          "requirement": "preferred",
-          "availability": "mcp-operation",
-          "evidence": "chrono-research-arsenal",
-          "provided_by": "chrono-research-arsenal"
         }
       ],
       "mcps": [
@@ -7483,13 +6584,6 @@
           "evidence": "project-dependency"
         },
         {
-          "id": "perplexity_search",
-          "requirement": "preferred",
-          "availability": "mcp-operation",
-          "evidence": "chrono-research-arsenal",
-          "provided_by": "chrono-research-arsenal"
-        },
-        {
           "id": "pylint",
           "requirement": "preferred",
           "availability": "available",
@@ -7524,13 +6618,6 @@
           "requirement": "preferred",
           "availability": "harness-only",
           "evidence": "runtime-map:requires_approval"
-        },
-        {
-          "id": "xai_search",
-          "requirement": "preferred",
-          "availability": "mcp-operation",
-          "evidence": "chrono-research-arsenal",
-          "provided_by": "chrono-research-arsenal"
         }
       ],
       "mcps": [
@@ -7605,14 +6692,7 @@
           "evidence": "operator-install-required"
         }
       ],
-      "tools": [
-        {
-          "id": "firecrawl",
-          "requirement": "required",
-          "availability": "available",
-          "evidence": "installed-or-shared-authored"
-        }
-      ],
+      "tools": [],
       "mcps": [
         {
           "id": "chrono-obsidian",
@@ -7663,24 +6743,10 @@
           "evidence": "host-PATH:absent"
         },
         {
-          "id": "firecrawl_scrape",
-          "requirement": "preferred",
-          "availability": "mcp-operation",
-          "evidence": "chrono-research-arsenal",
-          "provided_by": "chrono-research-arsenal"
-        },
-        {
           "id": "WebFetch",
           "requirement": "preferred",
           "availability": "harness-only",
           "evidence": "runtime-map:requires_approval"
-        },
-        {
-          "id": "xai_search",
-          "requirement": "preferred",
-          "availability": "mcp-operation",
-          "evidence": "chrono-research-arsenal",
-          "provided_by": "chrono-research-arsenal"
         }
       ],
       "mcps": [
@@ -7753,9 +6819,9 @@
       "limitations": [
         "best-effort non-primary (escalate) route; required capabilities remain anchored to the primary execution plan (gemini)",
         "grok 1.0.5 inspect enumerated 289 skills, 28 agents, and 15 MCP servers on 2026-09-01, including the bundled imagine skill; the sealed per-role capability plan and packet authority still decide what a worker may invoke",
-        "web_search / web_fetch exist in the grok CLI but the launcher passes --disable-web-search, so no general web retrieval is available to a worker on this lane",
+        "web_search / web_fetch exist in the grok CLI but the launcher passes --disable-web-search, which removes only general web retrieval; native x_keyword_search and x_thread_fetch remain available under the launcher contract; a current authorized probe must confirm their availability",
         "read_file hard-fails a 343KB document at a 25,000-token ceiling (it errors rather than truncating); by brief this role routes >100k-token corpora (large repos, big PDFs, long transcripts) to large-context-analyst, so grok escalation is for tractable corpora only and any single supplied input above the ceiling must stay on the primary/large-context route rather than escalate here",
-        "authentication is the SuperGrok subscription session, not XAI_API_KEY"
+        "board authentication requires xai-api-key authority, not a SuperGrok consumer web session"
       ],
       "skills": [],
       "tools": [],
@@ -7933,13 +6999,6 @@
           "provided_by": "chrono-research-arsenal"
         },
         {
-          "id": "firecrawl_scrape",
-          "requirement": "preferred",
-          "availability": "mcp-operation",
-          "evidence": "chrono-research-arsenal",
-          "provided_by": "chrono-research-arsenal"
-        },
-        {
           "id": "gowitness",
           "requirement": "required",
           "availability": "available",
@@ -7976,13 +7035,6 @@
           "evidence": "host-PATH:absent"
         },
         {
-          "id": "perplexity_search",
-          "requirement": "preferred",
-          "availability": "mcp-operation",
-          "evidence": "chrono-research-arsenal",
-          "provided_by": "chrono-research-arsenal"
-        },
-        {
           "id": "prior_art_check",
           "requirement": "preferred",
           "availability": "needs-operator-install",
@@ -8005,13 +7057,6 @@
           "requirement": "preferred",
           "availability": "harness-only",
           "evidence": "runtime-map:requires_approval"
-        },
-        {
-          "id": "xai_search",
-          "requirement": "preferred",
-          "availability": "mcp-operation",
-          "evidence": "chrono-research-arsenal",
-          "provided_by": "chrono-research-arsenal"
         }
       ],
       "mcps": [
@@ -8134,15 +7179,7 @@
           "evidence": "superseded"
         }
       ],
-      "tools": [
-        {
-          "id": "firecrawl_scrape",
-          "requirement": "preferred",
-          "availability": "mcp-operation",
-          "evidence": "chrono-research-arsenal",
-          "provided_by": "chrono-research-arsenal"
-        }
-      ],
+      "tools": [],
       "mcps": [
         {
           "id": "chrome-devtools",
@@ -8197,13 +7234,6 @@
           "evidence": "superseded"
         },
         {
-          "id": "firecrawl_scrape",
-          "requirement": "preferred",
-          "availability": "mcp-operation",
-          "evidence": "chrono-research-arsenal",
-          "provided_by": "chrono-research-arsenal"
-        },
-        {
           "id": "httpx",
           "requirement": "required",
           "availability": "available",
@@ -8220,13 +7250,6 @@
           "requirement": "preferred",
           "availability": "available",
           "evidence": "repo-venv-interpreter"
-        },
-        {
-          "id": "perplexity_search",
-          "requirement": "preferred",
-          "availability": "mcp-operation",
-          "evidence": "chrono-research-arsenal",
-          "provided_by": "chrono-research-arsenal"
         },
         {
           "id": "playwright",
@@ -8251,13 +7274,6 @@
           "requirement": "preferred",
           "availability": "harness-only",
           "evidence": "runtime-map:requires_approval"
-        },
-        {
-          "id": "xai_search",
-          "requirement": "preferred",
-          "availability": "mcp-operation",
-          "evidence": "chrono-research-arsenal",
-          "provided_by": "chrono-research-arsenal"
         }
       ],
       "mcps": [
@@ -8563,13 +7579,6 @@
           "evidence": "host-PATH"
         },
         {
-          "id": "perplexity_search",
-          "requirement": "preferred",
-          "availability": "mcp-operation",
-          "evidence": "chrono-research-arsenal",
-          "provided_by": "chrono-research-arsenal"
-        },
-        {
           "id": "semgrep",
           "requirement": "required",
           "availability": "available",
@@ -8616,13 +7625,6 @@
           "requirement": "preferred",
           "availability": "harness-only",
           "evidence": "runtime-map:requires_approval"
-        },
-        {
-          "id": "xai_search",
-          "requirement": "preferred",
-          "availability": "mcp-operation",
-          "evidence": "chrono-research-arsenal",
-          "provided_by": "chrono-research-arsenal"
         }
       ],
       "mcps": [
@@ -8647,20 +7649,20 @@
         {
           "id": "guarded-semgrep",
           "requirement": "preferred",
-          "availability": "needs-operator-install",
-          "evidence": "operator-install-required"
+          "availability": "superseded",
+          "evidence": "superseded"
         },
         {
           "id": "guarded-slither",
           "requirement": "preferred",
-          "availability": "needs-operator-install",
-          "evidence": "operator-install-required"
+          "availability": "superseded",
+          "evidence": "superseded"
         },
         {
           "id": "guarded-solodit",
           "requirement": "preferred",
-          "availability": "needs-operator-install",
-          "evidence": "operator-install-required"
+          "availability": "superseded",
+          "evidence": "superseded"
         },
         {
           "id": "sequential-thinking",
@@ -8946,13 +7948,6 @@
           "evidence": "host-PATH"
         },
         {
-          "id": "perplexity_search",
-          "requirement": "preferred",
-          "availability": "mcp-operation",
-          "evidence": "chrono-research-arsenal",
-          "provided_by": "chrono-research-arsenal"
-        },
-        {
           "id": "semgrep",
           "requirement": "required",
           "availability": "available",
@@ -8999,13 +7994,6 @@
           "requirement": "preferred",
           "availability": "harness-only",
           "evidence": "runtime-map:requires_approval"
-        },
-        {
-          "id": "xai_search",
-          "requirement": "preferred",
-          "availability": "mcp-operation",
-          "evidence": "chrono-research-arsenal",
-          "provided_by": "chrono-research-arsenal"
         }
       ],
       "mcps": [
@@ -9030,20 +8018,20 @@
         {
           "id": "guarded-semgrep",
           "requirement": "preferred",
-          "availability": "needs-operator-install",
-          "evidence": "operator-install-required"
+          "availability": "superseded",
+          "evidence": "superseded"
         },
         {
           "id": "guarded-slither",
           "requirement": "preferred",
-          "availability": "needs-operator-install",
-          "evidence": "operator-install-required"
+          "availability": "superseded",
+          "evidence": "superseded"
         },
         {
           "id": "guarded-solodit",
           "requirement": "preferred",
-          "availability": "needs-operator-install",
-          "evidence": "operator-install-required"
+          "availability": "superseded",
+          "evidence": "superseded"
         },
         {
           "id": "sequential-thinking",
@@ -9288,13 +8276,6 @@
           "evidence": "host-PATH"
         },
         {
-          "id": "perplexity_search",
-          "requirement": "preferred",
-          "availability": "mcp-operation",
-          "evidence": "chrono-research-arsenal",
-          "provided_by": "chrono-research-arsenal"
-        },
-        {
           "id": "prior_art_check",
           "requirement": "preferred",
           "availability": "needs-operator-install",
@@ -9311,13 +8292,6 @@
           "requirement": "preferred",
           "availability": "harness-only",
           "evidence": "runtime-map:requires_approval"
-        },
-        {
-          "id": "xai_search",
-          "requirement": "preferred",
-          "availability": "mcp-operation",
-          "evidence": "chrono-research-arsenal",
-          "provided_by": "chrono-research-arsenal"
         }
       ],
       "mcps": [
@@ -9342,20 +8316,20 @@
         {
           "id": "guarded-semgrep",
           "requirement": "preferred",
-          "availability": "needs-operator-install",
-          "evidence": "operator-install-required"
+          "availability": "superseded",
+          "evidence": "superseded"
         },
         {
           "id": "guarded-slither",
           "requirement": "preferred",
-          "availability": "needs-operator-install",
-          "evidence": "operator-install-required"
+          "availability": "superseded",
+          "evidence": "superseded"
         },
         {
           "id": "guarded-solodit",
           "requirement": "preferred",
-          "availability": "needs-operator-install",
-          "evidence": "operator-install-required"
+          "availability": "superseded",
+          "evidence": "superseded"
         },
         {
           "id": "sequential-thinking",
@@ -9471,13 +8445,6 @@
           "evidence": "host-PATH"
         },
         {
-          "id": "perplexity_search",
-          "requirement": "preferred",
-          "availability": "mcp-operation",
-          "evidence": "chrono-research-arsenal",
-          "provided_by": "chrono-research-arsenal"
-        },
-        {
           "id": "slither",
           "requirement": "required",
           "availability": "available",
@@ -9488,13 +8455,6 @@
           "requirement": "preferred",
           "availability": "harness-only",
           "evidence": "runtime-map:requires_approval"
-        },
-        {
-          "id": "xai_search",
-          "requirement": "preferred",
-          "availability": "mcp-operation",
-          "evidence": "chrono-research-arsenal",
-          "provided_by": "chrono-research-arsenal"
         }
       ],
       "mcps": [
@@ -9513,20 +8473,20 @@
         {
           "id": "guarded-semgrep",
           "requirement": "preferred",
-          "availability": "needs-operator-install",
-          "evidence": "operator-install-required"
+          "availability": "superseded",
+          "evidence": "superseded"
         },
         {
           "id": "guarded-slither",
           "requirement": "preferred",
-          "availability": "needs-operator-install",
-          "evidence": "operator-install-required"
+          "availability": "superseded",
+          "evidence": "superseded"
         },
         {
           "id": "guarded-solodit",
           "requirement": "preferred",
-          "availability": "needs-operator-install",
-          "evidence": "operator-install-required"
+          "availability": "superseded",
+          "evidence": "superseded"
         },
         {
           "id": "sequential-thinking",
@@ -9629,6 +8589,12 @@
           "requirement": "required",
           "availability": "available",
           "evidence": "shared-registry:authored"
+        },
+        {
+          "id": "x-reply-craft",
+          "requirement": "required",
+          "availability": "available",
+          "evidence": "shared-registry:authored"
         }
       ],
       "tools": [
@@ -9671,6 +8637,12 @@
       "skills": [
         {
           "id": "virality-analysis",
+          "requirement": "required",
+          "availability": "available",
+          "evidence": "shared-registry:authored"
+        },
+        {
+          "id": "x-reply-craft",
           "requirement": "required",
           "availability": "available",
           "evidence": "shared-registry:authored"
@@ -9950,6 +8922,35 @@
     },
     {
       "specialist": "summarizer",
+      "lane": "gemini",
+      "coverage": "full",
+      "limitations": [],
+      "skills": [],
+      "tools": [
+        {
+          "id": "WebFetch",
+          "requirement": "preferred",
+          "availability": "harness-only",
+          "evidence": "runtime-map:requires_approval"
+        }
+      ],
+      "mcps": [
+        {
+          "id": "chrono-vault",
+          "requirement": "preferred",
+          "availability": "available",
+          "evidence": "lane-inventory"
+        },
+        {
+          "id": "sequential-thinking",
+          "requirement": "preferred",
+          "availability": "available",
+          "evidence": "lane-inventory"
+        }
+      ]
+    },
+    {
+      "specialist": "summarizer",
       "lane": "gpt-codex",
       "coverage": "partial",
       "limitations": [
@@ -9959,20 +8960,6 @@
       "tools": [
         {
           "id": "arxiv_search",
-          "requirement": "preferred",
-          "availability": "mcp-operation",
-          "evidence": "chrono-research-arsenal",
-          "provided_by": "chrono-research-arsenal"
-        },
-        {
-          "id": "perplexity_search",
-          "requirement": "preferred",
-          "availability": "mcp-operation",
-          "evidence": "chrono-research-arsenal",
-          "provided_by": "chrono-research-arsenal"
-        },
-        {
-          "id": "xai_search",
           "requirement": "preferred",
           "availability": "mcp-operation",
           "evidence": "chrono-research-arsenal",
@@ -9994,35 +8981,6 @@
         },
         {
           "id": "sequential-thinking",
-          "requirement": "preferred",
-          "availability": "available",
-          "evidence": "lane-inventory"
-        }
-      ]
-    },
-    {
-      "specialist": "summarizer",
-      "lane": "kimi",
-      "coverage": "full",
-      "limitations": [],
-      "skills": [],
-      "tools": [
-        {
-          "id": "WebFetch",
-          "requirement": "preferred",
-          "availability": "harness-only",
-          "evidence": "runtime-map:requires_approval"
-        }
-      ],
-      "mcps": [
-        {
-          "id": "lead:chrono-vault",
-          "requirement": "preferred",
-          "availability": "available",
-          "evidence": "lane-inventory"
-        },
-        {
-          "id": "lead:sequential-thinking",
           "requirement": "preferred",
           "availability": "available",
           "evidence": "lane-inventory"
@@ -10075,24 +9033,10 @@
           "provided_by": "chrono-research-arsenal"
         },
         {
-          "id": "perplexity_search",
-          "requirement": "preferred",
-          "availability": "mcp-operation",
-          "evidence": "chrono-research-arsenal",
-          "provided_by": "chrono-research-arsenal"
-        },
-        {
           "id": "WebFetch",
           "requirement": "preferred",
           "availability": "harness-only",
           "evidence": "runtime-map:requires_approval"
-        },
-        {
-          "id": "xai_search",
-          "requirement": "preferred",
-          "availability": "mcp-operation",
-          "evidence": "chrono-research-arsenal",
-          "provided_by": "chrono-research-arsenal"
         }
       ],
       "mcps": [
@@ -10102,6 +9046,30 @@
           "availability": "available",
           "evidence": "lane-inventory"
         },
+        {
+          "id": "chrono-vault",
+          "requirement": "preferred",
+          "availability": "available",
+          "evidence": "lane-inventory"
+        },
+        {
+          "id": "sequential-thinking",
+          "requirement": "preferred",
+          "availability": "available",
+          "evidence": "lane-inventory"
+        }
+      ]
+    },
+    {
+      "specialist": "synthesizer",
+      "lane": "gemini",
+      "coverage": "partial",
+      "limitations": [
+        "Low-safety, non-sensitive aggregation only under the per-task downshift gate; required synthesis and verification capabilities remain anchored to the primary execution plan."
+      ],
+      "skills": [],
+      "tools": [],
+      "mcps": [
         {
           "id": "chrono-vault",
           "requirement": "preferred",
@@ -10216,24 +9184,10 @@
           "provided_by": "chrono-research-arsenal"
         },
         {
-          "id": "perplexity_search",
-          "requirement": "preferred",
-          "availability": "mcp-operation",
-          "evidence": "chrono-research-arsenal",
-          "provided_by": "chrono-research-arsenal"
-        },
-        {
           "id": "WebFetch",
           "requirement": "preferred",
           "availability": "harness-only",
           "evidence": "runtime-map:requires_approval"
-        },
-        {
-          "id": "xai_search",
-          "requirement": "preferred",
-          "availability": "mcp-operation",
-          "evidence": "chrono-research-arsenal",
-          "provided_by": "chrono-research-arsenal"
         }
       ],
       "mcps": [
@@ -10377,8 +9331,10 @@
     {
       "specialist": "technical-writer",
       "lane": "claude",
-      "coverage": "full",
-      "limitations": [],
+      "coverage": "partial",
+      "limitations": [
+        "best-effort non-primary route; required capabilities remain anchored to the primary execution plan"
+      ],
       "skills": [
         {
           "id": "binary-doc-to-markdown",
@@ -10415,6 +9371,72 @@
           "requirement": "required",
           "availability": "available",
           "evidence": "installed-skill-root"
+        }
+      ],
+      "tools": [
+        {
+          "id": "WebFetch",
+          "requirement": "preferred",
+          "availability": "harness-only",
+          "evidence": "runtime-map:requires_approval"
+        }
+      ],
+      "mcps": [
+        {
+          "id": "chrono-vault",
+          "requirement": "preferred",
+          "availability": "available",
+          "evidence": "lane-inventory"
+        },
+        {
+          "id": "sequential-thinking",
+          "requirement": "preferred",
+          "availability": "available",
+          "evidence": "lane-inventory"
+        }
+      ]
+    },
+    {
+      "specialist": "technical-writer",
+      "lane": "gemini",
+      "coverage": "full",
+      "limitations": [],
+      "skills": [
+        {
+          "id": "binary-doc-to-markdown",
+          "requirement": "preferred",
+          "availability": "needs-operator-install",
+          "evidence": "operator-install-required"
+        },
+        {
+          "id": "chrono-adr-authoring",
+          "requirement": "preferred",
+          "availability": "needs-operator-install",
+          "evidence": "operator-install-required"
+        },
+        {
+          "id": "chrono-changelog-generator",
+          "requirement": "preferred",
+          "availability": "needs-operator-install",
+          "evidence": "operator-install-required"
+        },
+        {
+          "id": "chrono-handoff-authoring",
+          "requirement": "preferred",
+          "availability": "needs-operator-install",
+          "evidence": "operator-install-required"
+        },
+        {
+          "id": "claim-verification",
+          "requirement": "required",
+          "availability": "available",
+          "evidence": "shared-registry:authored"
+        },
+        {
+          "id": "skill-description-trigger-authoring",
+          "requirement": "required",
+          "availability": "available",
+          "evidence": "shared-registry:authored"
         }
       ],
       "tools": [
@@ -10536,13 +9558,6 @@
           "provided_by": "chrono-research-arsenal"
         },
         {
-          "id": "perplexity_search",
-          "requirement": "preferred",
-          "availability": "mcp-operation",
-          "evidence": "chrono-research-arsenal",
-          "provided_by": "chrono-research-arsenal"
-        },
-        {
           "id": "playwright",
           "requirement": "required",
           "availability": "available",
@@ -10553,13 +9568,6 @@
           "requirement": "preferred",
           "availability": "harness-only",
           "evidence": "runtime-map:requires_approval"
-        },
-        {
-          "id": "xai_search",
-          "requirement": "preferred",
-          "availability": "mcp-operation",
-          "evidence": "chrono-research-arsenal",
-          "provided_by": "chrono-research-arsenal"
         }
       ],
       "mcps": [
@@ -10665,13 +9673,6 @@
           "provided_by": "chrono-research-arsenal"
         },
         {
-          "id": "perplexity_search",
-          "requirement": "preferred",
-          "availability": "mcp-operation",
-          "evidence": "chrono-research-arsenal",
-          "provided_by": "chrono-research-arsenal"
-        },
-        {
           "id": "playwright",
           "requirement": "required",
           "availability": "available",
@@ -10682,13 +9683,6 @@
           "requirement": "preferred",
           "availability": "harness-only",
           "evidence": "runtime-map:requires_approval"
-        },
-        {
-          "id": "xai_search",
-          "requirement": "preferred",
-          "availability": "mcp-operation",
-          "evidence": "chrono-research-arsenal",
-          "provided_by": "chrono-research-arsenal"
         }
       ],
       "mcps": [
@@ -10803,13 +9797,6 @@
           "provided_by": "chrono-research-arsenal"
         },
         {
-          "id": "perplexity_search",
-          "requirement": "preferred",
-          "availability": "mcp-operation",
-          "evidence": "chrono-research-arsenal",
-          "provided_by": "chrono-research-arsenal"
-        },
-        {
           "id": "prior_art_check",
           "requirement": "preferred",
           "availability": "needs-operator-install",
@@ -10820,13 +9807,6 @@
           "requirement": "preferred",
           "availability": "harness-only",
           "evidence": "runtime-map:requires_approval"
-        },
-        {
-          "id": "xai_search",
-          "requirement": "preferred",
-          "availability": "mcp-operation",
-          "evidence": "chrono-research-arsenal",
-          "provided_by": "chrono-research-arsenal"
         }
       ],
       "mcps": [
@@ -11012,13 +9992,6 @@
           "provided_by": "chrono-research-arsenal"
         },
         {
-          "id": "perplexity_search",
-          "requirement": "preferred",
-          "availability": "mcp-operation",
-          "evidence": "chrono-research-arsenal",
-          "provided_by": "chrono-research-arsenal"
-        },
-        {
           "id": "playwright",
           "requirement": "preferred",
           "availability": "available",
@@ -11029,13 +10002,6 @@
           "requirement": "preferred",
           "availability": "harness-only",
           "evidence": "runtime-map:requires_approval"
-        },
-        {
-          "id": "xai_search",
-          "requirement": "preferred",
-          "availability": "mcp-operation",
-          "evidence": "chrono-research-arsenal",
-          "provided_by": "chrono-research-arsenal"
         }
       ],
       "mcps": [
@@ -11095,13 +10061,6 @@
           "provided_by": "chrono-research-arsenal"
         },
         {
-          "id": "perplexity_search",
-          "requirement": "preferred",
-          "availability": "mcp-operation",
-          "evidence": "chrono-research-arsenal",
-          "provided_by": "chrono-research-arsenal"
-        },
-        {
           "id": "playwright",
           "requirement": "preferred",
           "availability": "available",
@@ -11112,13 +10071,6 @@
           "requirement": "preferred",
           "availability": "harness-only",
           "evidence": "runtime-map:requires_approval"
-        },
-        {
-          "id": "xai_search",
-          "requirement": "preferred",
-          "availability": "mcp-operation",
-          "evidence": "chrono-research-arsenal",
-          "provided_by": "chrono-research-arsenal"
         }
       ],
       "mcps": [
@@ -11723,8 +10675,7 @@
   ],
   "public_projection": {
     "withheld_providers": [
-      "chrono-dedup",
-      "lead:chrono-dedup"
+      "chrono-dedup"
     ]
   }
 }

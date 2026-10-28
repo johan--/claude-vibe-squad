@@ -80,7 +80,7 @@ CAPABILITY_ALIASES = {
     "maintenance/memory-vault-hygiene": "project/memory-vault-hygiene",
 }
 CAPABILITY_STATES = {"live", "lane-gated", "degraded-blueprint", "needs_tool"}
-LANES = {"claude", "codex", "gemini", "kimi", "all", "local", "none", "unknown"}
+LANES = {"claude", "codex", "gemini", "all", "local", "none", "unknown"}
 TOOL_STATES = {
     "yes",
     "lane-live",
@@ -95,7 +95,6 @@ SENTINELS = {"Chrono", "operator", "cross-family-reviewer"}
 LIVE_TOOL_STATES = {"yes", "lane-live"}
 UNAVAILABLE_TOOL_STATES = {"catalog-absent", "needs_tool", "no"}
 DEGRADED_TOOL_STATES = {"partial", "needs-research"}
-PERPLEXITY_STRUCTURED_TOOL = "Perplexity Sonar structured+recency"
 HIGGSFIELD_RAW_GENERATION_METHODS = {"generate_audio", "generate_image", "generate_video"}
 HIGGSFIELD_FREE_READ_HINTS = {
     "balance",
@@ -106,16 +105,6 @@ HIGGSFIELD_FREE_READ_HINTS = {
     "status",
     "transactions",
 }
-EXTERNAL_BUDGET_RE = re.compile(
-    r"\bexternal-budget-ceiling=(?:[$€£]\d+(?:\.\d+)?|"
-    r"\d+(?:\.\d+)?(?:usd|eur|gbp|credits?|tokens?|requests?|calls?|provider-units?))\b",
-    re.IGNORECASE,
-)
-FRONTMATTER_EXTERNAL_BUDGET_RE = re.compile(
-    r"^external:max_(?:usd|eur|gbp|credits?|tokens?|requests?|calls?|provider_units?)="
-    r"\d+(?:\.\d+)?$",
-    re.IGNORECASE,
-)
 SKILL_LABELS = {
     "invokable": "SKILL.md",
     "authored-pattern-doc": "authored",
@@ -681,7 +670,7 @@ def registry_lanes(value: str) -> set[str]:
 def lane_supported(lane: str, registered: set[str]) -> bool:
     if lane in registered:
         return True
-    return "all" in registered and lane in {"claude", "codex", "gemini", "kimi", "all"}
+    return "all" in registered and lane in {"claude", "codex", "gemini", "all"}
 
 
 def add_once(items: list[ToolUse], use: ToolUse) -> None:
@@ -1459,28 +1448,6 @@ class Validator:
         gate_overlay_text = "\n".join(
             [frontmatter.get("gates", ""), frontmatter.get("overlays", ""), *gate_overlay_cells]
         )
-        if any(use.name == PERPLEXITY_STRUCTURED_TOOL for use in tool_uses):
-            truth_gate_patterns = {
-                "claim_to_citation=true": r"\bclaim_to_citation=true\b",
-                "date_window=<explicit interval>": (
-                    r"\bdate_window=(?!(?:true|false)(?:\b|$)|<)[^\s,;\]|]+"
-                ),
-                "reject_unsupported=true": r"\breject_unsupported=true\b",
-            }
-            missing = [
-                token
-                for token, pattern in truth_gate_patterns.items()
-                if not re.search(pattern, gate_overlay_text, re.IGNORECASE)
-            ]
-            if missing:
-                findings.append(
-                    Finding(
-                        "perplexity-truth-gate-missing",
-                        "Perplexity structured+recency requires Gate / Overlay tokens: "
-                        + ", ".join(missing),
-                    )
-                )
-
         if higgsfield_paid_actions:
             if not re.search(r"\bpaid_media\b", gate_overlay_text):
                 findings.append(
@@ -1496,27 +1463,6 @@ class Validator:
                         "paid Higgsfield utility actions require get_cost:true before invocation",
                     )
                 )
-
-        kimi_routed = any(use.lane == "kimi" for use in tool_uses)
-        frontmatter_budget = frontmatter.get("budget_control", "")
-        external_budget_present = bool(
-            EXTERNAL_BUDGET_RE.search(gate_overlay_text)
-            or FRONTMATTER_EXTERNAL_BUDGET_RE.fullmatch(frontmatter_budget)
-        )
-        if kimi_routed and metered and not external_budget_present:
-            findings.append(
-                Finding(
-                    "external-budget-ceiling-missing",
-                    "Kimi-mediated metered tools require a numeric external budget ceiling",
-                )
-            )
-        if kimi_routed and "--max-ralph-iterations=-1" in text:
-            findings.append(
-                Finding(
-                    "kimi-unbounded-iterations",
-                    "governed Kimi runs may not use --max-ralph-iterations=-1",
-                )
-            )
 
         cost_note = frontmatter.get("cost_note", "")
         lowered_note = cost_note.lower()
@@ -1688,13 +1634,11 @@ def emit_results(results: list[dict[str, object]], explain: bool = False) -> int
 #      intrinsically invalid literal (a multi-lane tuple, an unbolded step row).
 #      No registry can flip it. Prefer this.
 #   2. registry-derived - the fixture must name a real entity because the rule
-#      under test keys on that name (Perplexity truth gate, Higgsfield cost
+#      under test keys on that name (Higgsfield cost
 #      preflight). Every mutable field - verified_state, cost_tier, and the
 #      declared capability_state derived from them - is read from the registry
 #      at build time, so the fixture cannot desynchronise from it; only
-#      structural fields (tool name, lane) stay literal. Where the defect itself
-#      requires one specific value (the metered cost tier in
-#      `kimi-metered-unbounded`) that value stays literal and says so inline.
+#      structural fields (tool name, lane) stay literal.
 #   3. precondition-guarded - the defect is *about* real registry state (typed
 #      dead-key reasons; a metered tuple inside a real golden card). The
 #      assumption is asserted, and drift is reported as a named precondition
@@ -2007,13 +1951,9 @@ cost_note: —
 
     # -- registry-derived policy fixtures -----------------------------------
     grounding = tool_ref("Google Search grounding", "gemini", "grounding-live-positive")
-    perplexity_ok = tool_ref(
-        PERPLEXITY_STRUCTURED_TOOL, "codex", "perplexity-valid-truth-gate"
-    )
     higgs_free_read = tool_ref(
         "higgsfield__models_explore", "claude", "higgs-free-read-positive"
     )
-    xai_bounded = tool_ref("xai_search", "kimi", "kimi-metered-bounded")
     positives = {
         "grounding-live-positive": policy_fixture(
             "grounding-live-positive",
@@ -2022,41 +1962,20 @@ cost_note: —
             "claim_to_citation=true reject_unsupported=true",
             grounding.cost_note,
         ),
-        "perplexity-valid-truth-gate": policy_fixture(
-            "perplexity-valid-truth-gate",
-            perplexity_ok.declared_state,
-            perplexity_ok.text,
-            "claim_to_citation=true date_window=24h reject_unsupported=true",
-            perplexity_ok.cost_note,
-        ),
         "higgs-free-read-positive": policy_fixture(
             "higgs-free-read-positive",
             higgs_free_read.declared_state,
             higgs_free_read.text,
             cost_note=higgs_free_read.cost_note,
         ),
-        "kimi-metered-bounded": policy_fixture(
-            "kimi-metered-bounded",
-            xai_bounded.declared_state,
-            xai_bounded.text,
-            "external-budget-ceiling=5calls",
-            xai_bounded.cost_note,
-        ),
     }
 
-    perplexity_bad = tool_ref(
-        PERPLEXITY_STRUCTURED_TOOL, "codex", "perplexity-missing-truth-gate"
-    )
     higgs_raw = tool_ref(
         "Higgsfield raw generation", "none", "higgs-raw-generation-negative"
     )
     higgs_paid = tool_ref(
         "higgsfield__upscale_image", "claude", "higgs-paid-without-cost-preflight"
     )
-    # The metered cost tier IS the defect precondition here (Kimi + metered with
-    # no numeric ceiling), so it is pinned literally rather than read from the
-    # registry: a cost-tier flip must not silently retire this fixture.
-    xai_unbounded = tool_ref("xai_search", "kimi", "kimi-metered-unbounded", cost="metered")
 
     negatives: dict[str, tuple[str, set[str]]] = {
         "frontmatter-required": (
@@ -2106,16 +2025,6 @@ cost_note: —
             out_of_block_unbolded_after,
             {"step-row-out-of-block"},
         ),
-        "perplexity-missing-truth-gate": (
-            policy_fixture(
-                "perplexity-missing-truth-gate",
-                perplexity_bad.declared_state,
-                perplexity_bad.text,
-                "paid research",
-                perplexity_bad.cost_note,
-            ),
-            {"perplexity-truth-gate-missing"},
-        ),
         "higgs-raw-generation-negative": (
             policy_fixture(
                 "higgs-raw-generation-negative",
@@ -2137,16 +2046,6 @@ cost_note: —
                 higgs_paid.cost_note,
             ),
             {"higgsfield-cost-preflight-missing"},
-        ),
-        "kimi-metered-unbounded": (
-            policy_fixture(
-                "kimi-metered-unbounded",
-                xai_unbounded.declared_state,
-                xai_unbounded.text,
-                "budget discussed in prose",
-                xai_unbounded.cost_note,
-            ),
-            {"external-budget-ceiling-missing"},
         ),
     }
 

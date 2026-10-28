@@ -371,7 +371,7 @@ class ProductHygieneGateTests(unittest.TestCase):
         )
         self._track(
             "shared/current-tools.md",
-            "Use `perplexity_search` for current grounded research.\n",
+            "Use `arxiv_search` for current grounded research.\n",
         )
         current = self._gate()
         self.assertEqual(current.returncode, 0, current.stdout + current.stderr)

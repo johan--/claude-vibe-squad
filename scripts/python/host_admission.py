@@ -24,9 +24,9 @@ MAX_SAMPLE_AGE = 10.0
 SWAP_RATE_LIMITS = (64.0, 32.0)  # (swapins, swapouts), pages per second
 FAMILY_TARGET = 4
 LANE_FAMILY = {"claude": "anthropic", "codex": "openai", "gpt-codex": "openai",
-               "gemini": "google", "grok": "xai", "kimi": "moonshot"}
+               "gemini": "google", "grok": "xai"}
 MODEL_LANE = {"gpt-codex": "codex", "claude": "claude", "gemini": "gemini",
-              "grok": "grok", "kimi": "kimi"}
+              "grok": "grok"}
 @dataclass(frozen=True)
 class WorkloadPolicy:
     p95_rss_bytes: int
@@ -37,7 +37,7 @@ class WorkloadPolicy:
 WORKLOAD_POLICIES: Mapping[str, WorkloadPolicy] = {
     "cpu-light": WorkloadPolicy(512 * 1024**2, 1 * GIB, 15.0, 16),
     "repo-build-test": WorkloadPolicy(1 * GIB, 2 * GIB, 20.0, 64),
-    "browser-media": WorkloadPolicy(2 * GIB, 3 * GIB, 25.0, 128),
+    "browser-media": WorkloadPolicy(1 * GIB, 2 * GIB, 25.0, 128),
     "security-untrusted": WorkloadPolicy(3 * GIB, 4 * GIB, 30.0, 128, False),
 }
 @dataclass(frozen=True)

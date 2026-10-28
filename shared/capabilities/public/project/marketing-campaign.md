@@ -16,7 +16,7 @@ gates: [public_release, paid_media, live_outreach]
 
 ## Availability in a fresh clone
 
-A zero-key checkout gets this protocol and its validation metadata as documentation; automated dispatch is `needs_tool`. To make it runnable, install and authenticate the selected model CLI, configure every MCP declared by the dispatched specialists, bind the private vault (`CHRONO_VAULT_ROOT`; Kimi also requires its exact vault context), install any required host-local binaries, and provide approved credentials plus a bounded budget for any metered provider named below. After setup, re-run the production role planner and validators on that host; availability remains subject to the narrower gaps and operator gates documented in this card.
+A zero-key checkout gets this protocol and its validation metadata as documentation; automated dispatch is `needs_tool`. To make it runnable, install and authenticate the selected model CLI, configure every MCP declared by the dispatched specialists, bind the private vault (`CHRONO_VAULT_ROOT`), install any required host-local binaries, and provide approved credentials plus a bounded budget for any metered provider named below. After setup, re-run the production role planner and validators on that host; availability remains subject to the narrower gaps and operator gates documented in this card.
 
 **When to use:** produce marketing copy — landing/product/blog pages and multi-channel social — as a content
 deliverable. Live scope is copy CREATION; distribution/send is operator-gated (see Notes). Product/efficacy
@@ -25,7 +25,7 @@ claims route through the Rule-8 truth gate.
 | Step | Specialists | Tools `` | Skills `(type)` | Gate / Overlay |
 |---|---|---|---|---|
 | **S0** Intake/Admit | `Chrono`, `triage` | `chrono-vault` | — | memory overlay (recall); brief |
-| **S1** Frame (offer + channels + audience) | `brand-voice`, `social-strategist` | `firecrawl`, `chrono-research-arsenal`, `codex --search` | `keyword-clustering`, `technical-seo-audit` | — |
+| **S1** Frame (offer + channels + audience) | `brand-voice`, `social-strategist` | `chrono-research-arsenal`, `codex --search` | `keyword-clustering`, `technical-seo-audit` | — |
 | **S3** Produce (copy + social variants) | `brand-voice`, `growth-and-search-analyst` | `chrono-research-arsenal` | `keyword-clustering`, `technical-seo-audit` | — |
 | **S4** Verify (truth + brand) | `brand-voice`, `skeptic`, `content-verifier` | `chrono-research-arsenal` | `claim-verification`, `citation-audit` | truth-rights overlay — Rule-8 truth gate for product/efficacy claims |
 | **S5** Review/Gate | `skeptic`, `cross-family-reviewer`, `operator` | — | — | review overlay; `public_release`, `paid_media`, `live_outreach` (per-message send approval) |

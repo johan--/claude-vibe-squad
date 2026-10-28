@@ -1,7 +1,7 @@
 ---
 name: rule6-rights-gate
 audience: specialist
-description: Hard Rule 6 pre-publication rights gate — check licensing/provenance AND likeness/voice consent over a generated or third-party media asset before publish/use, and emit the machine-readable gate record. Use at the S4 Verify step of content/image, content/video, content/audio-assets (or any asset headed for publication).
+description: Hard Rule 6 pre-publication rights gate — check licensing/provenance AND likeness/voice consent over a generated or third-party media asset before publish/use, and emit the machine-readable gate record. Use at the S4 Verify step of project/image, project/video, project/audio-assets (or any asset headed for publication).
 type: skill
 ---
 
@@ -58,7 +58,7 @@ restating it (one fact, one home). `gate_type` is dropped as redundant — the `
 block key already names the gate.
 
 ## When to invoke
-- The S4 Verify step of `content/image`, `content/video`, `content/audio-assets` — any asset (generated or
+- The S4 Verify step of `project/image`, `project/video`, `project/audio-assets` — any asset (generated or
   third-party) headed for publication/use.
 
 ## When NOT to invoke
@@ -75,8 +75,8 @@ block key already names the gate.
 ## Notes — supersession + cross-lane home
 - **Sources fully subsumed:** the retired `rights-and-provenance-gate` and
   `consent-and-likeness-check` skills. Every component step and acceptance condition is represented by
-  the combined procedure and record above; the standalone skills are retirement candidates rather than parallel
-  S4 triggers.
+  the combined procedure and record above; the standalone skills are retired (`shared/skills/_retired/`), not
+  parallel S4 triggers.
 - **Canonical home:** `.claude/skills/rule6-rights-gate/SKILL.md`. Because its audience is `specialist`,
   `model-lanes/SKILL-HOMES.md` requires `.agents/skills/rule6-rights-gate/SKILL.md` to be a byte-identical regular
   file mirror.

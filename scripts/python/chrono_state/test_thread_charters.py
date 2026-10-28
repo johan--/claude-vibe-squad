@@ -73,7 +73,17 @@ class ThreadCharterParserTests(unittest.TestCase):
                 charter = self.parse(charter_text(line, "- [x] done"))
                 self.assertFalse(charter.issues)
                 self.assertEqual(
-                    charter.open_loops, (thread_charters.OpenLoop(line, kind),)
+                    charter.open_loops,
+                    (
+                        thread_charters.OpenLoop(
+                            line,
+                            kind,
+                            stamp="2026-08-18T12:00:00Z",
+                            request="keep mirrors",
+                            why="no delete grant",
+                            resume="close the thread",
+                        ),
+                    ),
                 )
                 self.assertEqual(charter.unresolved_queues, ())
 
@@ -147,11 +157,7 @@ class ThreadCharterCapsuleTests(unittest.TestCase):
             mock.patch.object(resume, "_archived_debt_rows", return_value=([], False)),
             mock.patch.object(resume, "open_work_items", return_value=[]),
         ):
-            return resume._render(
-                "continue",
-                EMPTY_VIEW,
-                max_tokens=max_tokens,
-            )
+            return resume._render(EMPTY_VIEW, max_tokens=max_tokens)
 
     def test_present_charter_projects_ask_done_when_and_unresolved_queue(self):
         capsule = self.render([self.parsed()])
@@ -186,10 +192,19 @@ class ThreadCharterCapsuleTests(unittest.TestCase):
         self.assertIn("observed_at=2026-08-18T12:00:00Z", capsule)
 
     def test_token_pressure_keeps_a_loud_charter_count(self):
-        capsule = self.render([self.parsed()], max_tokens=60)
-        self.assertLessEqual(len(capsule) // 4, 60)
+        # Measured on this fixture: the one-line (mode 1) projection is 241
+        # chars = 60 tokens and the count-only (mode 0) rail is 200 chars = 50
+        # tokens. A 55-token budget sits between them with ~20 chars of margin
+        # each way, so mode 1 cannot fit and mode 0 must: the collapse is forced
+        # by the budget, not by whatever else the capsule happens to carry. (The
+        # old 60-token budget passed at mode 1 once the operator-instruction
+        # section was deleted and the capsule shrank.)
+        budget = 55
+        capsule = self.render([self.parsed()], max_tokens=budget)
+        self.assertLessEqual(len(capsule) // 4, budget)
         self.assertIn(resume.THREAD_HEADING, capsule)
         self.assertIn("active=1; open_QUEUE=1", capsule)
+        self.assertNotIn("THE ASK:", capsule)
 
 
 class CharterArchiveTransitionTests(unittest.TestCase):

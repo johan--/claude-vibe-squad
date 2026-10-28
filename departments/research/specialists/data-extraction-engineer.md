@@ -18,7 +18,7 @@ PDF parsing, dataset wrangling, table extraction, structured-data normalization.
 
 ## Tools available to me
 
-Tool, skill, and MCP capabilities are **lane-specific** and are defined authoritatively in this specialist's per-lane adapter under `model-lanes/`, bounded by the lane capability profile in `model-lanes/lane-capabilities.tsv`. This canonical base names no tool, MCP, or skill by design (the boundary test: a sentence that would be false on some lane belongs in the adapter). Read your adapter for the exact executables and MCP/skill surface available on your lane, and verify each in your live runtime before use — declare a capability gap and use the task-approved fallback if a declared capability is absent. Kimi subagents cannot hold MCP, so on the Kimi lane any MCP work is lead-brokered.
+Tool, skill, and MCP capabilities are **lane-specific** and are defined authoritatively in this specialist's per-lane adapter under `model-lanes/`, bounded by the lane capability profile in `model-lanes/lane-capabilities.tsv`. This canonical base names no tool, MCP, or skill by design (the boundary test: a sentence that would be false on some lane belongs in the adapter). Read your adapter for the exact executables and MCP/skill surface available on your lane, and verify each in your live runtime before use — declare a capability gap and use the task-approved fallback if a declared capability is absent.
 
 ## Search tool order
 
@@ -51,7 +51,7 @@ Follow `docs/standards/tool-trigger-map.md` § Search availability and fallback.
 - Normalizing a messy dataset (CSV/JSON/XML cleanup)
 - Converting between formats (PDF → markdown, HTML → markdown, etc.)
 - Building structured data from unstructured sources
-- Research Mode source corpus prep (when sources are PDFs)
+- Research-family source corpus prep (when sources are PDFs)
 
 ## Input
 

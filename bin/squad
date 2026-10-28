@@ -13,7 +13,8 @@
 #                     (`stop && up` is not equivalent: it relaunches onto a
 #                     daemon and a status poller that both survived the stop)
 #   squad status    — print where-are-we summary (no attach)
-#   squad doctor    — run health check + MCP/runtime audit
+#   squad doctor [--deep] — run health check + MCP/runtime audit; --deep includes publication checks
+#   squad mcp-audit — run the MCP/runtime audit
 #   squad attach    — attach to existing session (no launch)
 #   squad detach    — detach the current client (same as Ctrl-b d inside tmux)
 #   squad help      — show this help
@@ -426,11 +427,11 @@ case "${cmd}" in
     help|-h|--help)
         # Range tracks the comment header above; extending the header without
         # extending this truncates the help silently.
-        sed -n '2,25p' "$0" | sed 's/^# //; s/^#//'
+        sed -n '2,26p' "$0" | sed 's/^# //; s/^#//'
         ;;
     *)
         echo "unknown subcommand: ${cmd}"
-        echo "usage: squad [up [--safe|--unsafe]|stop|restart|status|doctor|attach|detach|help]"
+        echo "usage: squad [up [--safe|--unsafe]|stop|restart|status|doctor [--deep]|mcp-audit|attach|detach|help]"
         exit 1
         ;;
 esac

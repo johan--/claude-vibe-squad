@@ -3,7 +3,7 @@
 Vibe Squad is markdown-first:
 
 ```text
-Operator -> Chrono -> gpt-codex | claude | gemini | kimi | grok -> specialists
+Operator -> Chrono -> gpt-codex | claude | gemini | grok -> specialists
 ```
 
 The `gemini` lane name is historical: it dispatches through the **agy** CLI, which covers Gemini and Google's other products under OAuth. The separate API-key `gemini` CLI is retired and nothing here invokes it. Do not "fix" a gemini reference by pointing it at that binary.
@@ -28,10 +28,11 @@ Generated adapters, stale handoffs, old specs, and runtime logs are not source o
 
 Confusing these is the single most common source of "is this doc out of date?" in this repo.
 
-- **`V1.1.9` is the current release version.** Git tags run `v1.1.0` through `v1.1.6`; `v1.1.7`
+- **`V2.0.0` is the current release version.** Git tags run `v1.1.0` through `v1.1.6`; `v1.1.7`
   onward are tagged by Chrono on the PUBLISHED public commit as each release is cut, so they are
   disjoint from private `main` — `git merge-base --is-ancestor v1.1.8 HEAD` correctly returns
-  false. The next upgrade would be `V1.1.10`. This is the version of the system as a product.
+  false. The next patch would be `V2.0.1`. This is the version of the system as a product.
+  Release v2.x is unrelated to the V3/V4 architecture generations.
 - **`V3` / `V4` are architecture generations**, not old release numbers. Git tags `v3-final` and
   `v4-baseline-2026-08-07`. The dispatcher still runs a **live V3 compatibility bridge**, so
   `shared/protocol.md` saying "the staged V4 boundary" is current, not stale. Renaming these to

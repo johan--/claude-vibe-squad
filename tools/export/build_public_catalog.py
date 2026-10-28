@@ -11,6 +11,10 @@ given kind of hunting on a given kind of target. That is what this emits --
 name, what it is for, which technique class it serves, and which targets it can
 analyse. No state, no lanes, no evidence, no notes.
 
+The one use of state is exclusion: a row the registry marks `retired` is left
+out, because a retired tool is not a recommendation. Without this filter the
+retired guarded-MCP rows kept appearing here as things to install.
+
 Deterministic: same input registry -> byte-identical output, so the export gate
 can treat drift as a real signal rather than noise.
 
@@ -36,6 +40,9 @@ HEADER = ["name", "kind", "purpose", "hunting_type", "target_class"]
 # operational plumbing and say nothing useful about how to hunt.
 PUBLISHED_PURPOSES = {"hunting", "research"}
 
+# Registry states that remove a row from the recommendation entirely.
+EXCLUDED_STATES = {"retired"}
+
 BANNER = [
     "# Recommended toolchain — what to install, by kind of hunting and kind of target.",
     "#",
@@ -45,6 +52,7 @@ BANNER = [
     "# liveness, lane, evidence or notes column: whether a tool works on OUR",
     "# machine is not a fact about YOUR machine, and a capability is only proven",
     "# by a real invocation returning a real result on real target code.",
+    "# Retired tools are omitted.",
     "#",
     "# hunting_type is the technique class a tool serves. Coverage is the thing",
     "# worth measuring: an unused applicable technique class is a gap, and a",
@@ -59,6 +67,8 @@ def rows_from(registry: Path) -> list[list[str]]:
     out = []
     for row in source:
         if (row.get("purpose") or "") not in PUBLISHED_PURPOSES:
+            continue
+        if (row.get("verified_state") or "") in EXCLUDED_STATES:
             continue
         out.append([
             row["name"],

@@ -228,6 +228,8 @@ class ReviewEnforcementTest(unittest.TestCase):
                 os.utime(dest, (mtimes[rel_path], mtimes[rel_path]))
         env = {
             **os.environ,
+            # Pin the isolated data root; repo_root intentionally warns that
+            # it differs from the checkout containing the executable.
             "VAULT_ROOT": str(root),
             "RESPONSE_MIN_AGE_SECONDS": "0",
             "TMUX_BIN": "/nonexistent/tmux-for-tests",
@@ -235,6 +237,14 @@ class ReviewEnforcementTest(unittest.TestCase):
             "PYTHONDONTWRITEBYTECODE": "1",
         }
         return root, state, env
+
+    def assert_fixture_warning(self, stderr: str, env: dict) -> None:
+        self.assertEqual(
+            stderr,
+            f"repo_root.py: warning: VAULT_ROOT={env['VAULT_ROOT']} overrides "
+            f"location-derived root {PYTHON_ROOT.parent.parent}; "
+            "unset VAULT_ROOT to use this checkout\n",
+        )
 
     def run_reconcile(self, env: dict, task_id: str) -> subprocess.CompletedProcess:
         result = subprocess.run(
@@ -867,7 +877,11 @@ class ReviewEnforcementTest(unittest.TestCase):
         responses["departments/coding/outbox/TASK-REVIEW-IDEMP-response.md"] = review(t, "gpt-codex", "CHANGES-NEEDED: fix it.", "needs_review", "TASK-REVIEW-IDEMP")
         entry, queue = self.reconcile({t: self._entry()}, responses, t, runs=2)
         self.assertEqual(entry["status"], "review-required")
-        self.assertEqual(queue.count("REVIEW-REQUIRED"), 1, msg=queue)
+        self.assertEqual(
+            sum(line.split(" | ", 3)[1:3] == ["REVIEW-REQUIRED", f"coding/{t}"]
+                for line in queue.splitlines()),
+            1, msg=queue,
+        )
 
     def test_h2_same_notification_key_never_repeats_after_elapsed_interval(self):
         t = "TASK-2026-07-15-0013-idemp-elapsed"
@@ -884,7 +898,11 @@ class ReviewEnforcementTest(unittest.TestCase):
 
         entry, queue = self.result(state, t)
         self.assertEqual(entry["status"], "review-required")
-        self.assertEqual(queue.count("REVIEW-REQUIRED"), 1, msg=queue)
+        self.assertEqual(
+            sum(line.split(" | ", 3)[1:3] == ["REVIEW-REQUIRED", f"coding/{t}"]
+                for line in queue.splitlines()),
+            1, msg=queue,
+        )
 
     # fix 4 remains closed because even well-formed approval prose cannot auto-settle
     def test_i_approval_citing_resolved_changes_stays_held(self):
@@ -1001,7 +1019,11 @@ class ReviewEnforcementTest(unittest.TestCase):
         self.run_reconcile(env, t)
         entry, queue = self.result(state, t)
         self.assertEqual(entry["status"], "review-required")
-        self.assertEqual(queue.count("REVIEW-REQUIRED"), 1)
+        self.assertEqual(
+            sum(line.split(" | ", 3)[1:3] == ["REVIEW-REQUIRED", f"coding/{t}"]
+                for line in queue.splitlines()),
+            1, msg=queue,
+        )
 
     # ---- review-of-review regress and explicit control-plane settlement ---
     def test_p_read_only_reviewer_roles_do_not_require_review_of_review(self):
@@ -1311,7 +1333,7 @@ class ReviewEnforcementTest(unittest.TestCase):
 
         settled = self.run_settle(env, t, review_ref)
 
-        self.assertEqual(settled.stderr, "")
+        self.assert_fixture_warning(settled.stderr, env)
         entry, _queue = self.result(state, t)
         self.assertEqual(entry["status"], "complete")
         self.assertEqual(entry["verdict"], "APPROVE")
@@ -1443,6 +1465,8 @@ class ReviewEnforcementTest(unittest.TestCase):
                 review_ref,
                 expected_returncode=2 if author_family == "openai" else 0,
             )
+            if author_family != "openai":
+                self.assert_fixture_warning(result.stderr, env)
             return self.result(state, t)[0], result.stderr
 
         held, error = run("openai", "same")
@@ -1450,7 +1474,6 @@ class ReviewEnforcementTest(unittest.TestCase):
         self.assertEqual(held["status"], "review-required")
 
         settled, error = run("anthropic", "cross")
-        self.assertEqual(error, "")
         self.assertEqual(settled["status"], "complete")
         self.assertEqual(settled["verdict"], "APPROVE")
 

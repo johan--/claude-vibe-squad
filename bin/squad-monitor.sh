@@ -11,9 +11,9 @@
 #   2. Stale active  — namespace active task has no response in >30m
 #   3. Loop/thrash   — same namespace received duplicate task bodies in 30m
 #
-# Alerts go to chrono pane via tmux send-keys (same shape as send-task.sh nudges).
+# Alerts go to chrono pane via tmux send-keys (same shape as bin/outbox-watcher.sh nudges).
 # State stored in _state/monitor/ (hash snapshots + alert dedup flags).
-# No new deps: bash + tmux + stat + sha256sum + jq.
+# Deps: bash + tmux + stat + jq + python3.
 #
 # Usage:
 #   bash bin/squad-monitor.sh            # normal cron mode
@@ -50,11 +50,22 @@ mkdir -p "${STATE_DIR}"
 
 now=$(date +%s)
 alerts=0
+sent_alerts=0
+NOTIFICATION_MODULE="$(cd -- "$(dirname -- "$(readlink -f -- "${BASH_SOURCE[0]}" 2>/dev/null || printf '%s' "${BASH_SOURCE[0]}")")/.." && pwd -P)/scripts/python/chrono_state/notifications.py"
 
 # ── helper: send alert to chrono pane ────────────────────────────────────────
 
 send_alert() {
-    local msg="$1" pane_cmd=""
+    local msg="$1" pane_cmd="" pane_id="" episode="${2:-${alerted_file:-monitor-${now}}}"
+    local enqueued=0 paged_file="${episode}.paged"
+    [[ "$episode" == */* ]] || paged_file="${VAULT_ROOT}/_state/monitor/${episode}.paged"
+    if python3 "$NOTIFICATION_MODULE" --vault "$VAULT_ROOT" enqueue-resource \
+        --resource squad-monitor --episode "${episode##*/}" --summary "$msg" >/dev/null; then
+        enqueued=1
+        alerts=$((alerts + 1))
+    else
+        echo "durable monitor enqueue failed; episode remains retryable: ${episode}" >&2
+    fi
     # Only type into the pane when Chrono is actually the thing listening.
     # Without this check the alert is delivered to whatever process holds the
     # pane -- and when Chrono has exited, that is a bare shell, which EXECUTES
@@ -66,19 +77,26 @@ send_alert() {
     # bin/outbox-watcher.sh already guards its own send this way. This is the
     # same check, spelled the same, because the two notifiers had drifted and
     # only one of them was safe.
-    pane_cmd="$(chrono_pane_observed_command "${CHRONO_PANE}")"
-    if chrono_pane_has_coordinator "${CHRONO_PANE}"; then
+    # Keep the validated identity for both sends: a window's active pane can
+    # change after the coordinator check, including between text and Enter.
+    if [[ -f "$paged_file" ]]; then
+        : # The pane already received this episode; retry only durable enqueue.
+    elif pane_id="$(chrono_pane_resolve_coordinator_id "${CHRONO_PANE}")" && [[ "$pane_id" =~ ^%[0-9]+$ ]]; then
         # -l (literal) so special characters are not interpreted by tmux.
-        tmux send-keys -l -t "${CHRONO_PANE}" "MONITOR: ${msg}" 2>/dev/null
-        tmux send-keys    -t "${CHRONO_PANE}" "" Enter           2>/dev/null
+        if tmux send-keys -l -t "$pane_id" "[vibesquad] MONITOR: ${msg}" 2>/dev/null \
+            && tmux send-keys -t "$pane_id" "" Enter 2>/dev/null; then
+            sent_alerts=$((sent_alerts + 1))
+            mkdir -p "$(dirname "$paged_file")" && touch "$paged_file"
+        fi
     else
         # Not lost: the line below is the durable record, and bin/board-notify.sh
         # serves headless readers. Say which command was there, so a wrong pane
         # is diagnosable instead of silent.
-        echo "[$(date -u +%H:%M:%SZ)] pane nudge skipped: ${CHRONO_PANE} runs '${pane_cmd:-unavailable}', expected 'claude'"
+        pane_cmd="$(chrono_pane_observed_command "${CHRONO_PANE}")"
+        echo "[$(date -u +%H:%M:%SZ)] pane nudge skipped: ${CHRONO_PANE} coordinator pane unresolved or ambiguous (observed '${pane_cmd:-unavailable}')"
     fi
     echo "[$(date -u +%H:%M:%SZ)] ALERT: ${msg}"
-    alerts=$((alerts + 1))
+    [[ "$enqueued" == 1 ]]
 }
 
 # ── watchdog helpers (Fix 1 / Fix 2 / Fix 3) ─────────────────────────────────
@@ -268,8 +286,8 @@ archive_completed_inbox() {
         mkdir -p "$archive_dir"
         mv "$task_file" "${archive_dir}/${task_name}"
         echo "[$(date -u +%H:%M:%SZ)] AUTO-ARCHIVED: ${namespace}/inbox/${task_name} (response exists)"
-        rm -f "${STATE_DIR}/${namespace}-stuck-alerted"
-        rm -f "${STATE_DIR}/stuck-task-${task_id}"-*-alerted   # clear the task+lane marker for any lane
+        rm -f "${STATE_DIR}/${namespace}-stuck-alerted" "${STATE_DIR}/${namespace}-stuck-alerted.paged"
+        rm -f "${STATE_DIR}/stuck-task-${task_id}"-*-alerted "${STATE_DIR}/stuck-task-${task_id}"-*-alerted.paged   # clear the task+lane marker for any lane
     done < <(find "${inbox_dir}" -maxdepth 1 -name 'TASK-*.md' 2>/dev/null)
 }
 
@@ -453,9 +471,9 @@ detect_stuck() {
 
         # ALERT-FIRST (always): correct lane + correct age, keyed by task id + lane.
         if $board_spawn_stall; then
-            send_alert "observed task ${task_id} → ${to_model} lane ($(runtime_display_name "$to_model")): live board spawn attempt log idle ${idle_secs}s, no receipt (threshold ${BOARD_SPAWN_STALL_THRESHOLD}s; dispatched ${age_min}m ago); a long model turn or tool call may still be healthy"
+            send_alert "observed task ${task_id} → ${to_model} lane ($(runtime_display_name "$to_model")): live board spawn attempt log idle ${idle_secs}s, no receipt (threshold ${BOARD_SPAWN_STALL_THRESHOLD}s; dispatched ${age_min}m ago); a long model turn or tool call may still be healthy" "$alerted_file" || continue
         else
-            send_alert "task ${task_id} → ${to_model} lane ($(runtime_display_name "$to_model")) idle ${idle_min}m, no response yet (dispatched ${age_min}m ago); pending in ${namespace}/inbox"
+            send_alert "task ${task_id} → ${to_model} lane ($(runtime_display_name "$to_model")) idle ${idle_min}m, no response yet (dispatched ${age_min}m ago); pending in ${namespace}/inbox" "$alerted_file" || continue
         fi
         touch "${alerted_file}"
 
@@ -505,9 +523,9 @@ detect_stale_active() {
 
         local age_min=$(( age / 60 ))
         if [[ -n "$cause" ]]; then
-            send_alert "${cause}: ${namespace}/${task_name} parked ${age_min}m (${status}); coordinator action overdue"
+            send_alert "${cause}: ${namespace}/${task_name} parked ${age_min}m (${status}); coordinator action overdue" "$alerted_file" || continue
         else
-            send_alert "${namespace} namespace has stale active task (${task_name}, ${age_min}m old)"
+            send_alert "${namespace} namespace has stale active task (${task_name}, ${age_min}m old)" "$alerted_file" || continue
         fi
         touch "${alerted_file}"
     done < <(find "${active_dir}" -maxdepth 1 -name 'TASK-*.md' 2>/dev/null)
@@ -644,7 +662,7 @@ detect_thrash() {
                 skipped=$((skipped + 1))
                 echo "NOT_MEASURED thrash ${task_id}: ${occurrences} dispatches without attempt identity"
                 if [[ ! -f "$alerted_file" ]]; then
-                    send_alert "${namespace} namespace received same task ${occurrences}x in ${window_min}m - real thrash (repeated task id ${task_id})"
+                    send_alert "${namespace} namespace received same task ${occurrences}x in ${window_min}m - real thrash (repeated task id ${task_id})" "$alerted_file" || continue
                     touch "$alerted_file"
                 fi
                 continue
@@ -662,7 +680,7 @@ detect_thrash() {
             local summary="NOT_MEASURED thrash ${namespace}: skipped_task_ids=${skipped} measured_task_ids=${measured} skipped_log_rows=$((skipped_rows + unknown_time_rows))"
             local unmeasured_file="${STATE_DIR}/${namespace}.thrash-unmeasured-${bucket}-alerted"
             if [[ "$measured" -eq 0 && ( "$skipped" -gt 0 || "$skipped_rows" -gt 0 ) && ! -f "$alerted_file" && ! -f "$unmeasured_file" ]]; then
-                send_alert "$summary"
+                send_alert "$summary" "$unmeasured_file" || continue
                 touch "$unmeasured_file"
             else
                 echo "$summary"
@@ -679,7 +697,7 @@ detect_thrash() {
         # Bucket dedup: stable key within each THRASH_WINDOW interval
         [[ -f "$alerted_file" ]] && continue
 
-        send_alert "${namespace} namespace received same task ${max_repeats}x in ${window_min}m - real thrash (duplicate body)"
+        send_alert "${namespace} namespace received same task ${max_repeats}x in ${window_min}m - real thrash (duplicate body)" "$alerted_file" || continue
         touch "${alerted_file}"
     done < <(jq -r 'map(.namespace) | unique[]' <<< "$window_rows")
 }
@@ -722,7 +740,7 @@ auto_archive_completed() {
         mv "$task_file" "${archive_dir}/${task_name}"
         echo "[$(date -u +%H:%M:%SZ)] AUTO-ARCHIVED: ${namespace}/active/${task_name} (response exists, ${age}s old)"
         # Clear any stale-alerted flag for this task (it's resolved)
-        rm -f "${STATE_DIR}/${namespace}-stale-${task_name}-alerted"
+        rm -f "${STATE_DIR}/${namespace}-stale-${task_name}-alerted" "${STATE_DIR}/${namespace}-stale-${task_name}-alerted.paged"
     done < <(find "${active_dir}" -maxdepth 1 -name 'TASK-*.md' 2>/dev/null)
 }
 
@@ -737,11 +755,10 @@ done
 detect_thrash
 
 # ── write monitor state for status bar ───────────────────────────────────────
-# bin/chrono-status-segment.sh picks up _state/monitor/alert-count for its mon: field.
 echo "$alerts" > "${STATE_DIR}/last-alert-count"
 
 if [[ $alerts -eq 0 ]]; then
     : # silent — no output on clean pass
 else
-    echo "[$(date -u +%H:%M:%SZ)] ${alerts} alert(s) sent to chrono pane."
+    echo "[$(date -u +%H:%M:%SZ)] ${alerts} alert(s) durably enqueued; ${sent_alerts} sent to chrono pane."
 fi

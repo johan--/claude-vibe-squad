@@ -83,6 +83,28 @@ print(
 PY
 }
 
+# Data-volume free space, in whole GiB. Turns red under 25 GiB (the floor at
+# which board builds and media jobs start failing) so the leak that drove disk
+# to 0.26 GiB is visible on the bar before it bites. `df -Pk` forces the POSIX
+# single-line-per-filesystem format, so the 4th field is always Available-KiB.
+disk_segment() {
+    local volume="/System/Volumes/Data" line avail_kb free_gb bg fg
+    [[ -d "$volume" ]] || volume="/"
+    line="$(df -Pk "$volume" 2>/dev/null | tail -n 1)"
+    read -r _ _ _ avail_kb _ _ <<<"$line"
+    if [[ -z "${avail_kb:-}" || ! "$avail_kb" =~ ^[0-9]+$ ]]; then
+        printf '#[bg=colour214,fg=colour16,bold] disk:? #[bg=default,fg=colour238]'
+        return
+    fi
+    free_gb=$(( avail_kb / 1024 / 1024 ))
+    if (( free_gb < 25 )); then
+        bg="colour203"; fg="colour16"
+    else
+        bg="colour240"; fg="colour252"
+    fi
+    printf '#[bg=%s,fg=%s,bold] disk %sG #[bg=default,fg=colour238]' "$bg" "$fg" "$free_gb"
+}
+
 counts="$(live_counts)"
 if [[ "$counts" =~ ^([0-9]+)\ ([0-9]+)\ ([0-9]+)\ ([0-9]+)$ ]]; then
     active="${BASH_REMATCH[1]}"
@@ -142,3 +164,4 @@ else
 fi
 
 printf '#[bg=%s,fg=%s,bold] %s #[bg=default,fg=colour238]' "$bg" "$fg" "$label"
+disk_segment

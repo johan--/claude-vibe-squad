@@ -2,7 +2,7 @@
 
 Vibe Squad is currently macOS-first, and setup is manual. The normal experience
 is one conversation with Chrono; Codex, Claude, the agy-backed Gemini lane,
-Grok, and Kimi run as fresh native CLI processes behind the board.
+and Grok run as fresh native CLI processes behind the board.
 
 This page is the narrated walkthrough. For the step-by-step install path with a
 check after every step, see [docs/install](install/README.md).
@@ -13,23 +13,22 @@ You need:
 
 - `tmux`, `fswatch`, `jq`, and `curl`
 - Python 3.13 and `uv`
-- the `claude`, `codex`, `agy`, `grok`, and `kimi` CLIs
+- the `claude`, `codex`, `agy`, and `grok` CLIs
 
 ```bash
 brew install jq tmux fswatch uv
 ```
 
-All five provider CLIs are required — `bin/squad up` exits 1 if any is missing.
-Three have a one-line install:
+All four provider CLIs are required — `bin/squad up` exits 1 if any is missing.
+Two have a one-line install:
 
 ```bash
 curl -fsSL https://claude.ai/install.sh | bash   # claude
 npm install -g @openai/codex                     # codex
-uv tool install kimi-cli                          # kimi
 ```
 
 These run vendor code as your user. Pin a version where the registry allows it
-(`npm install -g @openai/codex@<version>`, `uv tool install 'kimi-cli==<version>'`) and read an
+(`npm install -g @openai/codex@<version>`) and read an
 installer script before piping it to a shell.
 
 The other two have no package-manager install and must be obtained from their
@@ -46,22 +45,22 @@ vendors:
   per-CLI acquisition and auth detail is in
   [Provider CLIs](install/provider-clis.md).
 
-Both are mandatory: because `bin/squad up` refuses to launch until all five CLIs
+Both are mandatory: because `bin/squad up` refuses to launch until all four CLIs
 resolve, there is no partial-lane path past the dependency gate. Per-CLI
 installation and authentication detail is in
 [Provider CLIs](install/provider-clis.md).
 
-Claude, Codex, Gemini-through-agy, and Kimi authenticate through their supported
+Claude, Codex, and Gemini-through-agy authenticate through their supported
 subscription, OAuth, or managed-login paths. The Grok board lane is the exception:
 it requires an xAI API key (`model-lanes/lane-capabilities.tsv` declares
 `xai-api-key-only`). `GEMINI_API_KEY` is not Gemini lane authentication. Model
 inference always runs through those native CLIs, never through an MCP server.
 
 Per-CLI authentication steps, postcondition checks, and the `PATH` gotcha for
-`claude` and `kimi` are in [Provider CLIs](install/provider-clis.md).
+`claude` are in [Provider CLIs](install/provider-clis.md).
 
 Check the core tools before moving on. The full required-command set, including
-the five CLIs, is verified against the repo's authoritative list right after you
+the four CLIs, is verified against the repo's authoritative list right after you
 clone in step 2 — that check needs the repository, so it cannot run here yet:
 
 ```bash
@@ -131,10 +130,10 @@ An absent optional provider disables exactly what it provides and leaves
 everything else working; `--status` reports an uninstalled CLI's registration
 state as `UNKNOWN (not measured)` rather than guessing.
 
-`guarded-semgrep`, `guarded-slither`, and `guarded-solodit` additionally need the
-Trail of Bits context-protector wrapper, which is an install-time dependency this
-repository never vendors. Without it those three servers are unavailable and say
-so. See [Guarded security MCPs](install/security-mcps.md).
+There is no security-MCP step. The guarded security MCPs (`guarded-semgrep`,
+`guarded-slither`, and `guarded-solodit`) were retired on 2026-10-27, and security
+audits run the Semgrep and Slither CLIs directly; see
+[Security tooling](tooling/security-arsenal-guide.md).
 
 ## 5. Check and launch
 
@@ -189,9 +188,9 @@ authenticated Chrome (CDP on `127.0.0.1:9222`, no auth), so that execution carri
 your credentials and logged-in sessions, not just your file access.
 `com.chrono.squad-monitor` re-runs its checkout script **every 120 seconds**, so
 the realistic window is about two minutes, not a restart or an overnight wait. The
-installer manages three agents, but `com.chrono.squad-monitor` and
-`com.vibesquad.chrome` are installed by no repository command and never appear in
-`--status`. Unload whichever agents you have loaded before the checkout, then
+installer manages four agents, including `com.chrono.squad-monitor` (installed by a
+full `bin/install-routines.sh` run; `--daemon-only` installs only the daemon); only
+`com.vibesquad.chrome` is hand-loaded, and `--status` reports it as `operator-managed`. Unload whichever agents you have loaded before the checkout, then
 reload afterwards — this leaves the plist in place, it is not an uninstall:
 
 ```bash

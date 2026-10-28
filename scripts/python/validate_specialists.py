@@ -69,6 +69,7 @@ STALE_ROUTE_NAMES = (
     "repo-scout",
 )
 KNOWN_OPERATIONS = {
+    # This plugin family is distinct from the retired arsenal firecrawl_* tools.
     "firecrawl": {"scrape"},
     "chrono-vault": {"recall"},
 }
@@ -295,7 +296,7 @@ class Validator:
 
     def validate_registries(self) -> None:
         self.validate_registry(self.profile_path, self.profiles, PROFILE_HEADER,
-                               {"codex", "claude", "gemini", "grok", "kimi"})
+                               {"codex", "claude", "gemini", "grok"})
         self.validate_registry(self.policy_path, self.policies, POLICY_HEADER,
                                {"escalation", "failover", "throughput"})
         self.validate_registry(self.tool_path, self.tools, TOOL_HEADER, optional=True)
@@ -494,26 +495,40 @@ class Validator:
             if risk:
                 if escalation_policy != "escalation.safety_floor.v1":
                     issues.append("risk-requires-safety-floor")
-                if not (throughput_policy == "throughput.never.v1" and
-                        throughput_lane == throughput_profile == "none"):
-                    issues.append("risk-forbids-throughput")
-            else:
-                if escalation_policy != "escalation.signal.v1":
-                    issues.append("non-heightened-requires-signal-escalation")
-                if safety == "medium":
-                    if not (throughput_policy == "throughput.never.v1" and
-                            throughput_lane == throughput_profile == "none"):
-                        issues.append("medium-safety-forbids-throughput")
-                elif throughput_policy == "throughput.downshift_gated.v1":
-                    if not (throughput_lane == "kimi" and throughput_profile == "kimi.k2.7.bulk"):
-                        issues.append("gated-throughput-requires-kimi-profile")
-                    if safety_tags != "[]":
-                        issues.append("sensitive-tag-forbids-throughput")
-                elif throughput_policy == "throughput.never.v1":
-                    if throughput_lane != "none" or throughput_profile != "none":
-                        issues.append("never-throughput-requires-none")
+            elif escalation_policy != "escalation.signal.v1":
+                issues.append("non-heightened-requires-signal-escalation")
+
+            # These columns describe slot availability, not permission to execute
+            # a task on a cheap tier. The per-task conjunction in routing.md §5
+            # still excludes higher-safety and security/privacy/financial work.
+            # Do not lower row safety metadata to make a budget slot validate.
+            if throughput_policy == "throughput.downshift_gated.v1":
+                if throughput_lane == "none" or throughput_profile == "none":
+                    issues.append("gated-throughput-requires-profile")
                 else:
-                    issues.append(f"invalid-low-safety-throughput-policy:{throughput_policy}")
+                    record = self.profile_by_id.get(throughput_profile)
+                    if record is None:
+                        issues.append(f"unknown-profile:{throughput_profile}")
+                    elif len(record) > 1 and record[1] != throughput_lane:
+                        issues.append(f"profile-lane-mismatch:{throughput_lane}:{throughput_profile}")
+                if heightened == "true":
+                    issues.append("heightened-risk-forbids-throughput")
+                # Sensitive tags are static facts about the role, so they stay a
+                # row-level refusal. An operator-approved exception must be named
+                # in lane-policy.tsv and may not move the data to another provider.
+                sensitive = set(parsed_safety or ()) & {"dual_use", "financial", "privacy"}
+                excepted = {row[1] for row in self.policy_rows("throughput_exception")
+                            if row[2] == "allow" and row[3] == name}
+                blocked = sorted(sensitive - excepted)
+                if blocked:
+                    issues.append("sensitive-tag-forbids-throughput:" + ",".join(blocked))
+                elif sensitive and throughput_lane != primary_lane:
+                    issues.append(f"sensitive-throughput-leaves-primary-lane:{throughput_lane}")
+            elif throughput_policy == "throughput.never.v1":
+                if throughput_lane != "none" or throughput_profile != "none":
+                    issues.append("never-throughput-requires-none")
+            else:
+                issues.append(f"invalid-throughput-policy:{throughput_policy}")
             gate = bracket_list(operator_gate)
             if gate is None or not set(gate) <= allowed_gates:
                 issues.append(f"invalid-operator-gate:{operator_gate}")

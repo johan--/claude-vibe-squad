@@ -1,6 +1,6 @@
 #!/bin/bash
 # connect.sh — single-command entry into the squad. Drops you straight into
-# the chrono pane (with sidebar showing all 5 Lead live mirrors) ready to
+# the chrono pane (with sidebar showing live specialist-task status) ready to
 # talk to the Coordinator. No tmux keystrokes needed.
 #
 # Behavior:

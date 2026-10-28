@@ -42,14 +42,29 @@ def staged_mcps_by_lane() -> dict[str, tuple[str, ...]]:
 
 
 class LaneAdapterRegistryTests(unittest.TestCase):
+    def test_runtime_lane_sets_agree_and_unknown_lane_is_denied(self) -> None:
+        import dispatch_context_builder as dispatch
+        import host_admission as admission
+        import lane_capability_enforcement as enforcement
+        import verification_contract as contract
+
+        expected = {"codex", "claude", "gemini", "grok"}
+        self.assertEqual(set(dispatch.MODEL_TO_LANE.values()), expected)
+        self.assertEqual(set(enforcement.LANES), expected)
+        self.assertEqual(set(admission.LANE_FAMILY), expected | {"gpt-codex"})
+        self.assertEqual(set(contract.LANE_TO_AUTHOR_FAMILY), expected | {"gpt-codex"})
+        with self.assertRaises(enforcement.CapabilityDenied):
+            enforcement.plan_lane(lane="retired", projection={}, configured_servers={})
+        with self.assertRaises(contract.ContractError):
+            contract.author_family_for_lane("retired")
+
     def test_registry_has_one_fail_closed_row_per_lane(self) -> None:
         registry = registry_module.load_capability_registry(
             ROOT / "model-lanes" / "lane-capabilities.tsv"
         )
         self.assertEqual(
-            set(registry), {"gpt-codex", "claude", "gemini", "grok", "kimi"}
+            set(registry), {"gpt-codex", "claude", "gemini", "grok"}
         )
-        self.assertEqual(registry["kimi"].child_mcp_policy, "lead-broker-only")
         self.assertEqual(registry["gemini"].grounding, "google-search-grounding")
         # Derive the expectation from the capability source rather than pinning a
         # literal. The previous literal was the guarded trio, authored 2026-07-21;
@@ -63,7 +78,7 @@ class LaneAdapterRegistryTests(unittest.TestCase):
         # inverse -- a lane declaring an MCP staged that nothing is waiting on --
         # which is exactly the drift that sat in the tree for three weeks.
         expected_staged = staged_mcps_by_lane()
-        for lane in ("gpt-codex", "claude", "gemini", "grok", "kimi"):
+        for lane in ("gpt-codex", "claude", "gemini", "grok"):
             self.assertEqual(
                 tuple(sorted(registry[lane].staged_mcp_surface)),
                 expected_staged.get(lane, ()),
@@ -73,7 +88,7 @@ class LaneAdapterRegistryTests(unittest.TestCase):
                 "one must be added.",
             )
 
-    def test_registry_is_the_native_cli_auth_and_kimi_broker_contract(self) -> None:
+    def test_registry_is_the_native_cli_auth_contract(self) -> None:
         registry = registry_module.load_capability_registry(
             ROOT / "model-lanes" / "lane-capabilities.tsv"
         )
@@ -84,7 +99,6 @@ class LaneAdapterRegistryTests(unittest.TestCase):
                 "claude": "claude",
                 "gemini": "agy",
                 "grok": "grok",
-                "kimi": "kimi",
             },
         )
         self.assertEqual(
@@ -94,77 +108,13 @@ class LaneAdapterRegistryTests(unittest.TestCase):
                 "claude": "subscription-drop-provider-keys",
                 "gemini": "subscription-drop-provider-keys",
                 "grok": "xai-api-key-only",
-                "kimi": "managed-login-drop-provider-keys",
             },
         )
         self.assertIn("chrono-vault", registry["gpt-codex"].mcp_surface)
         self.assertIn("chrono-vault", registry["claude"].mcp_surface)
         self.assertIn("chrono-vault", registry["gemini"].mcp_surface)
         self.assertIn("chrono-vault", registry["grok"].mcp_surface)
-        self.assertIn("lead:chrono-vault", registry["kimi"].mcp_surface)
-        self.assertEqual(registry["kimi"].child_mcp_policy, "lead-broker-only")
 
-    def test_kimi_prompt_guard_is_controlled_by_child_mcp_policy(self) -> None:
-        registry_path = ROOT / "model-lanes" / "lane-capabilities.tsv"
-        registry = registry_module.load_capability_registry(registry_path)
-        source_adapters = sorted(
-            path
-            for path in (ROOT / "model-lanes/kimi/.kimi/agents").glob("*.yaml")
-            if "../prompts/" in path.read_text(encoding="utf-8")
-        )
-        self.assertTrue(source_adapters, "no live Kimi native prompt adapter found")
-        source_adapter = source_adapters[0]
-        specialist = source_adapter.stem
-        boundary = "MCP tools are unavailable inside Kimi subagents"
-
-        with tempfile.TemporaryDirectory() as directory:
-            staged_root = Path(directory)
-            agents = staged_root / ".kimi" / "agents"
-            prompts = staged_root / ".kimi" / "prompts"
-            agents.mkdir(parents=True)
-            prompts.mkdir(parents=True)
-            adapter = agents / source_adapter.name
-            prompt = prompts / f"{specialist}.md"
-            shutil.copyfile(source_adapter, adapter)
-            shutil.copyfile(
-                ROOT / "model-lanes/kimi/.kimi/prompts" / prompt.name,
-                prompt,
-            )
-            original_prompt = prompt.read_text(encoding="utf-8")
-            self.assertIn(boundary, original_prompt)
-            prompt.write_text(
-                original_prompt.replace(boundary, "MCP tools are available"),
-                encoding="utf-8",
-            )
-
-            with self.assertRaisesRegex(
-                registry_module.AdapterValidationError,
-                "lacks lead-broker MCP policy",
-            ):
-                registry_module.validate_adapter_file(
-                    ROOT, "kimi", adapter, registry["kimi"]
-                )
-
-            lines = registry_path.read_text(encoding="utf-8").splitlines()
-            header = lines[0].split("\t")
-            policy_index = header.index("child_mcp_policy")
-            inverted_lines = [lines[0]]
-            for line in lines[1:]:
-                fields = line.split("\t")
-                if fields[0] == "kimi":
-                    self.assertEqual(fields[policy_index], "lead-broker-only")
-                    fields[policy_index] = "inherit-full"
-                inverted_lines.append("\t".join(fields))
-            inverted_path = staged_root / "lane-capabilities.tsv"
-            inverted_path.write_text(
-                "\n".join(inverted_lines) + "\n",
-                encoding="utf-8",
-            )
-            inverted = registry_module.load_capability_registry(inverted_path)
-            self.assertEqual(inverted["kimi"].child_mcp_policy, "inherit-full")
-            registry_module.validate_adapter_file(
-                ROOT, "kimi", adapter, inverted["kimi"]
-            )
 
     def test_registry_rejects_adapter_tool_not_held_by_lane(self) -> None:
         registry = registry_module.load_capability_registry(
@@ -194,25 +144,10 @@ class LaneAdapterRegistryTests(unittest.TestCase):
         self.assertEqual(report["generated_mismatches"], [])
         self.assertEqual(report["ranked_gaps"]["gemini"], [])
         self.assertEqual(report["ranked_gaps"]["grok"], [])
-        self.assertEqual(report["ranked_gaps"]["kimi"], [])
         for role in registry_module.SWARM_CRITICAL_ROLES:
             with self.subTest(role=role):
                 self.assertGreaterEqual(len(report["physical_lanes"][role]), 2)
 
-    def test_kimi_registry_points_only_at_current_native_adapters(self) -> None:
-        main = (ROOT / "model-lanes/kimi/main.yaml").read_text(encoding="utf-8")
-        for role in registry_module.KIMI_GENERATED_ROLES:
-            with self.subTest(role=role):
-                self.assertIn(
-                    f"    {role}:\n      path: ./.kimi/agents/{role}.yaml",
-                    main,
-                )
-        self.assertFalse(
-            (ROOT / "model-lanes/kimi/subagents/experimental-attacker.yaml").exists()
-        )
-        self.assertFalse(
-            (ROOT / "model-lanes/kimi/prompts/experimental-attacker.md").exists()
-        )
 
     def test_grok_registry_points_at_smokey_native_adapter(self) -> None:
         main = (ROOT / "model-lanes/grok/main.yaml").read_text(encoding="utf-8")

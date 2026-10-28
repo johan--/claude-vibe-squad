@@ -26,7 +26,7 @@ SUPPORTED_TYPED_MODES = frozenset({"project", "bounty"})
 #   - capability card (tool projection): forbidden -- cards are mode-scoped under
 #     shared/capabilities/<mode>/, so a modeless packet resolves none (see below)
 #   - memory write floor: forced to `restricted` in clearance.apply_record_policy
-#   - launch timeout budget: the 2700s cap, never bounty's 3600s (board-supervisor)
+#   - launch timeout budget: the 5400s cap, never bounty's 7200s (board-supervisor)
 # It is deliberately routed to the *project-shaped* contract body (same
 # verification kinds and phase set as ordinary internal work) because "work on
 # our own system / simple research" is exactly project-shaped work; the only
@@ -44,7 +44,6 @@ LANE_TO_AUTHOR_FAMILY = {
     "codex": "openai",
     "gemini": "google",
     "grok": "xai",
-    "kimi": "kimi",
 }
 
 _LOWER_SHA256 = re.compile(r"^[0-9a-f]{64}$")

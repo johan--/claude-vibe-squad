@@ -2,7 +2,7 @@
 # Squad-stop — graceful close with transient shutdown summary.
 #
 # Two-phase:
-#   1. Request Chrono update live current.md state and write a transient summary
+#   1. Request Chrono settle the active charter + OPEN-WORK ledger and write a transient summary
 #      (60s timeout)
 #   2. If Chrono didn't respond, synthesize a baseline summary mechanically
 #      from filesystem state (current.md files + recent dispatch log + outboxes)
@@ -114,9 +114,10 @@ if [[ "${CHRONO_PANE_READY}" != "1" ]]; then
     # set -uo pipefail without -e: a failed source would leave the function
     # undefined and every call returning 127, indistinguishable from "no
     # coordinator there". Define an explicit refusal so discovery leans on the
-    # pidfile alone and says so.
+    # pidfile alone for background-job discovery and refuses pane delivery.
     chrono_pane_has_coordinator() { return 1; }
-    echo "  WARNING: ${VAULT_ROOT}/shared/chrono-pane.sh failed to load; cannot inspect the ${SESSION}:chrono pane for a live coordinator. Orchestrator discovery relies on the coordinator pidfile only." >&2
+    chrono_pane_resolve_coordinator_id() { return 1; }
+    echo "  WARNING: ${VAULT_ROOT}/shared/chrono-pane.sh failed to load; pane delivery is disabled. Background-job discovery relies on the coordinator pidfile only." >&2
 fi
 
 # parse_coordinator_pidfile <pidfile>: echo "<shape> <pid> <target> <start>" on
@@ -210,12 +211,12 @@ pid_identity_still_matches() {
 #   "background-job <pid>"  a live coordinator with no pane (NOT nudgeable)
 #   "none"                  no live orchestrator found anywhere we can look
 # Depends only on parse_coordinator_pidfile, coordinator_pid_is_live_claude,
-# pid_identity_still_matches and chrono_pane_has_coordinator (all injectable),
+# pid_identity_still_matches and chrono_pane_resolve_coordinator_id (all injectable),
 # plus CHRONO_COORDINATOR_PIDFILE, CHRONO_PANE_READY and SESSION -- so the routing
 # is driven directly by the test with stubs, the same way reap_pidfile_process()
 # takes an injected identity check.
 discover_orchestrator() {
-    local parsed shape pid target start
+    local parsed shape pid target start pane_id
     if parsed="$(parse_coordinator_pidfile "${CHRONO_COORDINATOR_PIDFILE}")"; then
         read -r shape pid target start <<<"${parsed}"
         [[ "${target}" == "-" ]] && target=""
@@ -235,16 +236,11 @@ discover_orchestrator() {
                     # or moved since launch. When shared/chrono-pane.sh LOADED, it
                     # is that authority and a stale target falls through, never
                     # nudged. When it FAILED to load (CHRONO_PANE_READY != 1), the
-                    # identity-matched live claude above is itself an independent
-                    # authority -- the whole reason the coordinator records its
-                    # real PID+fingerprint -- so trust the recorded target rather
-                    # than collapsing a live coordinator into `none` (review P1).
+                    # identity check alone cannot prove which pane receives keys.
+                    # Fail closed if the helper cannot resolve a concrete ID.
                     if [[ -n "${target}" ]]; then
-                        if chrono_pane_has_coordinator "${target}"; then
-                            printf 'pane %s\n' "${target}"
-                            return 0
-                        elif [[ "${CHRONO_PANE_READY:-1}" != "1" ]]; then
-                            printf 'pane %s\n' "${target}"
+                        if pane_id="$(chrono_pane_resolve_coordinator_id "${target}")" && [[ "$pane_id" =~ ^%[0-9]+$ ]]; then
+                            printf 'pane %s\n' "${pane_id}"
                             return 0
                         fi
                     fi
@@ -256,11 +252,10 @@ discover_orchestrator() {
             esac
         fi
     fi
-    # No usable pidfile -- the backward-compatible path for a session launched
-    # before this pidfile existed. Ask the pane directly, the exact question the
-    # old code assumed the answer to.
-    if chrono_pane_has_coordinator "${SESSION}:chrono"; then
-        printf 'pane %s\n' "${SESSION}:chrono"
+    # Resolve through the shared identity authority, which also handles a pane
+    # target spelling that differs from the current window index.
+    if pane_id="$(chrono_pane_resolve_coordinator_id "${SESSION}:chrono")" && [[ "$pane_id" =~ ^%[0-9]+$ ]]; then
+        printf 'pane %s\n' "${pane_id}"
         return 0
     fi
     printf 'none\n'
@@ -287,9 +282,9 @@ echo "Squad close initiated (session: ${SESSION}). $(orchestrator_report_line "$
 
 chrono_responded=0
 if [[ "${orch_shape}" == "pane" ]]; then
-    NUDGE_MSG="Operator is closing the squad session. Update chrono/current.md and any affected departments/*/current.md so live state is accurate. Do not write docs/handoffs. If useful, write a transient shutdown summary to ${SUMMARY_FILE} with in-flight task IDs, queued work, and anything next launch should see after reading current.md. Confirm by appending 'SHUTDOWN SUMMARY DONE' to that file. After confirming, the operator will close the session."
+    NUDGE_MSG="Operator is closing the squad session. Tick every finished DONE-WHEN item on the active charter and append anything raised and not done to _state/chrono/OPEN-WORK.md; update departments/*/current.md only if live mailbox state changed (chrono/current.md is an archive). Do not write docs/handoffs. If useful, write a transient shutdown summary to ${SUMMARY_FILE} with in-flight task IDs, queued work, and anything next launch should see after regenerating and reading _state/chrono/resume.md. Confirm by appending 'SHUTDOWN SUMMARY DONE' to that file. After confirming, the operator will close the session."
 
-    tmux send-keys -l -t "${orch_ref}" "${NUDGE_MSG}"
+    tmux send-keys -l -t "${orch_ref}" "[vibesquad] ${NUDGE_MSG}"
     sleep 0.3
     tmux send-keys -t "${orch_ref}" Enter
 

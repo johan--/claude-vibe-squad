@@ -65,6 +65,10 @@ def _tracked_ledgers() -> list[str]:
     return sorted(line for line in completed.stdout.splitlines() if line.strip())
 
 
+@unittest.skipUnless(
+    (ROOT / projector.DEFAULT_LEDGER_PATH).is_file(),
+    "private export ledger is not published",
+)
 class TestDefaultLedgerPath(unittest.TestCase):
     def test_exactly_one_ledger_is_tracked(self):
         """Two tracked ledgers would mean the fork already happened.
@@ -100,6 +104,15 @@ class TestDefaultLedgerPath(unittest.TestCase):
             (ROOT / projector.DEFAULT_LEDGER_PATH).is_file(),
             f"{projector.DEFAULT_LEDGER_PATH} is not a readable file under {ROOT}",
         )
+
+
+class TestPrivateScannerBoundary(unittest.TestCase):
+    def test_missing_scanner_refuses_publication_explicitly(self):
+        with mock.patch("builtins.__import__", side_effect=ModuleNotFoundError(
+            "No module named 'target_scan'", name="target_scan"
+        )):
+            with self.assertRaisesRegex(projector.ProjectorError, "requires private"):
+                projector._load_target_scanner()
 
 
 class TestDefaultGateReportPath(unittest.TestCase):

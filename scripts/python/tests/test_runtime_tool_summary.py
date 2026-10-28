@@ -21,17 +21,25 @@ class RuntimeToolSummaryTests(unittest.TestCase):
         expected = module.render_runtime_map(ROOT).encode("utf-8")
         self.assertEqual(actual, expected)
 
+    @unittest.skipUnless((ROOT / "shared/registries/skill-tool-registry.tsv").exists(), "private input is not published")
     def test_projection_uses_primary_server_and_operation_provider_closure(self) -> None:
         payload = module.load_payload(ROOT)
         relations = module.server_relations(payload)
-        self.assertIn("perplexity_search", relations["chrono-research-arsenal"])
+        self.assertEqual(relations["chrono-research-arsenal"], frozenset({"arxiv_search"}))
         self.assertNotIn("perplexity_search_web", relations["chrono-research-arsenal"])
-        perplexity_entries = [
+        academic_entries = [
             (entry["specialist"], entry["lane"])
             for entry in payload["entries"]
-            if any(tool["id"] == "perplexity_search" for tool in entry["tools"])
+            if any(tool["id"] == "arxiv_search" for tool in entry["tools"])
         ]
-        self.assertTrue(perplexity_entries)
+        self.assertTrue(academic_entries)
+        self.assertFalse(
+            any(
+                tool["id"] == "perplexity_search_web"
+                for entry in payload["entries"]
+                for tool in entry["tools"]
+            )
+        )
         with (ROOT / "shared/registries/skill-tool-registry.tsv").open(
             encoding="utf-8", newline=""
         ) as stream:
@@ -44,22 +52,17 @@ class RuntimeToolSummaryTests(unittest.TestCase):
                 if row["name"] == name
             ]
             self.assertEqual(len(matching), 1)
+            if matching[0]["lanes"] == "all":
+                return set(module.LANE_NAMES.values())
             return {
                 module.LANE_NAMES[lane]
                 for lane in matching[0]["lanes"].split("|")
             }
 
-        allowed_lanes = registry_source_lanes("perplexity_search")
+        allowed_lanes = registry_source_lanes("arxiv_search")
         self.assertEqual(
-            [entry for entry in perplexity_entries if entry[1] not in allowed_lanes],
+            [entry for entry in academic_entries if entry[1] not in allowed_lanes],
             [],
-        )
-        self.assertFalse(
-            any(
-                tool["id"] == "perplexity_search_web"
-                for entry in payload["entries"]
-                for tool in entry["tools"]
-            )
         )
         rows = module.project_runtime_tools(ROOT)
         self.assertEqual(rows["backend-engineer"]["required_tools"], ())
@@ -82,7 +85,7 @@ class RuntimeToolSummaryTests(unittest.TestCase):
             rows["frontend-engineer"]["required_tools"],
             ("chrome-devtools", "playwright"),
         )
-        self.assertNotIn("perplexity_search", rows["frontend-engineer"]["preferred_tools"])
+        self.assertNotIn("arxiv_search", rows["frontend-engineer"]["preferred_tools"])
 
     def test_required_provider_dominates_preferred_provider(self) -> None:
         payload = {

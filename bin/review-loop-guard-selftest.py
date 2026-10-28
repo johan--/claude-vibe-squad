@@ -73,7 +73,7 @@ def task_entry(
 
 registry = {
     FACTUAL: task_entry(
-        lane="kimi", family="moonshot", review_class="factual", generation=7
+        lane="gemini", family="google", review_class="factual", generation=7
     ),
     SECURITY: task_entry(
         lane="gpt-codex", family="openai", review_class="security-finding", generation=3
@@ -221,6 +221,43 @@ security_settled = reconciler.load_registry()[SECURITY]
 assert security_settled["status"] == "complete"
 assert security_settled["review_settled_by"] == "chrono-explicit-independent"
 print("PASS security-finding rejects coordinator attestation and requires independent cross-family review")
+
+# A settled-complete row carrying a terminal board receipt must reconcile to a
+# fixed point: no status change, no field rewrite, changes=0 on every pass, and
+# the already-settled line still emitted. The idempotency assertion further up
+# cannot reach this class -- its fixtures end as review-required and never enter
+# the terminal-receipt branch -- which is how a revision that restamped
+# reconciled_at on every settled row passed it while breaking the invariant.
+receipt_directory = reconciler.STATE_DIR / "board-dispatch"
+receipt_directory.mkdir(parents=True, exist_ok=True)
+reconciler.atomic_write(
+    receipt_directory / f"{FACTUAL}.attempt-7.receipt.json",
+    json.dumps(
+        {
+            "task_id": FACTUAL,
+            "attempt_id": "attempt-7",
+            "generation": 7,
+            "status": "failed",
+        }
+    )
+    + "\n",
+)
+settled_before = reconciler.load_registry()[FACTUAL]
+for cycle in (1, 2, 3):
+    settled_changes, settled_messages = reconciler.reconcile(FACTUAL, False)
+    assert settled_changes == 0, (cycle, settled_changes, settled_messages)
+    # bin/outbox-watcher.sh greps stdout for exactly this line to set
+    # reconciler_handled=1. Silence re-queues settled work to Chrono on every
+    # watcher restart and leaves the task packet in the live mailbox.
+    assert f"already-settled {FACTUAL} -> complete" in settled_messages, (
+        cycle,
+        settled_messages,
+    )
+settled_after = reconciler.load_registry()[FACTUAL]
+assert settled_after == settled_before, settled_after
+assert settled_after["status"] == "complete"
+assert settled_after["review_settled_by"] == "chrono-factual-attestation"
+print("PASS settled-complete reconcile is a fixed point and keeps announcing already-settled")
 
 shutil.rmtree(FIXTURE)
 print("SELFTEST PASS fixture-cleaned")

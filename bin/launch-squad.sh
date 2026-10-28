@@ -10,7 +10,7 @@
 #
 # After launch:
 #   tmux attach -t squad     # attach to the session
-#   Ctrl-b + 0  → chrono (conversation + live four-lane status sidebar)
+#   Ctrl-b + 0  → chrono (conversation + live specialist-spawn dashboard sidebar)
 #   Ctrl-b + 5  → watchers/status (outbox notifications + reconciliation)
 #   Ctrl-b + z  → zoom the current pane
 #   Ctrl-b + d  → detach (panes keep running)
@@ -255,9 +255,9 @@ file_mtime_epoch() {
 }
 
 # Stable local state, deliberately outside the checkout and independent of
-# VAULT_ROOT/CHRONO_VAULT_ROOT.  board-supervisor.sh carries the same default so
-# a dispatch reached from a plain shell cannot lose the trail; the regression
-# test named there enforces that the two entry points stay identical.
+# VAULT_ROOT/CHRONO_VAULT_ROOT. board-supervisor.sh owns the default for both entry points.
+# scripts/python/tests/test_board_supervisor_integration.py::VaultAuditDirectoryDefaultTests
+# pins this copy to the supervisor so plain-shell dispatches retain the same trail.
 export CHRONO_VAULT_AUDIT_DIR="${CHRONO_VAULT_AUDIT_DIR:-${HOME:-/var/tmp/chrono-vault-${EUID}}/.local/state/chrono-vault/audit}"
 printf -v CHRONO_VAULT_AUDIT_DIR_SHELL '%q' "${CHRONO_VAULT_AUDIT_DIR}"
 
@@ -711,7 +711,7 @@ apply_squad_globals() {
     keys_cmd+=" '  C-b ?      every binding tmux knows'"
     keys_cmd+=" '  C-b g      this list'"
     keys_cmd+=" ''"
-    keys_cmd+=" '  Model lanes are PANES in the chrono window, not windows.'"
+    keys_cmd+=" '  The default Chrono layout contains the coordinator and an optional spawn dashboard.'"
     keys_cmd+=" '  Specialists are board-spawned CLIs with no window at all.'"
     keys_cmd+=" ''"
     keys_cmd+=" '  Enter closes.'"
@@ -723,7 +723,7 @@ apply_squad_globals() {
         || tmux bind-key g display-message "C-b 0 chrono · C-b 5 watchers · C-b o next pane · C-b z zoom · C-b Space reset · C-b [ scroll · C-b d detach · C-b ? all keys"
 
     # --- Claude-Code-grade status bar (locked palette, poller-fed) ---------
-    # Every `#()` here is a plain `cat` of a file the poller already wrote, so
+    # Health `#()` calls are plain `cat`s of files the poller already wrote, so
     # tmux does zero network work per render. That was true before too -- and
     # beside the point, because the cost was never network, it was PROCESS
     # CREATION. tmux forks a shell per `#()` per render: one for status-left,
@@ -734,15 +734,17 @@ apply_squad_globals() {
     # So: the doctor summary is parsed once per second by the poller that was
     # already running (bin/vs-lane-status.sh, in the Python it already spawns)
     # instead of by a jq the status bar forks; and the interval drops to 5. The
-    # remaining `#()` calls are all `cat`, at a fifth of the rate.
+    # health `#()` calls are all `cat`, at a fifth of the rate. Chrono's small
+    # awaiting-operator file is read directly by vs-needs-you-segment.sh at this
+    # same refresh interval; it needs neither a daemon nor another poller.
     #
     # 5s is a display interval, not a data interval: the poller still refreshes
     # its files every ~1s, so nothing shown here is more than 5s stale, and the
     # things that actually move second-to-second -- the spinner and the elapsed
     # clock -- were never readable at 1s anyway.
     #
-    # Palette: colour74 cyan accent, colour252 near-white, colour240 dim,
-    # colour214 amber, colour234/233 bg.
+    # Palette: colour213 magenta questions, colour74 cyan accent, colour252
+    # near-white, colour240 dim, colour214 amber, colour234/233 bg.
     tmux set-option -g status on
     tmux set-option -g status-position bottom
     tmux set-option -g status 1                       # one row; the hints moved to C-b g
@@ -786,7 +788,12 @@ apply_squad_globals() {
     tmux set-option -g status-left "#[fg=colour74,bold]#{?#{e|>=:#{client_width},120}, vibesquad , vs }#[fg=colour240]· #(cat /tmp/vs-daemon.status 2>/dev/null) "
     # No colour prefix on the doctor segment: the poller writes its own, and it
     # is the ONLY thing on the bar allowed to use amber (see bin/doctor-state.sh).
-    tmux set-option -g status-right "#{?#{e|>=:#{client_width},120},#(cat /tmp/vs-swarm.status 2>/dev/null) #[fg=colour240]· ,}#(cat /tmp/vs-doctor.status 2>/dev/null) #[fg=colour240]· #[fg=colour252]%H:%M "
+    # Questions come first at every width. Quote the checkout path for tmux's
+    # shell; an empty question file contributes neither text nor a separator.
+    # Invoke bash explicitly to avoid macOS's first-exec delay for a new script.
+    local needs_you_command
+    printf -v needs_you_command '%q' "${VAULT_ROOT}/bin/vs-needs-you-segment.sh"
+    tmux set-option -g status-right "#(/bin/bash ${needs_you_command})#{?#{e|>=:#{client_width},120},#(cat /tmp/vs-swarm.status 2>/dev/null) #[fg=colour240]· ,}#(cat /tmp/vs-doctor.status 2>/dev/null) #[fg=colour240]· #[fg=colour252]%H:%M "
     # Row 1 is gone, but a server configured by an OLDER launch still carries the
     # value. This function is the thing that cures drift on reattach, so unset it
     # explicitly instead of relying on `status 1` to merely stop rendering it.
@@ -799,7 +806,7 @@ apply_squad_globals() {
     tmux set-option -g window-status-current-format ' #[fg=colour74,bold]#I #W '
 
     # Pane borders — hairline accent on the active pane; the lane's live status
-    # rides the border top. Lane windows are named gpt-codex/claude/gemini/kimi,
+    # rides the border top. Lane windows are named gpt-codex/claude/gemini/grok,
     # matching the poller's /tmp/vs-lane-<name>.status files, so #{window_name}
     # keys them directly. (The chrono window overrides this in sidebar.sh.)
     tmux set-option -g pane-border-style        'fg=colour238'
@@ -1548,7 +1555,7 @@ for ns in "${COMPATIBILITY_NAMESPACES[@]}"; do
              "${VAULT_ROOT}/departments/${ns}/archive"
 done
 
-# Ensure ~/.local/bin is on PATH inside every tmux pane (claude + kimi live there)
+# Ensure ~/.local/bin is on PATH inside every tmux pane (claude lives there)
 PATH_PREFIX='export PATH="$HOME/.local/bin:$HOME/go/bin:$PATH"'
 
 # Claude panes host Claude plugins, including chrono-media-studio. Keep the
@@ -1795,7 +1802,7 @@ fi
 # (Phase 3 cutover) Persistent per-model lane windows RETIRED. Specialists now run as
 # fresh, capability-scoped CLIs spawned per task by the board (SQUAD_DISPATCH_MODE=board,
 # the default since 2d51612). No model-lead windows are launched at startup. The provider
-# CLI binaries are still required (the board execs codex/claude/agy/grok/kimi per spawn) —
+# CLI binaries are still required (the board execs codex/claude/agy/grok per spawn) —
 # see the dependency check above. Rollback: revert the cutover commits + relaunch.
 
 # Window 5: watchers — outbox watchers per source namespace plus reconciliation.
@@ -1811,7 +1818,7 @@ fi
 # shows their welcome screens instead of empty shells.
 sleep 1
 
-# Sidebar — split chrono window into chrono main + 4 model-lane status tiles.
+# Sidebar — split chrono window into the coordinator and a specialist-spawn dashboard.
 # Default-on per operator preference. Toggle off with bin/sidebar-off.sh.
 bash "${VAULT_ROOT}/bin/sidebar.sh" >/dev/null 2>&1 || true
 
@@ -1851,7 +1858,7 @@ echo "To attach now:           tmux attach -t ${SESSION}"
 echo "To detach (keep alive):  Ctrl-b + d"
 echo "To stop daemon + session: bin/squad down"
 echo "To kill only the session: tmux kill-session -t ${SESSION}  (daemon keeps running)"
-echo "Unsafe autonomous mode:  SQUAD_UNSAFE_AUTONOMY=1 bash bin/launch-squad.sh"
+echo "Skip first-run warning + doctor gate: bin/squad up --safe (permissions unchanged)"
 echo "Pre-trust Codex MCPs:    SQUAD_TRUST_CODEX_MCPS=1 bash bin/launch-squad.sh"
 echo ""
 # Only prompt when run interactively. Without a tty (automated restart via

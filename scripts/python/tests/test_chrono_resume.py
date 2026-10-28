@@ -42,12 +42,12 @@ class TestChronoResume(unittest.TestCase):
             # depend on whatever happens to be on disk right now.
             mock.patch.object(resume, "pending_completions", return_value=[]),
         ):
-            cap = resume.render_capsule(
-                "sess-1", latest_operator_turn="write the plan", max_tokens=3000
-            )
+            cap = resume.render_capsule("sess-1", max_tokens=3000)
         self.assertIn("[DEC-abc]", cap)
         self.assertIn("[TASK-9]", cap)
-        self.assertIn("write the plan", cap)
+        # The `## Latest operator instruction` section was deleted (audit Rec 3)
+        # and the capsule takes no operator turn at all any more.
+        self.assertNotIn("Latest operator instruction", cap)
         self.assertLessEqual(len(cap) // 4, 3000)
 
     def test_capsule_truncates_tasks_to_stay_bounded(self):
@@ -72,12 +72,11 @@ class TestChronoResume(unittest.TestCase):
             # Isolation (fix round 2): see the note in the previous test.
             mock.patch.object(resume, "pending_completions", return_value=[]),
         ):
-            cap = resume.render_capsule(
-                "sess-1", latest_operator_turn="go", max_tokens=200
-            )
+            cap = resume.render_capsule("sess-1", max_tokens=200)
         self.assertLessEqual(len(cap) // 4, 200)
-        # the latest operator instruction is never dropped
-        self.assertIn("go", cap)
+        # the capsule title is never dropped (the operator-instruction section
+        # that used to anchor this assertion was removed — audit Rec 3)
+        self.assertIn("# Chrono resume capsule", cap)
 
 
 if __name__ == "__main__":

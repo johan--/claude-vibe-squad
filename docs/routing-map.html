@@ -28,10 +28,6 @@
     --grok-fill: #6044b2;
     --grok-soft: #e9e2ff;
     --grok-ink: #3b2478;
-    --kimi: #087f7b;
-    --kimi-fill: #066f6b;
-    --kimi-soft: #d5f1ee;
-    --kimi-ink: #064d4a;
     --platinum: #5a6878;
     --focus: #7b4dff;
     --high-bg: #fff0d7;
@@ -67,10 +63,6 @@
       --grok-fill: #6650b8;
       --grok-soft: #30284b;
       --grok-ink: #e6deff;
-      --kimi: #42c7be;
-      --kimi-fill: #08756f;
-      --kimi-soft: #173b3a;
-      --kimi-ink: #c3f4ef;
       --platinum: #b6c2ce;
       --focus: #b49aff;
       --high-bg: #42321d;
@@ -106,10 +98,6 @@
     --grok-fill: #6650b8;
     --grok-soft: #30284b;
     --grok-ink: #e6deff;
-    --kimi: #42c7be;
-    --kimi-fill: #08756f;
-    --kimi-soft: #173b3a;
-    --kimi-ink: #c3f4ef;
     --platinum: #b6c2ce;
     --focus: #b49aff;
     --high-bg: #42321d;
@@ -144,10 +132,6 @@
     --grok-fill: #6044b2;
     --grok-soft: #e9e2ff;
     --grok-ink: #3b2478;
-    --kimi: #087f7b;
-    --kimi-fill: #066f6b;
-    --kimi-soft: #d5f1ee;
-    --kimi-ink: #064d4a;
     --platinum: #5a6878;
     --focus: #7b4dff;
     --high-bg: #fff0d7;
@@ -289,7 +273,6 @@
   .claude { --lane: var(--fable); --lane-fill: var(--fable-fill); --lane-soft: var(--fable-soft); --lane-ink: var(--fable-ink); }
   .gemini { --lane: var(--gemini); --lane-fill: var(--gemini-fill); --lane-soft: var(--gemini-soft); --lane-ink: var(--gemini-ink); }
   .grok { --lane: var(--grok); --lane-fill: var(--grok-fill); --lane-soft: var(--grok-soft); --lane-ink: var(--grok-ink); }
-  .kimi { --lane: var(--kimi); --lane-fill: var(--kimi-fill); --lane-soft: var(--kimi-soft); --lane-ink: var(--kimi-ink); }
   .chrono-card {
     display: grid;
     align-content: space-between;
@@ -501,7 +484,7 @@
     <div class="header-meta" aria-label="Map summary">
       <span class="meta-pill">71 specialists</span>
       <span class="meta-pill">6 namespaces</span>
-      <span class="meta-pill">5 CLI vehicles</span>
+      <span class="meta-pill">4 CLI vehicles</span>
       <span class="meta-pill">Generated · CI drift-checked</span>
     </div>
   </header>
@@ -511,17 +494,17 @@
       <p class="panel-label">CLI vehicles</p>
       <div class="lane-grid">
         <article class="lane-card claude" tabindex="0">
-          <div class="lane-top"><span class="lane-name">Claude</span><span class="lane-count">31 primary</span></div>
+          <div class="lane-top"><span class="lane-name">Claude</span><span class="lane-count">30 primary</span></div>
           <code class="model-id">claude</code>
           <div class="lane-note">Heavy-hitter judgment lane.</div>
         </article>
         <article class="lane-card codex" tabindex="0">
-          <div class="lane-top"><span class="lane-name">Codex</span><span class="lane-count">21 primary</span></div>
+          <div class="lane-top"><span class="lane-name">Codex</span><span class="lane-count">22 primary</span></div>
           <code class="model-id">codex</code>
           <div class="lane-note">Heavy-hitter implementation lane.</div>
         </article>
         <article class="lane-card gemini" tabindex="0">
-          <div class="lane-top"><span class="lane-name">Gemini</span><span class="lane-count">16 primary</span></div>
+          <div class="lane-top"><span class="lane-name">Gemini</span><span class="lane-count">18 primary</span></div>
           <code class="model-id">gemini</code>
           <div class="lane-note">Grounded research and multimodal lane.</div>
         </article>
@@ -529,11 +512,6 @@
           <div class="lane-top"><span class="lane-name">Grok</span><span class="lane-count">1 primary</span></div>
           <code class="model-id">grok</code>
           <div class="lane-note">Grok primary remains forbidden unless an explicit role exception exists. Current map: 1 allowlisted primary.</div>
-        </article>
-        <article class="lane-card kimi" tabindex="0">
-          <div class="lane-top"><span class="lane-name">Kimi</span><span class="lane-count">2 primary</span></div>
-          <code class="model-id">kimi</code>
-          <div class="lane-note">Kimi primary remains forbidden unless an explicit role exception exists. Current map: 2 allowlisted primaries.</div>
         </article>
       </div>
       <p class="panel-label">Exact model, effort, and flags resolve per specialist through <code>shared/registries/profiles.tsv</code>; no CLI is pinned to one model.</p>
@@ -553,19 +531,17 @@
       <strong id="distribution-title">Primary-lane distribution</strong>
       <span>71 total assignments</span>
     </div>
-    <div class="bar" role="img" aria-label="Claude 31, Codex 21, Gemini 16, Grok 1, Kimi 2 primary specialists">
-      <span class="bar-segment claude" style="width:43.6620%"></span>
-      <span class="bar-segment codex" style="width:29.5775%"></span>
-      <span class="bar-segment gemini" style="width:22.5352%"></span>
+    <div class="bar" role="img" aria-label="Claude 30, Codex 22, Gemini 18, Grok 1 primary specialists">
+      <span class="bar-segment claude" style="width:42.2535%"></span>
+      <span class="bar-segment codex" style="width:30.9859%"></span>
+      <span class="bar-segment gemini" style="width:25.3521%"></span>
       <span class="bar-segment grok" style="width:1.4085%"></span>
-      <span class="bar-segment kimi" style="width:2.8169%"></span>
     </div>
     <div class="distribution-key" aria-hidden="true">
-      <span class="key-item claude"><i class="key-dot"></i>Claude <strong>31</strong></span>
-      <span class="key-item codex"><i class="key-dot"></i>Codex <strong>21</strong></span>
-      <span class="key-item gemini"><i class="key-dot"></i>Gemini <strong>16</strong></span>
+      <span class="key-item claude"><i class="key-dot"></i>Claude <strong>30</strong></span>
+      <span class="key-item codex"><i class="key-dot"></i>Codex <strong>22</strong></span>
+      <span class="key-item gemini"><i class="key-dot"></i>Gemini <strong>18</strong></span>
       <span class="key-item grok"><i class="key-dot"></i>Grok <strong>1</strong></span>
-      <span class="key-item kimi"><i class="key-dot"></i>Kimi <strong>2</strong></span>
     </div>
   </section>
 
@@ -574,8 +550,8 @@
 
   <footer>
     <div class="footer-notes">
-      <article class="note"><strong>Escalation is policy-routed</strong><p>The scan keeps escalation out of the table; exact escalation lane, profile, and policy remain in the TSV. <code>ai-engineer</code>, <code>asset-provenance-and-rights-auditor</code>, <code>backend-engineer</code>, <code>bounty-researcher</code>, <code>content-verifier</code>, <code>database-engineer</code>, <code>experimental-attacker</code>, <code>game-engineer</code>, <code>large-context-analyst</code>, <code>performance-optimizer</code>, <code>refactor-cleaner</code>, <code>research</code>, <code>smart-contract-engineer</code>, <code>technical-artist</code>, <code>test-engineer</code>, and <code>voice-agent-builder</code> currently use a different escalation CLI.</p></article>
-      <article class="note"><strong>Deny-default lanes are policy-gated</strong><p>A deny-default CLI may only hold a primary where <code>shared/lane-policy.tsv</code> carries an operator-ratified exception — currently <code>grok</code>: <code>smokey</code>; <code>kimi</code>: <code>kestrel</code> and <code>summarizer</code>.</p></article>
+      <article class="note"><strong>Escalation is policy-routed</strong><p>The scan keeps escalation out of the table; exact escalation lane, profile, and policy remain in the TSV. <code>ai-engineer</code>, <code>asset-provenance-and-rights-auditor</code>, <code>backend-engineer</code>, <code>bounty-researcher</code>, <code>content-verifier</code>, <code>database-engineer</code>, <code>detection-engineer</code>, <code>experimental-attacker</code>, <code>game-engineer</code>, <code>large-context-analyst</code>, <code>performance-optimizer</code>, <code>refactor-cleaner</code>, <code>research</code>, <code>smart-contract-engineer</code>, <code>technical-artist</code>, <code>technical-writer</code>, <code>test-engineer</code>, and <code>voice-agent-builder</code> currently use a different escalation CLI.</p></article>
+      <article class="note"><strong>Deny-default lanes are policy-gated</strong><p>A deny-default CLI may only hold a primary where <code>shared/lane-policy.tsv</code> carries an operator-ratified exception — currently <code>grok</code>: <code>smokey</code>.</p></article>
       <article class="note"><strong>Backup is manual</strong><p>The Backup column is the cross-family option Chrono may use in a new ordinary board packet after an operator decision. Signals may surface an operational failure, but automatic redispatch is unsupported.</p></article>
       <article class="note"><strong>High safety is a quality floor</strong><p>HIGH markers reproduce <code>safety_level: high</code> from the TSV. Packet-level mandatory review is derived separately from validated review triggers.</p></article>
     </div>
@@ -587,11 +563,11 @@
 (() => {
   const raw = `
 CODING|ai-engineer|implementation|high|codex|claude|claude
-CODING|architect|judgment|high|claude|codex|codex
-CODING|backend-engineer|implementation|medium|codex|claude|claude
+CODING|architect|judgment|high|claude|gemini|codex
+CODING|backend-engineer|implementation|medium|codex|gemini|claude
 CODING|code-reviewer|code_review|high|codex|claude|claude
 CODING|database-engineer|implementation|high|codex|claude|claude
-CODING|devops-engineer|implementation|high|codex|claude|claude
+CODING|devops-engineer|implementation|high|codex|gemini|claude
 CODING|frontend-engineer|implementation|medium|claude|codex|codex
 CODING|game-engineer|implementation|medium|codex|claude|claude
 CODING|performance-optimizer|implementation|medium|codex|claude|claude
@@ -619,12 +595,12 @@ CONTENT|localization-specialist|content_text|low|claude|codex|codex
 CONTENT|music-composer|media_production|low|gemini|codex|claude
 CONTENT|social-strategist|content_text|medium|gemini|codex|claude
 CONTENT|sound-designer|media_production|low|gemini|codex|claude
-CONTENT|technical-writer|content_text|medium|claude|codex|codex
+CONTENT|technical-writer|content_text|medium|gemini|codex|codex
 CONTENT|video-director|media_production|medium|gemini|codex|claude
 CONTENT|video-editor|media_production|low|gemini|codex|claude
 CONTENT|voice-agent-builder|media_production|high|claude|codex|codex
 CONTENT|voice-narrator|media_production|low|gemini|codex|claude
-SECURITY|detection-engineer|security_defense|high|claude|codex|codex
+SECURITY|detection-engineer|security_defense|high|codex|claude|claude
 SECURITY|experimental-attacker|implementation|high|codex|claude|claude
 SECURITY|exploit-developer|implementation|high|codex|claude|claude
 SECURITY|impact-validator|security_reasoning|high|claude|codex|codex
@@ -642,12 +618,12 @@ RESEARCH|research|research_synthesis|medium|gemini|codex|claude
 RESEARCH|synthesizer|research_synthesis|medium|claude|codex|codex
 SHARED|exodia|judgment|medium|codex|claude|claude
 SHARED|ichigo|judgment|medium|claude|codex|codex
-SHARED|kestrel|judgment|medium|kimi|claude|codex
+SHARED|kestrel|judgment|medium|claude|codex|codex
 SHARED|planner|judgment|medium|claude|codex|codex
 SHARED|prompt-engineer|judgment|medium|claude|codex|codex
 SHARED|skeptic|judgment|medium|claude|codex|codex
 SHARED|smokey|judgment|medium|grok|none|codex
-SHARED|summarizer|research_synthesis|low|kimi|claude|codex
+SHARED|summarizer|research_synthesis|low|gemini|claude|codex
 SHARED|triage|judgment|medium|claude|codex|codex
 SHARED|vega|judgment|medium|gemini|claude|codex
 SHARED|vibecoding-check|code_review|medium|codex|claude|claude
@@ -664,8 +640,8 @@ SYSMGMT|memory-curator|judgment|medium|claude|codex|codex
     return { namespace, specialist, roleClass, safety, primary, backup, review };
   });
   const order = ["CODING", "CONTENT", "SECURITY", "RESEARCH", "SHARED", "SYSMGMT"];
-  const laneStyle = {"claude": "claude", "codex": "codex", "gemini": "gemini", "grok": "grok", "kimi": "kimi", "none": "neutral"};
-  const laneLabel = {"claude": "Claude", "codex": "Codex", "gemini": "Gemini", "grok": "Grok", "kimi": "Kimi", "none": "None"};
+  const laneStyle = {"claude": "claude", "codex": "codex", "gemini": "gemini", "grok": "grok", "none": "neutral"};
+  const laneLabel = {"claude": "Claude", "codex": "Codex", "gemini": "Gemini", "grok": "Grok", "none": "None"};
   const chip = (lane, kind) => `<span class="lane-chip ${laneStyle[lane]}" data-kind="${kind}">${laneLabel[lane]}</span>`;
   const escapeText = value => value.replace(/[&<>"']/g, char => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"})[char]);
 

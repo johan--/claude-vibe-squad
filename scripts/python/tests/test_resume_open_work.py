@@ -88,7 +88,7 @@ class OpenWorkProjection(unittest.TestCase):
             "- [ ] CI-02 | a reaping test is flaky on Linux CI only; "
             "next: gate it or fix the race - do NOT mask it",
         )
-        resume.write_capsule("sess-1", "regenerate")
+        resume.write_capsule("sess-1")
         text = self.capsule.read_text()
         section = self.section(text)
 
@@ -120,11 +120,11 @@ class OpenWorkProjection(unittest.TestCase):
                 for i in range(30)
             ]
         )
-        resume.write_capsule("sess-1", "regenerate", max_tokens=3000)
+        resume.write_capsule("sess-1", max_tokens=3000)
         roomy = self.capsule.read_text()
         self.assertIn("[OPEN-WORK-OWED-029]", roomy)
 
-        resume.write_capsule("sess-1", "regenerate", max_tokens=60)
+        resume.write_capsule("sess-1", max_tokens=60)
         tight = self.capsule.read_text()
 
         self.assertLess(len(tight), len(roomy), "the squeezed capsule must be smaller")
@@ -152,7 +152,7 @@ class OpenWorkProjection(unittest.TestCase):
                 for i in range(count)
             ]
         )
-        resume.write_capsule("sess-1", "regenerate", max_tokens=3000)
+        resume.write_capsule("sess-1", max_tokens=3000)
         text = self.capsule.read_text()
 
         shown = SHOWN_ID.findall(text)
@@ -179,7 +179,7 @@ class OpenWorkProjection(unittest.TestCase):
             "- [ ] OWED-999 | newest active item "
             "**IN PROGRESS — lane-new**",
         )
-        resume.write_capsule("sess-1", "regenerate", max_tokens=3000)
+        resume.write_capsule("sess-1", max_tokens=3000)
         text = self.capsule.read_text()
         shown = SHOWN_ID.findall(self.section(text))
 
@@ -199,7 +199,7 @@ class OpenWorkProjection(unittest.TestCase):
             "- [x] AUD-04 | done 2026-08-24, the ledger default is fixed",
             "- [ ] AUD-09 | bounty.md is 927 lines; next: decide what to cut",
         )
-        resume.write_capsule("sess-1", "regenerate")
+        resume.write_capsule("sess-1")
         text = self.capsule.read_text()
         self.assertIn("[OPEN-WORK-AUD-09]", text)
         self.assertNotIn("AUD-04", text)
@@ -207,20 +207,20 @@ class OpenWorkProjection(unittest.TestCase):
     def test_an_absent_ledger_renders_no_heading_and_does_not_raise(self):
         """Absence is silence - the contract the pending-completions section keeps."""
         self.assertFalse(self.ledger.exists())
-        resume.write_capsule("sess-1", "regenerate")
+        resume.write_capsule("sess-1")
         self.assertNotIn(resume.OPEN_WORK_HEADING, self.capsule.read_text())
 
     def test_a_present_but_unreadable_ledger_is_loud_not_silent(self):
         """A read failure must never be mistaken for "nothing is owed"."""
         self.ledger.write_bytes(b"- [ ] X-1 | \xff\xfe not valid utf-8\n")
-        resume.write_capsule("sess-1", "regenerate")
+        resume.write_capsule("sess-1")
         section = self.section(self.capsule.read_text())
         self.assertIn("unreadable", section)
 
     def test_a_ledger_that_is_a_directory_is_loud_not_silent(self):
         """The other present-but-unreadable shape, and an OSError not a ValueError."""
         self.ledger.mkdir()
-        resume.write_capsule("sess-1", "regenerate")
+        resume.write_capsule("sess-1")
         section = self.section(self.capsule.read_text())
         self.assertIn("unreadable", section)
 

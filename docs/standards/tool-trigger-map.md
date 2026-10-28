@@ -59,12 +59,11 @@ is your L4 capability projection's to confirm in the live runtime (Hard Rule 9).
   do (and batch the independent ones into one round-trip). Step count alone is not the trigger;
   *interaction* is.
 - **Then:** externalise the reasoning stepwise so an ordering error becomes visible instead of silent.
-- **Availability:** MCP; confirm in runtime. On Kimi, MCP is lead-brokered (subagents don't inherit it).
+- **Availability:** MCP; confirm in runtime.
 
 ### When you are about to assert an external fact
 
-**Reach for:** the research arsenal — `perplexity_search`, `xai_search`,
-`firecrawl_scrape|crawl|parse`, `arxiv_search` (documented in `shared/tool-catalog.md`).
+**Reach for:** `arxiv_search` (via `chrono-research-arsenal`, documented in `shared/tool-catalog.md`) and the lane's declared search/grounding tools (`Google Search grounding` on Gemini, `codex --search` / `Brave Search` / `Serper` / `Apify` on Codex).
 - **Trigger (fires when):** you are about to put a **load-bearing external fact** into the
   deliverable — a version number, an API contract, a vendor claim, a "current best practice", a CVE,
   a paper result — that you cannot verify from the repo or your own context, **and being wrong would
@@ -73,8 +72,7 @@ is your L4 capability projection's to confirm in the live runtime (Hard Rule 9).
 - **Not when:** the fact is already in the repo (read it — the repo is source of truth), or it is
   not load-bearing (do not burn a metered call on trivia), or you are exploring freely (fine, but
   label it unverified rather than citing it).
-- **Then:** pick by fact-type — `arxiv_search` for papers, `perplexity_search`/`xai_search` for
-  current web/news, `firecrawl_*` for a specific page/site — and cite the result.
+- **Then:** pick by fact-type — `arxiv_search` for papers, `Google Search grounding` or `Brave Search`/`Serper` for current web/news, `Apify` or browser tools for a specific page/site — and cite the result.
 - **Availability:** metered keys; confirm via the L4 projection and apply the task's
   budget/authorization gate before spending. `yes` in a registry is availability, not permission to spend.
 

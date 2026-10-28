@@ -16,12 +16,12 @@ import os
 import re
 import sys
 import tempfile
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from chrono_state import registry as registry_state
 from chrono_state import workboard as workboard_state
-from chrono_state.decisions import active_decisions
+from chrono_state.decisions import active_decisions, decision_home
 from chrono_state.registry import registry_view
 from chrono_state.thread_charters import (
     load_archived_debt,
@@ -39,7 +39,6 @@ ARCHIVED_DEBT_ROOT = Path(os.environ.get("VAULT_ROOT", "."))
 TASKS_HEADING = "## Live tasks (dispatched / in-flight / review-required)"
 DEFERRED_HEADING = "## Deferred owed work (awaiting a Chrono/operator action)"
 QUEUE_HEADING = "## Pending completions (specialist returns awaiting a decision)"
-TURN_HEADING = "## Latest operator instruction"
 ARCHIVED_DEBT_HEADING = "## Archived with unfinished business"
 OPEN_WORK_HEADING = "## Open work (raised and not yet done)"
 OPEN_WORK_REL = workboard_state.WORKBOARD_REL
@@ -63,6 +62,20 @@ UNCLASSIFIED_CAUSE = "UNCLASSIFIED-CAUSE"
 _LEGACY_NEEDS_REVIEW = "NEEDS-REVIEW"
 _STATUS_TOKEN_RE = re.compile(r"[^A-Z0-9]+")
 
+# A pending-completions row is only owed while its task is still open. These
+# statuses mean the work has already been settled by the board (auto-closed on a
+# landed response, hand-closed, cancelled, or completed), so counting them under
+# "awaiting a decision" would misrepresent handled work as outstanding debt.
+# Normalized through `_status_token`, so spelling/casing variants collapse.
+HANDLED_PENDING_STATUSES = frozenset(
+    {"AUTO-CLOSED", "TASK-CLOSED", "CANCELLED", "COMPLETE", "COMPLETED"}
+)
+# `## Active decisions` is authority, but the capsule only needs the authority
+# that still bears on current work. Older confirmed decisions live in the
+# journal; the capsule names how many there are and points at it rather than
+# re-stating months-old statements every session (audit finding #5).
+ACTIVE_DECISION_MAX_AGE_DAYS = 30
+
 # Loud markers. A read that failed must never render as a read that found
 # nothing owed -- root CLAUDE.md § Session Resume: "nothing owed is ever
 # silently absent". Each of these is the failure's own line in the capsule.
@@ -71,6 +84,23 @@ QUEUE_UNREADABLE_LINE = (
     "- pending completion count unavailable (_state/chrono-queue.md exists but "
     "could not be read — owed work may be hidden here; read it directly)"
 )
+
+
+def _archived_debt_count(root=None, fallback=0) -> int:
+    """True count of charters archived while still owed, or ``fallback`` on error.
+
+    Kept separate from ``_archived_debt_rows`` on purpose: that function's
+    ``(rows, failed)`` shape is pinned by callers and mocks outside this file's
+    task scope, and its rows cap at 8 (+1 "… and more"). The collapsed one-line
+    form needs the true number of owed charters, not the capped display-row
+    count, so it recomputes the length here — only on the collapse path,
+    which runs just when real rows are present.
+    """
+    try:
+        owed = load_archived_debt(ARCHIVED_DEBT_ROOT if root is None else root)
+    except Exception:  # noqa: BLE001 — the capsule must render regardless
+        return fallback
+    return len(owed)
 
 
 def _archived_debt_rows(root=None) -> tuple[list[str], bool]:
@@ -118,7 +148,6 @@ def _archived_debt_rows(root=None) -> tuple[list[str], bool]:
 
 
 THREAD_HEADING = "## Active thread / Owed attention"
-NO_TURN_PLACEHOLDER = "(none recorded since the last snapshot)"
 MAX_PROJECTED_CHARTERS = 8
 MAX_PROJECTED_QUEUES = 4
 MAX_PROJECTED_DONE_WHEN = 6
@@ -239,6 +268,10 @@ def pending_completions(path=None):
     status and the namespace (text before the first `/`) are used. `#`-prefixed
     and blank lines are skipped. A malformed line (fewer than 3 `|`-fields) is
     skipped rather than raising — one bad line must not blank the whole section.
+    Rows whose status is already-handled (``AUTO-CLOSED`` / ``TASK-CLOSED`` /
+    ``cancelled`` / ``complete`` / ``completed``) are skipped too: the queue is
+    append-only and keeps every settled receipt, so without this the "awaiting a
+    decision" section would count closed tasks as owed work.
     Never raises: a corrupt queue must not break capsule generation any more
     than a missing one does (`read_text` raises `UnicodeDecodeError`, a
     `ValueError` subclass, on invalid bytes; fix round 2, controller ruling: the
@@ -274,6 +307,9 @@ def pending_completions(path=None):
         if len(fields) < 3:
             continue
         status = fields[1].strip()
+        if _status_token(status) in HANDLED_PENDING_STATUSES:
+            # Already settled by the board; not owed work. See the docstring.
+            continue
         namespace = fields[2].strip().split("/", 1)[0]
         key = (namespace, status)
         counts[key] = counts.get(key, 0) + 1
@@ -479,7 +515,38 @@ def _thread_lines(
     return lines
 
 
-def _render(latest_operator_turn, view, max_tokens=3000):
+def _parse_decision_timestamp(value) -> datetime | None:
+    """Parse a decisions-journal ``%Y-%m-%dT%H:%M:%SZ`` stamp as UTC, or None."""
+    if not isinstance(value, str) or not value.strip():
+        return None
+    try:
+        return datetime.strptime(value.strip(), "%Y-%m-%dT%H:%M:%SZ").replace(
+            tzinfo=timezone.utc
+        )
+    except ValueError:
+        return None
+
+
+def partition_decisions_by_age(decisions, now):
+    """Split decisions into (recent, older_count) by ``ACTIVE_DECISION_MAX_AGE_DAYS``.
+
+    A missing or unparseable timestamp counts as older: ``decisions.record``
+    always writes an ISO-8601 Z stamp, so only a hand-edited legacy row lacks
+    one, and those are stale by construction. Order is preserved for the recent
+    rows; the rest collapse to a count the caller points at the journal.
+    """
+    cutoff = now - timedelta(days=ACTIVE_DECISION_MAX_AGE_DAYS)
+    recent, older = [], 0
+    for decision in decisions:
+        stamp = _parse_decision_timestamp(decision.get("timestamp"))
+        if stamp is not None and stamp >= cutoff:
+            recent.append(decision)
+        else:
+            older += 1
+    return recent, older
+
+
+def _render(view, max_tokens=3000, now=None):
     """Build a token-bounded capsule from an already-classified registry view.
 
     Under pressure the archived-debt and open-work blocks collapse to one-line
@@ -508,10 +575,58 @@ def _render(latest_operator_turn, view, max_tokens=3000):
     is indistinguishable from "the queue is empty" — the exact ambiguity this
     section exists to kill. Deferred work still bites last: it surfaces
     nowhere but here. At the real budget nothing drops and every section shows.
-    Active decisions, the omission/unclassified declarations, the active-thread
-    heading/count, and the latest operator instruction are never dropped.
+    Active decisions, the omission/unclassified declarations, and the
+    active-thread heading/count are never dropped.
+
+    The capsule takes no operator turn. The ``## Latest operator instruction``
+    section has no live producer, so rendering a stored turn would present
+    stale instructions as current. The turn plumbing is removed; only the
+    two public signatures (``render_capsule`` and
+    ``write_capsule``) still accept an ignored ``latest_operator_turn``, because
+    callers outside the removal's write scope pass it positionally or by
+    keyword: ``tests/test_workboard_histories.py``,
+    ``tests/test_lifecycle_observability.py`` and
+    ``tests/test_fail_open_markers.py``. Delete the parameter from both once
+    those call sites stop passing it.
     """
+    now = now or datetime.now(timezone.utc)
     decs = active_decisions()
+    harness_decs = [d for d in decs if decision_home(d) == "harness"]
+    recent_harness_decs, older_harness_dec_count = partition_decisions_by_age(
+        harness_decs, now
+    )
+    product_count = sum(decision_home(d) == "product" for d in decs)
+    diagnostics = getattr(decs, "diagnostics", ())
+    diagnostic_lines = []
+    normalizations = {}
+    for diagnostic in diagnostics:
+        if diagnostic.kind == "legacy_normalization":
+            key = diagnostic.decision_id or diagnostic.line
+            normalizations.setdefault(key, []).append(diagnostic)
+            continue
+        source = f" [{diagnostic.decision_id}]" if diagnostic.decision_id else ""
+        diagnostic_lines.append(
+            f"- WARNING DECISION {diagnostic.kind.upper()}: "
+            f"line {diagnostic.line} {diagnostic.field}: {diagnostic.message}{source}"
+        )
+    for group in normalizations.values():
+        source = f" [{group[0].decision_id}]" if group[0].decision_id else ""
+        fields = sorted({d.field for d in group if d.field != "status"})
+        details = [f"{', '.join(fields)} converted to lists"] if fields else []
+        if any(d.field == "status" for d in group):
+            details.append("legacy active retained; confirmation not inferred")
+        locations = ",".join(str(n) for n in sorted({d.line for d in group}))
+        diagnostic_lines.append(
+            f"- NOTICE DECISION LEGACY_NORMALIZATION: lines {locations}: "
+            f"{'; '.join(details)}{source}"
+        )
+    # Retain loud ownership handling for callers supplying the legacy plain-list view.
+    unknown_reported = {d.decision_id for d in diagnostics if d.kind == "unknown_home"}
+    diagnostic_lines += [
+        f"- WARNING DECISION UNKNOWN_HOME: ownership unknown [{d['decision_id']}]"
+        for d in decs
+        if decision_home(d) == "unknown" and d["decision_id"] not in unknown_reported
+    ]
     tasks = view["live"]
     needs_human = [
         task for task in view["deferred"] if task.get("state") == "needs_human"
@@ -547,7 +662,28 @@ def _render(latest_operator_turn, view, max_tokens=3000):
         thread_mode,
     ):
         lines = ["# Chrono resume capsule", "", "## Active decisions"]
-        lines += [f"- {d['statement']} [{d['decision_id']}]" for d in decs] or ["- (none)"]
+        if recent_harness_decs:
+            lines += [
+                f"- {d['statement']} [{d['decision_id']}]"
+                for d in recent_harness_decs
+            ]
+        elif older_harness_dec_count:
+            lines += [f"- (none in the last {ACTIVE_DECISION_MAX_AGE_DAYS} days)"]
+        else:
+            lines += ["- (none)"]
+        if older_harness_dec_count:
+            lines += [
+                f"- (+{older_harness_dec_count} harness decision(s) older than "
+                f"{ACTIVE_DECISION_MAX_AGE_DAYS} days, omitted; see "
+                "_state/chrono/decisions.jsonl)"
+            ]
+        if product_count:
+            lines += [
+                f"- {product_count} active product decision(s) excluded from the harness list; "
+                "see _state/chrono/decisions.jsonl (product home)."
+            ]
+        if diagnostic_lines:
+            lines += ["", "## Decision diagnostics", *diagnostic_lines]
         if charters or needs_human:
             lines += ["", THREAD_HEADING]
             lines += _thread_lines(charters, thread_mode, needs_human)
@@ -568,8 +704,9 @@ def _render(latest_operator_turn, view, max_tokens=3000):
                     "each into `_state/chrono/OPEN-WORK.md` or finish it.",
                 ] + debt_rows
             else:
+                owed_count = _archived_debt_count(fallback=len(debt_rows))
                 lines += [
-                    f"- ({len(debt_rows)} archived charter(s) still owed, "
+                    f"- ({owed_count} archived charter(s) still owed, "
                     "omitted for the token bound — regenerate at a higher "
                     "budget or read _state/chrono/thread-charters/complete)"
                 ]
@@ -635,7 +772,8 @@ def _render(latest_operator_turn, view, max_tokens=3000):
                 f"- UNCLASSIFIED STATUS {status!r}: {n} task(s) invisible to this "
                 "capsule — add it to chrono_state/registry.py KNOWN_STATUSES"
             ]
-        lines += ["", TURN_HEADING, f"- {latest_operator_turn}"]
+        # Omit `## Latest operator instruction`: without a live producer,
+        # a stored turn could present stale instructions as current.
         return "\n".join(lines)
 
     shown_live, shown_deferred = list(tasks), list(deferred)
@@ -690,71 +828,29 @@ def _render(latest_operator_turn, view, max_tokens=3000):
     return cap
 
 
-def render_capsule(session_id, latest_operator_turn, max_tokens=3000):
-    """Render a fresh capsule from the live registry (see `_render`)."""
+def render_capsule(session_id, latest_operator_turn=None, max_tokens=3000, now=None):
+    """Render a fresh capsule from the live registry (see `_render`).
+
+    ``latest_operator_turn`` is ignored; see ``_render`` for why the slot remains.
+    """
     return _render(
-        latest_operator_turn,
         registry_view(),
         max_tokens=max_tokens,
+        now=now,
     )
 
 
-def previous_operator_turn(path=None):
-    """Recover the operator instruction already recorded in the capsule on disk.
-
-    Regeneration is driven by registry changes, which carry no operator turn. Without
-    this, every automatic refresh would overwrite the one human line in the file.
-    """
-    dest = Path(path) if path else CAPSULE_PATH
-    if not dest.exists():
-        return None
-    lines = dest.read_text().splitlines()
-    for index, line in enumerate(lines):
-        if line.strip() != TURN_HEADING:
-            continue
-        for follow in lines[index + 1 :]:
-            if follow.startswith("- "):
-                return follow[2:].strip()
-        break
-    return None
-
-
-def resolve_operator_turn(explicit_turn, snapshot_turn=None, path=None):
-    """Pick the operator turn a refresh should record — the snapshot fills a vacuum.
-
-    The precedence needs no timestamps: an explicit turn (the operator speaking
-    now) always wins; otherwise a real line already in the capsule is kept; only
-    when the capsule has no line (missing file, or the placeholder) does the
-    compaction snapshot's turn fill it. mtime is not a causality signal — a
-    copied or restored file carries a newer mtime with older content, and the
-    0230 review reproduced exactly that overwriting a newer capsule line — so
-    the snapshot never competes with an existing line at all. The cost: compact
-    recovery only recovers a turn when the capsule has none, the honest trade
-    for deleting an unprovable ordering.
-    """
-    if explicit_turn:
-        return explicit_turn
-    capsule_turn = previous_operator_turn(Path(path) if path else CAPSULE_PATH)
-    if capsule_turn == NO_TURN_PLACEHOLDER:
-        capsule_turn = None
-    return capsule_turn or snapshot_turn
-
-
-def write_capsule(session_id, latest_operator_turn=None, max_tokens=3000, path=None):
+def write_capsule(session_id, latest_operator_turn=None, max_tokens=3000, path=None, now=None):
     """Atomically regenerate the capsule on disk (temp + fsync + rename). Returns path.
 
-    `latest_operator_turn` falls back to whatever the previous capsule recorded, so a
-    registry-triggered refresh never destroys the operator instruction. An
-    unclassified board status is loud twice: named in the capsule itself (via
-    `_render`) and warned on stderr here, so the write path can never silently
-    drop owed state again.
+    The capsule is derived purely from the journals and the registry; it carries
+    no operator line, so there is nothing for a refresh to preserve
+    (``latest_operator_turn`` is ignored; see ``_render`` for why the slot
+    remains). An unclassified board status is loud twice: named in the capsule
+    itself (via `_render`) and warned on stderr here, so the write path can never
+    silently drop owed state again.
     """
     dest = Path(path) if path else CAPSULE_PATH
-    turn = (
-        latest_operator_turn
-        or previous_operator_turn(dest)
-        or NO_TURN_PLACEHOLDER
-    )
     view = registry_view()
     if view["unclassified"]:
         print(
@@ -766,9 +862,9 @@ def write_capsule(session_id, latest_operator_turn=None, max_tokens=3000, path=N
         )
     body = (
         _render(
-            turn,
             view,
             max_tokens=max_tokens,
+            now=now,
         )
         + "\n"
     )

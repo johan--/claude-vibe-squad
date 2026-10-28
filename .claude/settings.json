@@ -1,0 +1,118 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "p=\"${CLAUDE_PROJECT_DIR}\"; if [ ! -f \"$p/bin/chrono-notification-hook.sh\" ]; then p=\"$p/..\"; fi; exec bash \"$p/bin/chrono-notification-hook.sh\" wait",
+            "asyncRewake": true,
+            "timeout": 1800
+          },
+          {
+            "type": "command",
+            "command": "p=\"${CLAUDE_PROJECT_DIR}\"; if [ ! -f \"$p/bin/chrono-notification-hook.sh\" ]; then p=\"$p/..\"; fi; exec bash \"$p/bin/chrono-notification-hook.sh\" context",
+            "timeout": 10
+          }
+        ],
+        "matcher": "startup|resume|clear|compact"
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "p=\"${CLAUDE_PROJECT_DIR}\"; if [ ! -f \"$p/bin/chrono-notification-hook.sh\" ]; then p=\"$p/..\"; fi; exec bash \"$p/bin/chrono-notification-hook.sh\" wait",
+            "asyncRewake": true,
+            "timeout": 1800
+          },
+          {
+            "type": "command",
+            "command": "p=\"${CLAUDE_PROJECT_DIR}\"; if [ ! -f \"$p/bin/chrono-notification-hook.sh\" ]; then p=\"$p/..\"; fi; exec bash \"$p/bin/chrono-notification-hook.sh\" context",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "p=\"${CLAUDE_PROJECT_DIR}\"; if [ ! -f \"$p/bin/chrono-notification-hook.sh\" ]; then p=\"$p/..\"; fi; exec bash \"$p/bin/chrono-notification-hook.sh\" wait",
+            "asyncRewake": true,
+            "timeout": 1800
+          },
+          {
+            "type": "command",
+            "command": "p=\"${CLAUDE_PROJECT_DIR}\"; if [ ! -f \"$p/bin/chrono-notification-hook.sh\" ]; then p=\"$p/..\"; fi; exec bash \"$p/bin/chrono-notification-hook.sh\" context",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "p=\"${CLAUDE_PROJECT_DIR}\"; if [ ! -f \"$p/bin/chrono-notification-hook.sh\" ]; then p=\"$p/..\"; fi; exec bash \"$p/bin/chrono-notification-hook.sh\" wait",
+            "asyncRewake": true,
+            "timeout": 1800
+          },
+          {
+            "type": "command",
+            "command": "p=\"${CLAUDE_PROJECT_DIR}\"; if [ ! -f \"$p/bin/chrono-notification-hook.sh\" ]; then p=\"$p/..\"; fi; exec bash \"$p/bin/chrono-notification-hook.sh\" context",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "PostToolUseFailure": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "p=\"${CLAUDE_PROJECT_DIR}\"; if [ ! -f \"$p/bin/chrono-notification-hook.sh\" ]; then p=\"$p/..\"; fi; exec bash \"$p/bin/chrono-notification-hook.sh\" wait",
+            "asyncRewake": true,
+            "timeout": 1800
+          },
+          {
+            "type": "command",
+            "command": "p=\"${CLAUDE_PROJECT_DIR}\"; if [ ! -f \"$p/bin/chrono-notification-hook.sh\" ]; then p=\"$p/..\"; fi; exec bash \"$p/bin/chrono-notification-hook.sh\" context",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "p=\"${CLAUDE_PROJECT_DIR}\"; if [ ! -f \"$p/bin/chrono-notification-hook.sh\" ]; then p=\"$p/..\"; fi; exec bash \"$p/bin/chrono-notification-hook.sh\" wait",
+            "asyncRewake": true,
+            "timeout": 1800
+          },
+          {
+            "type": "command",
+            "command": "p=\"${CLAUDE_PROJECT_DIR}\"; if [ ! -f \"$p/bin/chrono-notification-hook.sh\" ]; then p=\"$p/..\"; fi; exec bash \"$p/bin/chrono-notification-hook.sh\" context",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "p=\"${CLAUDE_PROJECT_DIR}\"; if [ ! -f \"$p/bin/chrono-notification-hook.sh\" ]; then p=\"$p/..\"; fi; exec bash \"$p/bin/chrono-notification-hook.sh\" context",
+            "timeout": 5
+          }
+        ]
+      }
+    ]
+  }
+}

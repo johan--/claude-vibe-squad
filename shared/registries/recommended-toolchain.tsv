@@ -6,6 +6,7 @@
 # liveness, lane, evidence or notes column: whether a tool works on OUR
 # machine is not a fact about YOUR machine, and a capability is only proven
 # by a real invocation returning a real result on real target code.
+# Retired tools are omitted.
 #
 # hunting_type is the technique class a tool serves. Coverage is the thing
 # worth measuring: an unused applicable technique class is a gap, and a
@@ -104,8 +105,6 @@ github_leaked_secrets_tool	tool	hunting	static-pattern-scan	any
 gitleaks	tool	hunting	static-pattern-scan	any
 golangci-lint	tool	hunting	static-pattern-scan	cosmos-go
 gosec	tool	hunting	static-pattern-scan	cosmos-go
-guarded-semgrep	tool	hunting	static-pattern-scan	any
-guarded-slither	tool	hunting	static-pattern-scan	evm
 nilaway	tool	hunting	static-pattern-scan	cosmos-go
 semgrep	tool	hunting	static-pattern-scan	any
 semgrep-rule-author	skill	hunting	static-pattern-scan	any
@@ -139,8 +138,6 @@ Brave Search	tool	research	—	—
 Google Search grounding	tool	research	—	—
 Grok-X integration	tool	research	—	—
 NotebookLM	tool	research	—	—
-Perplexity API	tool	research	—	—
-Perplexity Sonar structured+recency	tool	research	—	—
 Serper	tool	research	—	—
 Twitter API v2	tool	research	—	—
 WebFetch	tool	research	—	—
@@ -167,21 +164,14 @@ dnsx	tool	research	—	—
 dual-level-retrieval	skill	research	—	—
 evidence-level	skill	research	—	—
 find-sources	skill	research	—	—
-firecrawl	tool	research	—	—
-firecrawl_crawl	tool	research	—	—
-firecrawl_parse	tool	research	—	—
-firecrawl_scrape	tool	research	—	—
 gau	tool	research	—	—
 github-recon	skill	research	—	—
-guarded-solodit	tool	research	—	—
 knowledge-base-integration	skill	research	—	—
-lead:chrono-dedup	tool	research	—	—
 lxml	tool	research	—	—
 nvd-osv-calibration	skill	research	—	—
 openai-docs	skill	research	—	—
 osint-platform-audit	skill	research	—	—
 pdfplumber	tool	research	—	—
-perplexity_search	tool	research	—	—
 playwright-stealth-config	skill	research	—	—
 preserve-outliers	skill	research	—	—
 prior_art_check	tool	research	—	—
@@ -203,5 +193,4 @@ wayback_snapshots_tool	tool	research	—	—
 waybackurls	tool	research	—	—
 whois_lookup_tool	tool	research	—	—
 xAI API	tool	research	—	—
-xai_search	tool	research	—	—
 zotero	tool	research	—	—

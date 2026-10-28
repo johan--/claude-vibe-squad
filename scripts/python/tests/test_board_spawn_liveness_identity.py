@@ -78,7 +78,6 @@ class SignalIdentityDiagnosticTests(unittest.TestCase):
     def test_each_identity_field_mismatch_names_expected_and_observed_values(self):
         cases = {
             "pid": (4200, signal.SIGSTOP, "tree_root", "freeze"),
-            "pgid": (4200, signal.SIGTERM, "descendant", "terminate"),
             "process_start_token": (
                 "proc:222222", signal.SIGCONT, "descendant", "continue"
             ),
@@ -105,10 +104,22 @@ class SignalIdentityDiagnosticTests(unittest.TestCase):
                         observed,
                     )
                 self.assertIn(expected_detail, mismatch_detail)
-                for unchanged in set(bpt.PROCESS_IDENTITY_FIELDS) - {field}:
+                for unchanged in set(bpt.PROCESS_INCARNATION_FIELDS) - {field}:
                     self.assertNotIn("%s expected" % unchanged, mismatch_detail)
         self.assertNotIn("a" * 64, message)
         self.assertNotIn("b" * 64, message)
+
+    def test_regrouped_descendant_remains_the_same_process_incarnation(self):
+        observed = {**self.EXPECTED, "pgid": 4200}
+        with (
+            mock.patch.object(bpt, "observe_process", return_value=observed),
+            mock.patch.object(bpt.os, "kill") as kill,
+        ):
+            self.assertTrue(bpt._signal_identity(
+                self.EXPECTED, signal.SIGTERM,
+                target="descendant", operation="terminate",
+            ))
+        kill.assert_called_once_with(self.EXPECTED["pid"], signal.SIGTERM)
 
     def test_complete_diagnostic_survives_the_operator_note_path(self):
         message = self._mismatch_message(

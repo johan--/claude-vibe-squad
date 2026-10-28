@@ -363,8 +363,11 @@ class ScratchMemoryTests(unittest.TestCase):
             self.assertNotIn("contradiction", text.lower())
             self.assertNotIn("contradiction", dest.read_text().lower())
             self.assertIn("REVIEW-REQUIRED", text)
-            self.assertIn("Preserve this instruction", text)
-        print("resume: zero retired audit scans; pending review and operator instruction remain visible")
+            # There is no live producer for operator turns in the capsule.
+            # A stored instruction must not be presented as current authority.
+            self.assertNotIn("Preserve this instruction", text)
+            self.assertNotIn("Preserve this instruction", dest.read_text())
+        print("resume: zero retired audit scans; pending review remains visible without stale operator instructions")
 
     def test_watcher_reports_missing_root_and_settlement_continues(self):
         source = (SOURCE_ROOT / "bin/outbox-watcher.sh").read_text()

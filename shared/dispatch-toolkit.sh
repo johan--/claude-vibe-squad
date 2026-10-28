@@ -388,8 +388,8 @@ every family can do all of the following — the slow lanes simply did not, unpr
    that issued 7 tool calls in 4 *parallel* round-trips beat one that issued 146 *sequential*
    commands. Before each step ask: "which of these do not depend on each other?" and fire those
    together.
-2. **Read a whole file in ONE operation.** Every lane can: claude `Read` (2,000-line ceiling), kimi
-   `ReadFile` (1,000), codex and gemini via a single shell read. **Do not page a file in 260-line
+2. **Read a whole file in ONE operation.** Use claude `Read` (2,000-line ceiling), or a single
+   shell read on codex, gemini, and grok. **Do not page a file in 260-line
    windows** — the measured default on some lanes, and it costs ~8x the round-trips on a large file.
 3. **Do not re-read what you have already read.** A native read stays in your context; chunked shell
    output scrolls away, which is *why* chunking lanes re-read the same file three and four times.
@@ -568,16 +568,6 @@ Grok lane is expected to have repo shell/file capabilities permitted by the task
 This is an expected surface, not proof of live availability. Verify the tool exists in your current runtime before using it. If missing, report `capability_gap` and use the task-approved fallback.
 EOF
         ;;
-    kimi)
-        cat <<'EOF'
-
-## Expected Model Lane Tool Surface
-
-Kimi lane is expected to have `chrono-recon`, `chrono-research-arsenal`, `chrono-vault`, `chrono-obsidian`, `chrono-media-studio` when relevant, and `sequential-thinking`. Use the registry-derived status block for research add-ons and verify the current runtime before invocation.
-
-This is an expected surface, not proof of live availability. Verify the tool exists in your current runtime before using it. If missing, report `capability_gap` and use the task-approved fallback.
-EOF
-        ;;
 esac
 
 # ── completion contract: lanes emit BOTH return_artifact AND outbox envelope ──
@@ -611,7 +601,7 @@ The envelope is markdown — this frontmatter, then a short summary body (its fi
 ---
 id: <id>-response
 in_response_to: <id>
-from: <lane>          # gpt-codex | claude | gemini | grok | kimi
+from: <lane>          # gpt-codex | claude | gemini | grok
 to: chrono
 type: RESULT
 status: complete      # complete | needs_review | needs_human | blocked
@@ -632,8 +622,7 @@ Specialists may use their model lane's native subagents for bounded parallel sub
 warrants it; this does not authorize creating board tasks, running `send-task.sh`, or launching another
 model CLI. Every subagent inherits the packet's scope, target allowlist, dry_run status, and prohibitions;
 restate those rails in its instructions. Keep fan-out to single digits. Remain the sole writer: you are
-the only writer of artifacts and harness files. Kimi subagents do not inherit MCP, so perform MCP work
-in the lead and pass results as context. Report `subagents: N` plus each subagent's role in the response
+the only writer of artifacts and harness files. Report `subagents: N` plus each subagent's role in the response
 (`subagents: 0` when solo).
 
 ### Request nonblocking coordination without changing completion

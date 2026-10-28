@@ -2,17 +2,20 @@
 
 Every `shared/capabilities/<mode>/<capability>.md` file conforms to this schema. It instantiates the
 `shared/capabilities/_skeleton.md` S0–S7 spine. This doc locks the format so Phase-1b (the remaining ~27)
-is mechanical. The four exemplars (`project/web-app`, `bounty/smart-contract-web3`, `content/image`,
-`project/self-extension-agent-tooling`) are the reference implementations.
+is mechanical. The four exemplars (`project/web-app`, `bounty/smart-contract-web3`, `project/image`,
+`project/self-extension-agent-tooling`) are the reference implementations. These card files are
+maintainer-local and withheld from the public release, which carries generated method-only versions under
+`shared/capabilities/public/` without the lane, state, and cost annotations this schema defines.
 
 ## Ground truth (authority for the machine columns)
 
-`shared/registries/skill-tool-registry.tsv` (APPROVED at `b2a91d6`) is the authority for every skill's
-`type` and every tool's `verified_state`/`cost_tier`. **Cite the registry, not your own judgment, for those
-columns.** `shared/api-catalog.md` is the underlying evidence the registry points at. Where the registry
-and a decided review resolution disagree on a value, the resolution's grounded value wins for the exemplar
-and the registry row is reconciled to match (as was done for the local-CLI cost-tier row-class at
-`d1f3c5f`; see the `—` note below).
+The skill-and-tool registry (`shared/registries/skill-tool-registry.tsv`, approved at `b2a91d6`) is the
+authority for every skill's `type` and every tool's `verified_state`/`cost_tier`. It is maintainer-local and
+withheld from the public release, so a public checkout cannot read it. **Card authors cite the registry, not
+their own judgment, for those columns.** `shared/api-catalog.md`, which is public, is the underlying evidence
+the registry points at. Where the registry and a decided review resolution disagree on a value, the
+resolution's grounded value wins for the exemplar and the registry row is reconciled to match (as was done
+for the local-CLI cost-tier row-class at `d1f3c5f`; see the `—` note below).
 
 Those rows describe the configured maintainer-host ceiling; they do not prove fresh-clone availability.
 The advertised `capability_state` is the zero-key/default-install state. A card may say `live` only when the
@@ -67,7 +70,7 @@ Present them as one 5-column table:
 
 ### Tools — one tool = one tuple = one lane
 - Grammar: `` `tool` (lane · state · cost_tier) ``. **`lane` is a single value** from the closed enum:
-  `claude | codex | gemini | kimi | all | local | none | unknown` (`all` = the 4 model lanes, matching the
+  `claude | codex | gemini | all | local | none | unknown` (`all` = the 3 card-citable model lanes, matching the
   registry; `unknown` only for catalog-absent/unregistered tools).
 - **`state`** is the registry's `verified_state`: `yes | lane-live | partial | needs-research |
   catalog-absent | no`. Only `yes` and `lane-live` (with its lane caveat) are **live-capable**; `partial`,
@@ -75,7 +78,7 @@ Present them as one 5-column table:
 - **`cost_tier`** ∈ `subscription | metered | unknown | —`:
   - **`subscription`** — a CLI lane's native/lane-covered operation (model inference, native CLI
     subcommands, chrono-* MCPs, Claude plugins). No paid-per-call provider, no free local binary.
-  - **`metered`** — paid provider passthrough (xAI, Perplexity, the `generate_image`/`video`/`audio`
+  - **`metered`** — paid provider passthrough (the `generate_image`/`video`/`audio`
     wrappers, ElevenLabs, direct-API providers). Requires a budget/rate-limit guard; a hit limit is a
     typed `needs_tool`/degraded result, never a silent stall.
   - **`unknown`** — FAIL-CLOSED: the tool is **not resolvable to a billing model** (typically a
@@ -103,8 +106,10 @@ Present them as one 5-column table:
 | `pattern-doc-stub` | `(stub)` |
 | `pattern-doc-untyped` | `(untyped)` |
 
-- **`(SKILL.md)`** — one of the 4 real invokable skills (chrono-vault `compact-now`/`blind-rediscovery`/
-  `parity-probe`; codex-agent `sandbox-provision-discipline`).
+- **`(SKILL.md)`** — a skill the registry types `invokable` (e.g. chrono-vault `compact-now`/
+  `blind-rediscovery`/`parity-probe`, codex-agent `sandbox-provision-discipline`). The registry
+  `type=invokable` set is the authority for which skills these are and how many; `invokable` is a
+  classification, not proof the skill is live-invokable on a given lane.
 - Where the registry flags a skill `stale`, append `— stale` as **trailing prose OUTSIDE the tuple**
   (e.g. `` `<skill>` (SKILL.md) — stale ``);
   the tuple itself stays one of the four legal forms.

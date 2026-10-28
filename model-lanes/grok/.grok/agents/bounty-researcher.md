@@ -4,7 +4,7 @@ description: "Thin Grok adapter for bounty-researcher; canonical brief is author
 prompt_mode: full
 permission_mode: default
 agents_md: true
-model: grok-4.6
+model: grok-4.7
 mcpInheritance:
   named:
     - chrono-vault

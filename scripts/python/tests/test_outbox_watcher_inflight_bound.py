@@ -27,6 +27,7 @@ from __future__ import annotations
 
 import shutil
 import subprocess
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -83,12 +84,12 @@ class InflightBoundTests(unittest.TestCase):
         command = ["/bin/bash", "-c", script]
         if runner:
             command = [runner, str(HANG_SECONDS), *command]
-        log = Path(
-            subprocess.run(
-                ["mktemp"], capture_output=True, text=True, check=True
-            ).stdout.strip()
-        )
-        self.addCleanup(log.unlink, missing_ok=True)
+        # BSD mktemp without a template chooses the host's Darwin user temp
+        # directory even when TMPDIR names fixture scratch. Keep the log owned
+        # by this test so sandboxed watcher checks use writable private state.
+        scratch = tempfile.TemporaryDirectory(prefix="watcher-inflight-")
+        self.addCleanup(scratch.cleanup)
+        log = Path(scratch.name) / "dispatch.log"
         try:
             result = subprocess.run(
                 command,

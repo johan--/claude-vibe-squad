@@ -158,21 +158,9 @@
             "requirement": "preferred"
           },
           {
-            "availability": "mcp-operation",
-            "evidence": "chrono-research-arsenal",
-            "id": "perplexity_search",
-            "requirement": "preferred"
-          },
-          {
             "availability": "harness-only",
             "evidence": "runtime-map:requires_approval",
             "id": "WebFetch",
-            "requirement": "preferred"
-          },
-          {
-            "availability": "mcp-operation",
-            "evidence": "chrono-research-arsenal",
-            "id": "xai_search",
             "requirement": "preferred"
           }
         ]
@@ -300,21 +288,9 @@
             "requirement": "preferred"
           },
           {
-            "availability": "mcp-operation",
-            "evidence": "chrono-research-arsenal",
-            "id": "perplexity_search",
-            "requirement": "preferred"
-          },
-          {
             "availability": "harness-only",
             "evidence": "runtime-map:requires_approval",
             "id": "WebFetch",
-            "requirement": "preferred"
-          },
-          {
-            "availability": "mcp-operation",
-            "evidence": "chrono-research-arsenal",
-            "id": "xai_search",
             "requirement": "preferred"
           }
         ]
@@ -386,21 +362,9 @@
             "requirement": "preferred"
           },
           {
-            "availability": "mcp-operation",
-            "evidence": "chrono-research-arsenal",
-            "id": "perplexity_search",
-            "requirement": "preferred"
-          },
-          {
             "availability": "harness-only",
             "evidence": "runtime-map:requires_approval",
             "id": "WebFetch",
-            "requirement": "preferred"
-          },
-          {
-            "availability": "mcp-operation",
-            "evidence": "chrono-research-arsenal",
-            "id": "xai_search",
             "requirement": "preferred"
           }
         ]
@@ -479,21 +443,9 @@
             "requirement": "preferred"
           },
           {
-            "availability": "mcp-operation",
-            "evidence": "chrono-research-arsenal",
-            "id": "perplexity_search",
-            "requirement": "preferred"
-          },
-          {
             "availability": "harness-only",
             "evidence": "runtime-map:requires_approval",
             "id": "WebFetch",
-            "requirement": "preferred"
-          },
-          {
-            "availability": "mcp-operation",
-            "evidence": "chrono-research-arsenal",
-            "id": "xai_search",
             "requirement": "preferred"
           }
         ]
@@ -551,6 +503,31 @@
       ],
       "specialist": "architect",
       "surface_sha256": "650fe00e54cc2103b7eba4cf2ae04cdaa19d00fe88e17e3a7990aff00c2dbf82",
+      "tools": []
+    },
+    {
+      "adapter": "model-lanes/gemini/.gemini/agents/architect.md",
+      "coverage": "partial",
+      "known_unavailable": {
+        "mcps": [],
+        "skills": [],
+        "tools": []
+      },
+      "lane": "gemini",
+      "limitations": [
+        "Best-effort non-primary route; verify native tools and declared MCPs in the dispatched runtime before use."
+      ],
+      "mcps": [
+        "chrono-research-arsenal",
+        "chrono-vault",
+        "sequential-thinking"
+      ],
+      "primary_plan": [],
+      "skills": [
+        "interface-ambiguity-check"
+      ],
+      "specialist": "architect",
+      "surface_sha256": "21794362aa96228f3b9494d3f743626f5ecd6296de07ca94600fb49c9627946e",
       "tools": []
     },
     {
@@ -763,21 +740,9 @@
             "requirement": "preferred"
           },
           {
-            "availability": "mcp-operation",
-            "evidence": "chrono-research-arsenal",
-            "id": "perplexity_search",
-            "requirement": "preferred"
-          },
-          {
             "availability": "harness-only",
             "evidence": "runtime-map:requires_approval",
             "id": "WebFetch",
-            "requirement": "preferred"
-          },
-          {
-            "availability": "mcp-operation",
-            "evidence": "chrono-research-arsenal",
-            "id": "xai_search",
             "requirement": "preferred"
           }
         ]
@@ -801,6 +766,31 @@
       "tools": [
         "playwright"
       ]
+    },
+    {
+      "adapter": "model-lanes/gemini/.gemini/agents/backend-engineer.md",
+      "coverage": "partial",
+      "known_unavailable": {
+        "mcps": [],
+        "skills": [],
+        "tools": []
+      },
+      "lane": "gemini",
+      "limitations": [
+        "Best-effort non-primary route; verify native tools and declared MCPs in the dispatched runtime before use."
+      ],
+      "mcps": [
+        "chrono-research-arsenal",
+        "chrono-vault",
+        "sequential-thinking"
+      ],
+      "primary_plan": [],
+      "skills": [
+        "data-flow-trace"
+      ],
+      "specialist": "backend-engineer",
+      "surface_sha256": "112426ba41ffaaade2f7fda1a36038657cc3e4f7a6a7d7fa22e43b38197b19dd",
+      "tools": []
     },
     {
       "adapter": "model-lanes/gpt-codex/.codex/agents/backend-engineer.toml",
@@ -853,21 +843,9 @@
             "requirement": "preferred"
           },
           {
-            "availability": "mcp-operation",
-            "evidence": "chrono-research-arsenal",
-            "id": "perplexity_search",
-            "requirement": "preferred"
-          },
-          {
             "availability": "harness-only",
             "evidence": "runtime-map:requires_approval",
             "id": "WebFetch",
-            "requirement": "preferred"
-          },
-          {
-            "availability": "mcp-operation",
-            "evidence": "chrono-research-arsenal",
-            "id": "xai_search",
             "requirement": "preferred"
           }
         ]
@@ -1023,9 +1001,9 @@
       "limitations": [
         "best-effort non-primary (escalate) route; required capabilities remain anchored to the primary execution plan (gemini)",
         "grok 1.0.5 inspect enumerated 289 skills, 28 agents, and 15 MCP servers on 2026-09-01, including the bundled imagine skill; the sealed per-role capability plan and packet authority still decide what a worker may invoke",
-        "web_search / web_fetch exist in the grok CLI but the launcher passes --disable-web-search, so no general web retrieval is available to a worker on this lane",
+        "web_search / web_fetch exist in the grok CLI but the launcher passes --disable-web-search, which removes only general web retrieval; native x_keyword_search and x_thread_fetch remain available under the launcher contract; a current authorized probe must confirm their availability",
         "read_file hard-fails a 343KB document at a 25,000-token ceiling (it errors rather than truncating); this role returns cited grounded leads rather than ingesting whole corpora, but any single supplied audit/report above the ceiling must stay on the primary grounded route rather than escalate to grok",
-        "authentication is the SuperGrok subscription session, not XAI_API_KEY"
+        "board authentication requires xai-api-key authority, not a SuperGrok consumer web session"
       ],
       "mcps": [
         "chrono-vault"
@@ -1148,21 +1126,9 @@
             "requirement": "preferred"
           },
           {
-            "availability": "mcp-operation",
-            "evidence": "chrono-research-arsenal",
-            "id": "perplexity_search",
-            "requirement": "preferred"
-          },
-          {
             "availability": "harness-only",
             "evidence": "runtime-map:requires_approval",
             "id": "WebFetch",
-            "requirement": "preferred"
-          },
-          {
-            "availability": "mcp-operation",
-            "evidence": "chrono-research-arsenal",
-            "id": "xai_search",
             "requirement": "preferred"
           }
         ]
@@ -1206,21 +1172,9 @@
             "requirement": "preferred"
           },
           {
-            "availability": "mcp-operation",
-            "evidence": "chrono-research-arsenal",
-            "id": "perplexity_search",
-            "requirement": "preferred"
-          },
-          {
             "availability": "harness-only",
             "evidence": "runtime-map:requires_approval",
             "id": "WebFetch",
-            "requirement": "preferred"
-          },
-          {
-            "availability": "mcp-operation",
-            "evidence": "chrono-research-arsenal",
-            "id": "xai_search",
             "requirement": "preferred"
           }
         ]
@@ -1292,21 +1246,9 @@
             "requirement": "preferred"
           },
           {
-            "availability": "mcp-operation",
-            "evidence": "chrono-research-arsenal",
-            "id": "perplexity_search",
-            "requirement": "preferred"
-          },
-          {
             "availability": "harness-only",
             "evidence": "runtime-map:requires_approval",
             "id": "WebFetch",
-            "requirement": "preferred"
-          },
-          {
-            "availability": "mcp-operation",
-            "evidence": "chrono-research-arsenal",
-            "id": "xai_search",
             "requirement": "preferred"
           }
         ]
@@ -1343,21 +1285,9 @@
             "requirement": "preferred"
           },
           {
-            "availability": "mcp-operation",
-            "evidence": "chrono-research-arsenal",
-            "id": "perplexity_search",
-            "requirement": "preferred"
-          },
-          {
             "availability": "harness-only",
             "evidence": "runtime-map:requires_approval",
             "id": "WebFetch",
-            "requirement": "preferred"
-          },
-          {
-            "availability": "mcp-operation",
-            "evidence": "chrono-research-arsenal",
-            "id": "xai_search",
             "requirement": "preferred"
           }
         ]
@@ -1420,21 +1350,9 @@
             "requirement": "preferred"
           },
           {
-            "availability": "mcp-operation",
-            "evidence": "chrono-research-arsenal",
-            "id": "perplexity_search",
-            "requirement": "preferred"
-          },
-          {
             "availability": "harness-only",
             "evidence": "runtime-map:requires_approval",
             "id": "WebFetch",
-            "requirement": "preferred"
-          },
-          {
-            "availability": "mcp-operation",
-            "evidence": "chrono-research-arsenal",
-            "id": "xai_search",
             "requirement": "preferred"
           }
         ]
@@ -1546,12 +1464,6 @@
             "requirement": "preferred"
           },
           {
-            "availability": "mcp-operation",
-            "evidence": "chrono-research-arsenal",
-            "id": "perplexity_search",
-            "requirement": "preferred"
-          },
-          {
             "availability": "uninstalled",
             "evidence": "host-PATH:absent",
             "id": "tabula",
@@ -1561,12 +1473,6 @@
             "availability": "harness-only",
             "evidence": "runtime-map:requires_approval",
             "id": "WebFetch",
-            "requirement": "preferred"
-          },
-          {
-            "availability": "mcp-operation",
-            "evidence": "chrono-research-arsenal",
-            "id": "xai_search",
             "requirement": "preferred"
           }
         ]
@@ -1700,7 +1606,7 @@
     },
     {
       "adapter": "model-lanes/claude/.claude/agents/detection-engineer.md",
-      "coverage": "full",
+      "coverage": "partial",
       "known_unavailable": {
         "mcps": [],
         "skills": [
@@ -1727,6 +1633,30 @@
         ]
       },
       "lane": "claude",
+      "limitations": [
+        "best-effort non-primary route; required capabilities remain anchored to the primary execution plan"
+      ],
+      "mcps": [
+        "chrono-vault",
+        "sequential-thinking"
+      ],
+      "primary_plan": [],
+      "skills": [
+        "detection-as-code"
+      ],
+      "specialist": "detection-engineer",
+      "surface_sha256": "9292e7aca46a84961bb96a15ef5c8fab8af272a9179595f277a4064138aa75eb",
+      "tools": []
+    },
+    {
+      "adapter": "model-lanes/gpt-codex/.codex/agents/detection-engineer.toml",
+      "coverage": "full",
+      "known_unavailable": {
+        "mcps": [],
+        "skills": [],
+        "tools": []
+      },
+      "lane": "gpt-codex",
       "limitations": [],
       "mcps": [
         "chrono-vault",
@@ -1738,7 +1668,7 @@
           "evidence": "capsource-generated-runtime-tool-summary",
           "id": "chrono-vault",
           "kind": "mcps",
-          "provider_lane": "claude",
+          "provider_lane": "gpt-codex",
           "requirement": "preferred",
           "resolution": "local"
         },
@@ -1747,7 +1677,7 @@
           "evidence": "capsource-generated-runtime-tool-summary",
           "id": "sequential-thinking",
           "kind": "mcps",
-          "provider_lane": "claude",
+          "provider_lane": "gpt-codex",
           "requirement": "preferred",
           "resolution": "local"
         }
@@ -1756,29 +1686,7 @@
         "detection-as-code"
       ],
       "specialist": "detection-engineer",
-      "surface_sha256": "9292e7aca46a84961bb96a15ef5c8fab8af272a9179595f277a4064138aa75eb",
-      "tools": []
-    },
-    {
-      "adapter": "model-lanes/gpt-codex/.codex/agents/detection-engineer.toml",
-      "coverage": "partial",
-      "known_unavailable": {
-        "mcps": [],
-        "skills": [],
-        "tools": []
-      },
-      "lane": "gpt-codex",
-      "limitations": [
-        "best-effort non-primary route; required capabilities remain anchored to the primary execution plan"
-      ],
-      "mcps": [
-        "chrono-vault",
-        "sequential-thinking"
-      ],
-      "primary_plan": [],
-      "skills": [],
-      "specialist": "detection-engineer",
-      "surface_sha256": "24c4a2d369855f3c334b106e237a42c7f314bc50f910109991a8f479c3606f36",
+      "surface_sha256": "f3f0a80c8791349c3c5bfb1faac7daa771586a7c10d34fd336f97e231fc8c0ed",
       "tools": []
     },
     {
@@ -1835,6 +1743,37 @@
       "tools": []
     },
     {
+      "adapter": "model-lanes/gemini/.gemini/agents/devops-engineer.md",
+      "coverage": "partial",
+      "known_unavailable": {
+        "mcps": [],
+        "skills": [
+          {
+            "availability": "uninstalled",
+            "evidence": "lane-not-wired",
+            "id": "sandbox-provision-discipline",
+            "requirement": "preferred"
+          }
+        ],
+        "tools": []
+      },
+      "lane": "gemini",
+      "limitations": [
+        "Best-effort non-primary route; verify native tools and declared MCPs in the dispatched runtime before use.",
+        "The Codex sandbox-provision-discipline skill is not wired on this lane; provisioning requiring that skill must report needs_tool and await a scoped controller handoff."
+      ],
+      "mcps": [
+        "chrono-research-arsenal",
+        "chrono-vault",
+        "sequential-thinking"
+      ],
+      "primary_plan": [],
+      "skills": [],
+      "specialist": "devops-engineer",
+      "surface_sha256": "c09bddcaa07e0c5107d242867da8bc9d3ddf582091e802b39998e18459c6d205",
+      "tools": []
+    },
+    {
       "adapter": "model-lanes/gpt-codex/.codex/agents/devops-engineer.toml",
       "coverage": "full",
       "known_unavailable": {
@@ -1848,21 +1787,9 @@
             "requirement": "preferred"
           },
           {
-            "availability": "mcp-operation",
-            "evidence": "chrono-research-arsenal",
-            "id": "perplexity_search",
-            "requirement": "preferred"
-          },
-          {
             "availability": "harness-only",
             "evidence": "runtime-map:requires_approval",
             "id": "WebFetch",
-            "requirement": "preferred"
-          },
-          {
-            "availability": "mcp-operation",
-            "evidence": "chrono-research-arsenal",
-            "id": "xai_search",
             "requirement": "preferred"
           }
         ]
@@ -2075,20 +2002,20 @@
             "requirement": "preferred"
           },
           {
-            "availability": "needs-operator-install",
-            "evidence": "operator-install-required",
+            "availability": "superseded",
+            "evidence": "superseded",
             "id": "guarded-semgrep",
             "requirement": "preferred"
           },
           {
-            "availability": "needs-operator-install",
-            "evidence": "operator-install-required",
+            "availability": "superseded",
+            "evidence": "superseded",
             "id": "guarded-slither",
             "requirement": "preferred"
           },
           {
-            "availability": "needs-operator-install",
-            "evidence": "operator-install-required",
+            "availability": "superseded",
+            "evidence": "superseded",
             "id": "guarded-solodit",
             "requirement": "preferred"
           }
@@ -2132,12 +2059,6 @@
             "requirement": "preferred"
           },
           {
-            "availability": "mcp-operation",
-            "evidence": "chrono-research-arsenal",
-            "id": "perplexity_search",
-            "requirement": "preferred"
-          },
-          {
             "availability": "uninstalled",
             "evidence": "host-PATH:absent",
             "id": "prior_art_check",
@@ -2153,12 +2074,6 @@
             "availability": "harness-only",
             "evidence": "runtime-map:requires_approval",
             "id": "WebFetch",
-            "requirement": "preferred"
-          },
-          {
-            "availability": "mcp-operation",
-            "evidence": "chrono-research-arsenal",
-            "id": "xai_search",
             "requirement": "preferred"
           }
         ]
@@ -2256,20 +2171,20 @@
             "requirement": "preferred"
           },
           {
-            "availability": "needs-operator-install",
-            "evidence": "operator-install-required",
+            "availability": "superseded",
+            "evidence": "superseded",
             "id": "guarded-semgrep",
             "requirement": "preferred"
           },
           {
-            "availability": "needs-operator-install",
-            "evidence": "operator-install-required",
+            "availability": "superseded",
+            "evidence": "superseded",
             "id": "guarded-slither",
             "requirement": "preferred"
           },
           {
-            "availability": "needs-operator-install",
-            "evidence": "operator-install-required",
+            "availability": "superseded",
+            "evidence": "superseded",
             "id": "guarded-solodit",
             "requirement": "preferred"
           }
@@ -2325,12 +2240,6 @@
             "requirement": "preferred"
           },
           {
-            "availability": "mcp-operation",
-            "evidence": "chrono-research-arsenal",
-            "id": "perplexity_search",
-            "requirement": "preferred"
-          },
-          {
             "availability": "needs-operator-install",
             "evidence": "operator-install-required",
             "id": "prior_art_check",
@@ -2358,12 +2267,6 @@
             "availability": "harness-only",
             "evidence": "runtime-map:requires_approval",
             "id": "WebFetch",
-            "requirement": "preferred"
-          },
-          {
-            "availability": "mcp-operation",
-            "evidence": "chrono-research-arsenal",
-            "id": "xai_search",
             "requirement": "preferred"
           }
         ]
@@ -2494,192 +2397,25 @@
       ]
     },
     {
-      "adapter": "model-lanes/kimi/.kimi/agents/experimental-attacker.yaml",
-      "coverage": "partial",
-      "known_unavailable": {
-        "mcps": [
-          {
-            "availability": "needs-operator-install",
-            "evidence": "operator-install-required",
-            "id": "lead:chrono-dedup",
-            "requirement": "preferred"
-          }
-        ],
-        "skills": [],
-        "tools": [
-          {
-            "availability": "uninstalled",
-            "evidence": "host-PATH:absent",
-            "id": "arxiv_search",
-            "requirement": "preferred"
-          },
-          {
-            "availability": "needs-operator-install",
-            "evidence": "operator-install-required",
-            "id": "brakeman",
-            "requirement": "preferred"
-          },
-          {
-            "availability": "project-dependency",
-            "evidence": "project-dependency",
-            "id": "eslint-security",
-            "requirement": "preferred"
-          },
-          {
-            "availability": "uninstalled",
-            "evidence": "host-PATH:absent",
-            "id": "ghidra",
-            "requirement": "preferred"
-          },
-          {
-            "availability": "uninstalled",
-            "evidence": "host-PATH:absent",
-            "id": "libfuzzer",
-            "requirement": "preferred"
-          },
-          {
-            "availability": "project-dependency",
-            "evidence": "project-dependency",
-            "id": "litesvm",
-            "requirement": "preferred"
-          },
-          {
-            "availability": "uninstalled",
-            "evidence": "host-PATH:absent",
-            "id": "prior_art_check",
-            "requirement": "preferred"
-          },
-          {
-            "availability": "uninstalled",
-            "evidence": "host-PATH:absent",
-            "id": "pwntools",
-            "requirement": "preferred"
-          },
-          {
-            "availability": "harness-only",
-            "evidence": "runtime-map:requires_approval",
-            "id": "WebFetch",
-            "requirement": "preferred"
-          },
-          {
-            "availability": "uninstalled",
-            "evidence": "host-PATH:absent",
-            "id": "xai_search",
-            "requirement": "preferred"
-          }
-        ]
-      },
-      "lane": "kimi",
-      "limitations": [
-        "all shared authored audit and exploit-construction skills are live on this lane, but Kimi exposes no shell or local executable surface; every host CLI is tracked as lane-not-wired and intentionally omitted from the live adapter projection",
-        "research MCP operations are lead-brokered and unavailable inside Kimi subagents; the tracked operation ids require a Kimi-lead or Chrono handoff rather than a direct child tool call",
-        "prior_art_check remains lead-brokered; board workers are network-isolated and only the local chrono-vault source is expected to succeed, while web sources including Solodit require Chrono-side invocation",
-        "WebFetch remains harness-only, and active scanners or exploit execution remain bounded by target scope, rules of engagement, and the offensive_execution operator gate",
-        "chrono-dedup is available in the private runtime; public export withholds its assignments while retaining the provider operation catalogue. Use manual prior-art searches where the plugin is absent."
-      ],
-      "mcps": [
-        "lead:chrono-vault",
-        "lead:sequential-thinking"
-      ],
-      "primary_plan": [],
-      "skills": [
-        "agentic-safety-audit",
-        "chain-construct",
-        "chain-construct-smart-contract",
-        "cosmos-sdk-audit-checklist",
-        "cross-chain-bridge-audit",
-        "defi-invariant-check",
-        "dependency-health-triage",
-        "evm-audit-flow",
-        "findings-filter",
-        "known-advisory-backport-check",
-        "multi-stance-audit-fanout",
-        "osint-platform-audit",
-        "pre-audit-threat-model",
-        "review-severity-ladder",
-        "security-ownership-map",
-        "security-threat-model",
-        "semgrep-rule-author",
-        "solana-audit-flow",
-        "supply-chain-audit",
-        "systematic-attacking",
-        "systematic-bug-hunting",
-        "variant-analysis",
-        "vulnhunter-solana"
-      ],
-      "specialist": "experimental-attacker",
-      "surface_sha256": "375323ecc8a16835f842531cab7fd3ecbd4efa40568865c72dfff87bf536a2c9",
-      "tools": [
-        "aderyn",
-        "amass",
-        "anchor",
-        "angr",
-        "anvil",
-        "bandit",
-        "cargo-audit",
-        "cargo-fuzz",
-        "cargo-geiger",
-        "cast",
-        "chisel",
-        "curl",
-        "dnsx",
-        "echidna",
-        "ffuf",
-        "forge",
-        "gau",
-        "gdb",
-        "gitleaks",
-        "golangci-lint",
-        "gosec",
-        "gowitness",
-        "grype",
-        "halmos",
-        "hardhat",
-        "httpx",
-        "interactsh-client",
-        "katana",
-        "medusa",
-        "myth",
-        "naabu",
-        "nikto",
-        "nmap",
-        "nuclei",
-        "osv-scanner",
-        "playwright",
-        "radare2",
-        "semgrep",
-        "slither",
-        "snyk",
-        "solana",
-        "sqlmap",
-        "staticcheck",
-        "subfinder",
-        "trident",
-        "trivy",
-        "trufflehog",
-        "waybackurls"
-      ]
-    },
-    {
       "adapter": "model-lanes/claude/.claude/agents/exploit-developer.md",
       "coverage": "partial",
       "known_unavailable": {
         "mcps": [
           {
-            "availability": "needs-operator-install",
-            "evidence": "operator-install-required",
+            "availability": "superseded",
+            "evidence": "superseded",
             "id": "guarded-semgrep",
             "requirement": "preferred"
           },
           {
-            "availability": "needs-operator-install",
-            "evidence": "operator-install-required",
+            "availability": "superseded",
+            "evidence": "superseded",
             "id": "guarded-slither",
             "requirement": "preferred"
           },
           {
-            "availability": "needs-operator-install",
-            "evidence": "operator-install-required",
+            "availability": "superseded",
+            "evidence": "superseded",
             "id": "guarded-solodit",
             "requirement": "preferred"
           }
@@ -2760,12 +2496,6 @@
             "requirement": "preferred"
           },
           {
-            "availability": "mcp-operation",
-            "evidence": "chrono-research-arsenal",
-            "id": "perplexity_search",
-            "requirement": "preferred"
-          },
-          {
             "availability": "uninstalled",
             "evidence": "host-PATH:absent",
             "id": "prior_art_check",
@@ -2781,12 +2511,6 @@
             "availability": "harness-only",
             "evidence": "runtime-map:requires_approval",
             "id": "WebFetch",
-            "requirement": "preferred"
-          },
-          {
-            "availability": "mcp-operation",
-            "evidence": "chrono-research-arsenal",
-            "id": "xai_search",
             "requirement": "preferred"
           }
         ]
@@ -2843,20 +2567,20 @@
             "requirement": "preferred"
           },
           {
-            "availability": "needs-operator-install",
-            "evidence": "operator-install-required",
+            "availability": "superseded",
+            "evidence": "superseded",
             "id": "guarded-semgrep",
             "requirement": "preferred"
           },
           {
-            "availability": "needs-operator-install",
-            "evidence": "operator-install-required",
+            "availability": "superseded",
+            "evidence": "superseded",
             "id": "guarded-slither",
             "requirement": "preferred"
           },
           {
-            "availability": "needs-operator-install",
-            "evidence": "operator-install-required",
+            "availability": "superseded",
+            "evidence": "superseded",
             "id": "guarded-solodit",
             "requirement": "preferred"
           }
@@ -2906,12 +2630,6 @@
             "requirement": "preferred"
           },
           {
-            "availability": "mcp-operation",
-            "evidence": "chrono-research-arsenal",
-            "id": "perplexity_search",
-            "requirement": "preferred"
-          },
-          {
             "availability": "needs-operator-install",
             "evidence": "operator-install-required",
             "id": "prior_art_check",
@@ -2927,12 +2645,6 @@
             "availability": "harness-only",
             "evidence": "runtime-map:requires_approval",
             "id": "WebFetch",
-            "requirement": "preferred"
-          },
-          {
-            "availability": "mcp-operation",
-            "evidence": "chrono-research-arsenal",
-            "id": "xai_search",
             "requirement": "preferred"
           }
         ]
@@ -3052,21 +2764,9 @@
             "requirement": "preferred"
           },
           {
-            "availability": "mcp-operation",
-            "evidence": "chrono-research-arsenal",
-            "id": "perplexity_search",
-            "requirement": "preferred"
-          },
-          {
             "availability": "harness-only",
             "evidence": "runtime-map:requires_approval",
             "id": "WebFetch",
-            "requirement": "preferred"
-          },
-          {
-            "availability": "mcp-operation",
-            "evidence": "chrono-research-arsenal",
-            "id": "xai_search",
             "requirement": "preferred"
           }
         ]
@@ -3158,21 +2858,9 @@
             "requirement": "preferred"
           },
           {
-            "availability": "mcp-operation",
-            "evidence": "chrono-research-arsenal",
-            "id": "perplexity_search",
-            "requirement": "preferred"
-          },
-          {
             "availability": "harness-only",
             "evidence": "runtime-map:requires_approval",
             "id": "WebFetch",
-            "requirement": "preferred"
-          },
-          {
-            "availability": "mcp-operation",
-            "evidence": "chrono-research-arsenal",
-            "id": "xai_search",
             "requirement": "preferred"
           }
         ]
@@ -3464,28 +3152,6 @@
       "tools": []
     },
     {
-      "adapter": "model-lanes/kimi/.kimi/agents/growth-and-search-analyst.yaml",
-      "coverage": "partial",
-      "known_unavailable": {
-        "mcps": [],
-        "skills": [],
-        "tools": []
-      },
-      "lane": "kimi",
-      "limitations": [
-        "best-effort non-primary route; required capabilities remain anchored to the primary execution plan"
-      ],
-      "mcps": [
-        "lead:chrono-vault",
-        "lead:sequential-thinking"
-      ],
-      "primary_plan": [],
-      "skills": [],
-      "specialist": "growth-and-search-analyst",
-      "surface_sha256": "bd8b4a778c1f1b70e047ae00c9e325f9bac448646ca0c35ed147743ff5a0b476",
-      "tools": []
-    },
-    {
       "adapter": "model-lanes/claude/.claude/agents/harness-optimizer.md",
       "coverage": "full",
       "known_unavailable": {
@@ -3518,21 +3184,9 @@
             "requirement": "preferred"
           },
           {
-            "availability": "mcp-operation",
-            "evidence": "chrono-research-arsenal",
-            "id": "perplexity_search",
-            "requirement": "preferred"
-          },
-          {
             "availability": "harness-only",
             "evidence": "runtime-map:requires_approval",
             "id": "WebFetch",
-            "requirement": "preferred"
-          },
-          {
-            "availability": "mcp-operation",
-            "evidence": "chrono-research-arsenal",
-            "id": "xai_search",
             "requirement": "preferred"
           }
         ]
@@ -3800,12 +3454,6 @@
             "requirement": "preferred"
           },
           {
-            "availability": "mcp-operation",
-            "evidence": "chrono-research-arsenal",
-            "id": "perplexity_search",
-            "requirement": "preferred"
-          },
-          {
             "availability": "needs-operator-install",
             "evidence": "operator-install-required",
             "id": "prior_art_check",
@@ -3815,12 +3463,6 @@
             "availability": "harness-only",
             "evidence": "runtime-map:requires_approval",
             "id": "WebFetch",
-            "requirement": "preferred"
-          },
-          {
-            "availability": "mcp-operation",
-            "evidence": "chrono-research-arsenal",
-            "id": "xai_search",
             "requirement": "preferred"
           }
         ]
@@ -4064,20 +3706,28 @@
     },
     {
       "adapter": "model-lanes/claude/.claude/agents/kestrel.md",
-      "coverage": "partial",
+      "coverage": "full",
       "known_unavailable": {
         "mcps": [],
         "skills": [],
         "tools": []
       },
       "lane": "claude",
-      "limitations": [
-        "best-effort non-primary route; required capabilities remain anchored to the primary execution plan"
-      ],
+      "limitations": [],
       "mcps": [
         "chrono-vault"
       ],
-      "primary_plan": [],
+      "primary_plan": [
+        {
+          "capability_id": "chrono-vault",
+          "evidence": "capsource-generated-runtime-tool-summary",
+          "id": "chrono-vault",
+          "kind": "mcps",
+          "provider_lane": "claude",
+          "requirement": "preferred",
+          "resolution": "local"
+        }
+      ],
       "skills": [],
       "specialist": "kestrel",
       "surface_sha256": "c2f6d3fdb8a0c197810b8cedddc8603ac3ead10411becb15e8ab01e75c45eddc",
@@ -4102,37 +3752,6 @@
       "skills": [],
       "specialist": "kestrel",
       "surface_sha256": "c793d1e2cbbb805cd96be37740a98a8a6844b8b420bb44b352d7a8140993f9c5",
-      "tools": []
-    },
-    {
-      "adapter": "model-lanes/kimi/.kimi/agents/kestrel.yaml",
-      "coverage": "full",
-      "known_unavailable": {
-        "mcps": [],
-        "skills": [],
-        "tools": []
-      },
-      "lane": "kimi",
-      "limitations": [
-        "MCP operations are lead-brokered and unavailable inside Kimi subagents; chrono-vault requires a Kimi-lead or Chrono handoff rather than a direct child tool call"
-      ],
-      "mcps": [
-        "lead:chrono-vault"
-      ],
-      "primary_plan": [
-        {
-          "capability_id": "lead:chrono-vault",
-          "evidence": "capsource-generated-runtime-tool-summary",
-          "id": "chrono-vault",
-          "kind": "mcps",
-          "provider_lane": "kimi",
-          "requirement": "preferred",
-          "resolution": "local"
-        }
-      ],
-      "skills": [],
-      "specialist": "kestrel",
-      "surface_sha256": "8ef2d892b7cf1c024bfd3b39858f92eae55b1ed0e573c42477ed6dee0b8fc16f",
       "tools": []
     },
     {
@@ -4180,21 +3799,9 @@
             "requirement": "preferred"
           },
           {
-            "availability": "mcp-operation",
-            "evidence": "chrono-research-arsenal",
-            "id": "perplexity_search",
-            "requirement": "preferred"
-          },
-          {
             "availability": "harness-only",
             "evidence": "runtime-map:requires_approval",
             "id": "WebFetch",
-            "requirement": "preferred"
-          },
-          {
-            "availability": "mcp-operation",
-            "evidence": "chrono-research-arsenal",
-            "id": "xai_search",
             "requirement": "preferred"
           }
         ]
@@ -4303,21 +3910,9 @@
             "requirement": "preferred"
           },
           {
-            "availability": "mcp-operation",
-            "evidence": "chrono-research-arsenal",
-            "id": "perplexity_search",
-            "requirement": "preferred"
-          },
-          {
             "availability": "harness-only",
             "evidence": "runtime-map:requires_approval",
             "id": "WebFetch",
-            "requirement": "preferred"
-          },
-          {
-            "availability": "mcp-operation",
-            "evidence": "chrono-research-arsenal",
-            "id": "xai_search",
             "requirement": "preferred"
           }
         ]
@@ -4390,21 +3985,9 @@
             "requirement": "preferred"
           },
           {
-            "availability": "mcp-operation",
-            "evidence": "chrono-research-arsenal",
-            "id": "perplexity_search",
-            "requirement": "preferred"
-          },
-          {
             "availability": "harness-only",
             "evidence": "runtime-map:requires_approval",
             "id": "WebFetch",
-            "requirement": "preferred"
-          },
-          {
-            "availability": "mcp-operation",
-            "evidence": "chrono-research-arsenal",
-            "id": "xai_search",
             "requirement": "preferred"
           }
         ]
@@ -4676,21 +4259,9 @@
             "requirement": "preferred"
           },
           {
-            "availability": "mcp-operation",
-            "evidence": "chrono-research-arsenal",
-            "id": "perplexity_search",
-            "requirement": "preferred"
-          },
-          {
             "availability": "harness-only",
             "evidence": "runtime-map:requires_approval",
             "id": "WebFetch",
-            "requirement": "preferred"
-          },
-          {
-            "availability": "mcp-operation",
-            "evidence": "chrono-research-arsenal",
-            "id": "xai_search",
             "requirement": "preferred"
           }
         ]
@@ -4803,12 +4374,6 @@
             "requirement": "preferred"
           },
           {
-            "availability": "mcp-operation",
-            "evidence": "chrono-research-arsenal",
-            "id": "perplexity_search",
-            "requirement": "preferred"
-          },
-          {
             "availability": "uninstalled",
             "evidence": "host-PATH:absent",
             "id": "pip",
@@ -4818,12 +4383,6 @@
             "availability": "harness-only",
             "evidence": "runtime-map:requires_approval",
             "id": "WebFetch",
-            "requirement": "preferred"
-          },
-          {
-            "availability": "mcp-operation",
-            "evidence": "chrono-research-arsenal",
-            "id": "xai_search",
             "requirement": "preferred"
           }
         ]
@@ -4945,21 +4504,9 @@
             "requirement": "preferred"
           },
           {
-            "availability": "mcp-operation",
-            "evidence": "chrono-research-arsenal",
-            "id": "perplexity_search",
-            "requirement": "preferred"
-          },
-          {
             "availability": "harness-only",
             "evidence": "runtime-map:requires_approval",
             "id": "WebFetch",
-            "requirement": "preferred"
-          },
-          {
-            "availability": "mcp-operation",
-            "evidence": "chrono-research-arsenal",
-            "id": "xai_search",
             "requirement": "preferred"
           }
         ]
@@ -5223,21 +4770,9 @@
             "requirement": "preferred"
           },
           {
-            "availability": "mcp-operation",
-            "evidence": "chrono-research-arsenal",
-            "id": "perplexity_search",
-            "requirement": "preferred"
-          },
-          {
             "availability": "harness-only",
             "evidence": "runtime-map:requires_approval",
             "id": "WebFetch",
-            "requirement": "preferred"
-          },
-          {
-            "availability": "mcp-operation",
-            "evidence": "chrono-research-arsenal",
-            "id": "xai_search",
             "requirement": "preferred"
           }
         ]
@@ -5337,21 +4872,9 @@
             "requirement": "preferred"
           },
           {
-            "availability": "mcp-operation",
-            "evidence": "chrono-research-arsenal",
-            "id": "perplexity_search",
-            "requirement": "preferred"
-          },
-          {
             "availability": "harness-only",
             "evidence": "runtime-map:requires_approval",
             "id": "WebFetch",
-            "requirement": "preferred"
-          },
-          {
-            "availability": "mcp-operation",
-            "evidence": "chrono-research-arsenal",
-            "id": "xai_search",
             "requirement": "preferred"
           }
         ]
@@ -5497,21 +5020,9 @@
             "requirement": "preferred"
           },
           {
-            "availability": "mcp-operation",
-            "evidence": "chrono-research-arsenal",
-            "id": "perplexity_search",
-            "requirement": "preferred"
-          },
-          {
             "availability": "harness-only",
             "evidence": "runtime-map:requires_approval",
             "id": "WebFetch",
-            "requirement": "preferred"
-          },
-          {
-            "availability": "mcp-operation",
-            "evidence": "chrono-research-arsenal",
-            "id": "xai_search",
             "requirement": "preferred"
           }
         ]
@@ -5598,21 +5109,9 @@
             "requirement": "preferred"
           },
           {
-            "availability": "mcp-operation",
-            "evidence": "chrono-research-arsenal",
-            "id": "perplexity_search",
-            "requirement": "preferred"
-          },
-          {
             "availability": "harness-only",
             "evidence": "runtime-map:requires_approval",
             "id": "WebFetch",
-            "requirement": "preferred"
-          },
-          {
-            "availability": "mcp-operation",
-            "evidence": "chrono-research-arsenal",
-            "id": "xai_search",
             "requirement": "preferred"
           }
         ]
@@ -5915,12 +5414,6 @@
             "requirement": "preferred"
           },
           {
-            "availability": "mcp-operation",
-            "evidence": "chrono-research-arsenal",
-            "id": "perplexity_search",
-            "requirement": "preferred"
-          },
-          {
             "availability": "project-dependency",
             "evidence": "project-dependency",
             "id": "python-ast",
@@ -5942,12 +5435,6 @@
             "availability": "harness-only",
             "evidence": "runtime-map:requires_approval",
             "id": "WebFetch",
-            "requirement": "preferred"
-          },
-          {
-            "availability": "mcp-operation",
-            "evidence": "chrono-research-arsenal",
-            "id": "xai_search",
             "requirement": "preferred"
           }
         ]
@@ -6046,12 +5533,6 @@
             "requirement": "preferred"
           },
           {
-            "availability": "mcp-operation",
-            "evidence": "chrono-research-arsenal",
-            "id": "perplexity_search",
-            "requirement": "preferred"
-          },
-          {
             "availability": "project-dependency",
             "evidence": "project-dependency",
             "id": "python-ast",
@@ -6073,12 +5554,6 @@
             "availability": "harness-only",
             "evidence": "runtime-map:requires_approval",
             "id": "WebFetch",
-            "requirement": "preferred"
-          },
-          {
-            "availability": "mcp-operation",
-            "evidence": "chrono-research-arsenal",
-            "id": "xai_search",
             "requirement": "preferred"
           }
         ]
@@ -6183,10 +5658,8 @@
         "dual-level-retrieval"
       ],
       "specialist": "research",
-      "surface_sha256": "190597a8e3653135aad76c9e5d05e1d606e9068eb7cf090d3c55f80c0d5b6627",
-      "tools": [
-        "firecrawl"
-      ]
+      "surface_sha256": "ca3205182a52e88e1f52fbbb88ff9ed4af171ade97695689e15666c458504884",
+      "tools": []
     },
     {
       "adapter": "model-lanes/gemini/.gemini/agents/research.md",
@@ -6208,21 +5681,9 @@
             "requirement": "preferred"
           },
           {
-            "availability": "mcp-operation",
-            "evidence": "chrono-research-arsenal",
-            "id": "firecrawl_scrape",
-            "requirement": "preferred"
-          },
-          {
             "availability": "harness-only",
             "evidence": "runtime-map:requires_approval",
             "id": "WebFetch",
-            "requirement": "preferred"
-          },
-          {
-            "availability": "mcp-operation",
-            "evidence": "chrono-research-arsenal",
-            "id": "xai_search",
             "requirement": "preferred"
           }
         ]
@@ -6316,9 +5777,9 @@
       "limitations": [
         "best-effort non-primary (escalate) route; required capabilities remain anchored to the primary execution plan (gemini)",
         "grok 1.0.5 inspect enumerated 289 skills, 28 agents, and 15 MCP servers on 2026-09-01, including the bundled imagine skill; the sealed per-role capability plan and packet authority still decide what a worker may invoke",
-        "web_search / web_fetch exist in the grok CLI but the launcher passes --disable-web-search, so no general web retrieval is available to a worker on this lane",
+        "web_search / web_fetch exist in the grok CLI but the launcher passes --disable-web-search, which removes only general web retrieval; native x_keyword_search and x_thread_fetch remain available under the launcher contract; a current authorized probe must confirm their availability",
         "read_file hard-fails a 343KB document at a 25,000-token ceiling (it errors rather than truncating); by brief this role routes >100k-token corpora (large repos, big PDFs, long transcripts) to large-context-analyst, so grok escalation is for tractable corpora only and any single supplied input above the ceiling must stay on the primary/large-context route rather than escalate here",
-        "authentication is the SuperGrok subscription session, not XAI_API_KEY"
+        "board authentication requires xai-api-key authority, not a SuperGrok consumer web session"
       ],
       "mcps": [
         "chrono-vault"
@@ -6478,12 +5939,6 @@
             "requirement": "preferred"
           },
           {
-            "availability": "mcp-operation",
-            "evidence": "chrono-research-arsenal",
-            "id": "firecrawl_scrape",
-            "requirement": "preferred"
-          },
-          {
             "availability": "uninstalled",
             "evidence": "host-PATH:absent",
             "id": "linkfinder",
@@ -6493,12 +5948,6 @@
             "availability": "uninstalled",
             "evidence": "host-PATH:absent",
             "id": "paramspider",
-            "requirement": "preferred"
-          },
-          {
-            "availability": "mcp-operation",
-            "evidence": "chrono-research-arsenal",
-            "id": "perplexity_search",
             "requirement": "preferred"
           },
           {
@@ -6517,12 +5966,6 @@
             "availability": "harness-only",
             "evidence": "runtime-map:requires_approval",
             "id": "WebFetch",
-            "requirement": "preferred"
-          },
-          {
-            "availability": "mcp-operation",
-            "evidence": "chrono-research-arsenal",
-            "id": "xai_search",
             "requirement": "preferred"
           }
         ]
@@ -6679,14 +6122,7 @@
             "requirement": "preferred"
           }
         ],
-        "tools": [
-          {
-            "availability": "mcp-operation",
-            "evidence": "chrono-research-arsenal",
-            "id": "firecrawl_scrape",
-            "requirement": "preferred"
-          }
-        ]
+        "tools": []
       },
       "lane": "claude",
       "limitations": [
@@ -6724,18 +6160,6 @@
             "requirement": "preferred"
           },
           {
-            "availability": "mcp-operation",
-            "evidence": "chrono-research-arsenal",
-            "id": "firecrawl_scrape",
-            "requirement": "preferred"
-          },
-          {
-            "availability": "mcp-operation",
-            "evidence": "chrono-research-arsenal",
-            "id": "perplexity_search",
-            "requirement": "preferred"
-          },
-          {
             "availability": "uninstalled",
             "evidence": "host-PATH:absent",
             "id": "requests",
@@ -6745,12 +6169,6 @@
             "availability": "harness-only",
             "evidence": "runtime-map:requires_approval",
             "id": "WebFetch",
-            "requirement": "preferred"
-          },
-          {
-            "availability": "mcp-operation",
-            "evidence": "chrono-research-arsenal",
-            "id": "xai_search",
             "requirement": "preferred"
           }
         ]
@@ -6819,20 +6237,20 @@
       "known_unavailable": {
         "mcps": [
           {
-            "availability": "needs-operator-install",
-            "evidence": "operator-install-required",
+            "availability": "superseded",
+            "evidence": "superseded",
             "id": "guarded-semgrep",
             "requirement": "preferred"
           },
           {
-            "availability": "needs-operator-install",
-            "evidence": "operator-install-required",
+            "availability": "superseded",
+            "evidence": "superseded",
             "id": "guarded-slither",
             "requirement": "preferred"
           },
           {
-            "availability": "needs-operator-install",
-            "evidence": "operator-install-required",
+            "availability": "superseded",
+            "evidence": "superseded",
             "id": "guarded-solodit",
             "requirement": "preferred"
           }
@@ -6864,21 +6282,9 @@
             "requirement": "preferred"
           },
           {
-            "availability": "mcp-operation",
-            "evidence": "chrono-research-arsenal",
-            "id": "perplexity_search",
-            "requirement": "preferred"
-          },
-          {
             "availability": "harness-only",
             "evidence": "runtime-map:requires_approval",
             "id": "WebFetch",
-            "requirement": "preferred"
-          },
-          {
-            "availability": "mcp-operation",
-            "evidence": "chrono-research-arsenal",
-            "id": "xai_search",
             "requirement": "preferred"
           }
         ]
@@ -6954,20 +6360,20 @@
       "known_unavailable": {
         "mcps": [
           {
-            "availability": "needs-operator-install",
-            "evidence": "operator-install-required",
+            "availability": "superseded",
+            "evidence": "superseded",
             "id": "guarded-semgrep",
             "requirement": "preferred"
           },
           {
-            "availability": "needs-operator-install",
-            "evidence": "operator-install-required",
+            "availability": "superseded",
+            "evidence": "superseded",
             "id": "guarded-slither",
             "requirement": "preferred"
           },
           {
-            "availability": "needs-operator-install",
-            "evidence": "operator-install-required",
+            "availability": "superseded",
+            "evidence": "superseded",
             "id": "guarded-solodit",
             "requirement": "preferred"
           }
@@ -6999,21 +6405,9 @@
             "requirement": "preferred"
           },
           {
-            "availability": "mcp-operation",
-            "evidence": "chrono-research-arsenal",
-            "id": "perplexity_search",
-            "requirement": "preferred"
-          },
-          {
             "availability": "harness-only",
             "evidence": "runtime-map:requires_approval",
             "id": "WebFetch",
-            "requirement": "preferred"
-          },
-          {
-            "availability": "mcp-operation",
-            "evidence": "chrono-research-arsenal",
-            "id": "xai_search",
             "requirement": "preferred"
           }
         ]
@@ -7273,20 +6667,20 @@
             "requirement": "preferred"
           },
           {
-            "availability": "needs-operator-install",
-            "evidence": "operator-install-required",
+            "availability": "superseded",
+            "evidence": "superseded",
             "id": "guarded-semgrep",
             "requirement": "preferred"
           },
           {
-            "availability": "needs-operator-install",
-            "evidence": "operator-install-required",
+            "availability": "superseded",
+            "evidence": "superseded",
             "id": "guarded-slither",
             "requirement": "preferred"
           },
           {
-            "availability": "needs-operator-install",
-            "evidence": "operator-install-required",
+            "availability": "superseded",
+            "evidence": "superseded",
             "id": "guarded-solodit",
             "requirement": "preferred"
           }
@@ -7319,12 +6713,6 @@
             "requirement": "preferred"
           },
           {
-            "availability": "mcp-operation",
-            "evidence": "chrono-research-arsenal",
-            "id": "perplexity_search",
-            "requirement": "preferred"
-          },
-          {
             "availability": "needs-operator-install",
             "evidence": "operator-install-required",
             "id": "prior_art_check",
@@ -7334,12 +6722,6 @@
             "availability": "harness-only",
             "evidence": "runtime-map:requires_approval",
             "id": "WebFetch",
-            "requirement": "preferred"
-          },
-          {
-            "availability": "mcp-operation",
-            "evidence": "chrono-research-arsenal",
-            "id": "xai_search",
             "requirement": "preferred"
           }
         ]
@@ -7381,20 +6763,20 @@
       "known_unavailable": {
         "mcps": [
           {
-            "availability": "needs-operator-install",
-            "evidence": "operator-install-required",
+            "availability": "superseded",
+            "evidence": "superseded",
             "id": "guarded-semgrep",
             "requirement": "preferred"
           },
           {
-            "availability": "needs-operator-install",
-            "evidence": "operator-install-required",
+            "availability": "superseded",
+            "evidence": "superseded",
             "id": "guarded-slither",
             "requirement": "preferred"
           },
           {
-            "availability": "needs-operator-install",
-            "evidence": "operator-install-required",
+            "availability": "superseded",
+            "evidence": "superseded",
             "id": "guarded-solodit",
             "requirement": "preferred"
           }
@@ -7427,21 +6809,9 @@
             "requirement": "preferred"
           },
           {
-            "availability": "mcp-operation",
-            "evidence": "chrono-research-arsenal",
-            "id": "perplexity_search",
-            "requirement": "preferred"
-          },
-          {
             "availability": "harness-only",
             "evidence": "runtime-map:requires_approval",
             "id": "WebFetch",
-            "requirement": "preferred"
-          },
-          {
-            "availability": "mcp-operation",
-            "evidence": "chrono-research-arsenal",
-            "id": "xai_search",
             "requirement": "preferred"
           }
         ]
@@ -7630,10 +7000,11 @@
         }
       ],
       "skills": [
-        "virality-analysis"
+        "virality-analysis",
+        "x-reply-craft"
       ],
       "specialist": "social-strategist",
-      "surface_sha256": "cb82da7b87603cf5eca3ee25cbeb9aa6dbf6eee82a9fb954ff7f4118442bab53",
+      "surface_sha256": "e15a2a173edcf8df5e28714c706149303a4ff8e24c44aa27b72edfb7ca642888",
       "tools": []
     },
     {
@@ -7663,10 +7034,11 @@
       ],
       "primary_plan": [],
       "skills": [
-        "virality-analysis"
+        "virality-analysis",
+        "x-reply-craft"
       ],
       "specialist": "social-strategist",
-      "surface_sha256": "bee7acee7e6bbaf2bae6f59a5cbc4c071de06f25a4e3471b0ae764860f0e5390",
+      "surface_sha256": "0a473726ee4b94d901cd241ea8f96b7bd58756ab9e07490c697d4256c133a372",
       "tools": []
     },
     {
@@ -7912,6 +7284,52 @@
       "tools": []
     },
     {
+      "adapter": "model-lanes/gemini/.gemini/agents/summarizer.md",
+      "coverage": "full",
+      "known_unavailable": {
+        "mcps": [],
+        "skills": [],
+        "tools": [
+          {
+            "availability": "harness-only",
+            "evidence": "runtime-map:requires_approval",
+            "id": "WebFetch",
+            "requirement": "preferred"
+          }
+        ]
+      },
+      "lane": "gemini",
+      "limitations": [],
+      "mcps": [
+        "chrono-vault",
+        "sequential-thinking"
+      ],
+      "primary_plan": [
+        {
+          "capability_id": "chrono-vault",
+          "evidence": "capsource-generated-runtime-tool-summary",
+          "id": "chrono-vault",
+          "kind": "mcps",
+          "provider_lane": "gemini",
+          "requirement": "preferred",
+          "resolution": "local"
+        },
+        {
+          "capability_id": "sequential-thinking",
+          "evidence": "capsource-generated-runtime-tool-summary",
+          "id": "sequential-thinking",
+          "kind": "mcps",
+          "provider_lane": "gemini",
+          "requirement": "preferred",
+          "resolution": "local"
+        }
+      ],
+      "skills": [],
+      "specialist": "summarizer",
+      "surface_sha256": "ba15ed9801265037539aea43bc65b834e844ac17e4e6e10dbbb8fb61e0907b60",
+      "tools": []
+    },
+    {
       "adapter": "model-lanes/gpt-codex/.codex/agents/summarizer.toml",
       "coverage": "partial",
       "known_unavailable": {
@@ -7922,18 +7340,6 @@
             "availability": "mcp-operation",
             "evidence": "chrono-research-arsenal",
             "id": "arxiv_search",
-            "requirement": "preferred"
-          },
-          {
-            "availability": "mcp-operation",
-            "evidence": "chrono-research-arsenal",
-            "id": "perplexity_search",
-            "requirement": "preferred"
-          },
-          {
-            "availability": "mcp-operation",
-            "evidence": "chrono-research-arsenal",
-            "id": "xai_search",
             "requirement": "preferred"
           }
         ]
@@ -7951,52 +7357,6 @@
       "skills": [],
       "specialist": "summarizer",
       "surface_sha256": "245c11cac8e5f1a061b0f30f049653214689ad7877769fafdc3eaa4e06e247eb",
-      "tools": []
-    },
-    {
-      "adapter": "model-lanes/kimi/.kimi/agents/summarizer.yaml",
-      "coverage": "full",
-      "known_unavailable": {
-        "mcps": [],
-        "skills": [],
-        "tools": [
-          {
-            "availability": "harness-only",
-            "evidence": "runtime-map:requires_approval",
-            "id": "WebFetch",
-            "requirement": "preferred"
-          }
-        ]
-      },
-      "lane": "kimi",
-      "limitations": [],
-      "mcps": [
-        "lead:chrono-vault",
-        "lead:sequential-thinking"
-      ],
-      "primary_plan": [
-        {
-          "capability_id": "lead:chrono-vault",
-          "evidence": "capsource-generated-runtime-tool-summary",
-          "id": "chrono-vault",
-          "kind": "mcps",
-          "provider_lane": "kimi",
-          "requirement": "preferred",
-          "resolution": "local"
-        },
-        {
-          "capability_id": "lead:sequential-thinking",
-          "evidence": "capsource-generated-runtime-tool-summary",
-          "id": "sequential-thinking",
-          "kind": "mcps",
-          "provider_lane": "kimi",
-          "requirement": "preferred",
-          "resolution": "local"
-        }
-      ],
-      "skills": [],
-      "specialist": "summarizer",
-      "surface_sha256": "bd8b4a778c1f1b70e047ae00c9e325f9bac448646ca0c35ed147743ff5a0b476",
       "tools": []
     },
     {
@@ -8032,21 +7392,9 @@
             "requirement": "preferred"
           },
           {
-            "availability": "mcp-operation",
-            "evidence": "chrono-research-arsenal",
-            "id": "perplexity_search",
-            "requirement": "preferred"
-          },
-          {
             "availability": "harness-only",
             "evidence": "runtime-map:requires_approval",
             "id": "WebFetch",
-            "requirement": "preferred"
-          },
-          {
-            "availability": "mcp-operation",
-            "evidence": "chrono-research-arsenal",
-            "id": "xai_search",
             "requirement": "preferred"
           }
         ]
@@ -8093,6 +7441,28 @@
       ],
       "specialist": "synthesizer",
       "surface_sha256": "7613c731bf11938354d7691c565682ff20c9591c95788cd89bbe17a9fde66456",
+      "tools": []
+    },
+    {
+      "adapter": "model-lanes/gemini/.gemini/agents/synthesizer.md",
+      "coverage": "partial",
+      "known_unavailable": {
+        "mcps": [],
+        "skills": [],
+        "tools": []
+      },
+      "lane": "gemini",
+      "limitations": [
+        "Low-safety, non-sensitive aggregation only under the per-task downshift gate; required synthesis and verification capabilities remain anchored to the primary execution plan."
+      ],
+      "mcps": [
+        "chrono-vault",
+        "sequential-thinking"
+      ],
+      "primary_plan": [],
+      "skills": [],
+      "specialist": "synthesizer",
+      "surface_sha256": "ba15ed9801265037539aea43bc65b834e844ac17e4e6e10dbbb8fb61e0907b60",
       "tools": []
     },
     {
@@ -8190,21 +7560,9 @@
             "requirement": "preferred"
           },
           {
-            "availability": "mcp-operation",
-            "evidence": "chrono-research-arsenal",
-            "id": "perplexity_search",
-            "requirement": "preferred"
-          },
-          {
             "availability": "harness-only",
             "evidence": "runtime-map:requires_approval",
             "id": "WebFetch",
-            "requirement": "preferred"
-          },
-          {
-            "availability": "mcp-operation",
-            "evidence": "chrono-research-arsenal",
-            "id": "xai_search",
             "requirement": "preferred"
           }
         ]
@@ -8382,7 +7740,7 @@
     },
     {
       "adapter": "model-lanes/claude/.claude/agents/technical-writer.md",
-      "coverage": "full",
+      "coverage": "partial",
       "known_unavailable": {
         "mcps": [],
         "skills": [
@@ -8421,6 +7779,63 @@
         ]
       },
       "lane": "claude",
+      "limitations": [
+        "best-effort non-primary route; required capabilities remain anchored to the primary execution plan"
+      ],
+      "mcps": [
+        "chrono-vault",
+        "sequential-thinking"
+      ],
+      "primary_plan": [],
+      "skills": [
+        "claim-verification",
+        "skill-description-trigger-authoring"
+      ],
+      "specialist": "technical-writer",
+      "surface_sha256": "72aa7e41ebbbf14be73c19a3d23647a7de68779a618531718640378e2dc55923",
+      "tools": []
+    },
+    {
+      "adapter": "model-lanes/gemini/.gemini/agents/technical-writer.md",
+      "coverage": "full",
+      "known_unavailable": {
+        "mcps": [],
+        "skills": [
+          {
+            "availability": "needs-operator-install",
+            "evidence": "operator-install-required",
+            "id": "binary-doc-to-markdown",
+            "requirement": "preferred"
+          },
+          {
+            "availability": "needs-operator-install",
+            "evidence": "operator-install-required",
+            "id": "chrono-adr-authoring",
+            "requirement": "preferred"
+          },
+          {
+            "availability": "needs-operator-install",
+            "evidence": "operator-install-required",
+            "id": "chrono-changelog-generator",
+            "requirement": "preferred"
+          },
+          {
+            "availability": "needs-operator-install",
+            "evidence": "operator-install-required",
+            "id": "chrono-handoff-authoring",
+            "requirement": "preferred"
+          }
+        ],
+        "tools": [
+          {
+            "availability": "harness-only",
+            "evidence": "runtime-map:requires_approval",
+            "id": "WebFetch",
+            "requirement": "preferred"
+          }
+        ]
+      },
+      "lane": "gemini",
       "limitations": [],
       "mcps": [
         "chrono-vault",
@@ -8432,7 +7847,7 @@
           "evidence": "capsource-generated-runtime-tool-summary",
           "id": "chrono-vault",
           "kind": "mcps",
-          "provider_lane": "claude",
+          "provider_lane": "gemini",
           "requirement": "preferred",
           "resolution": "local"
         },
@@ -8441,7 +7856,7 @@
           "evidence": "capsource-generated-runtime-tool-summary",
           "id": "sequential-thinking",
           "kind": "mcps",
-          "provider_lane": "claude",
+          "provider_lane": "gemini",
           "requirement": "preferred",
           "resolution": "local"
         }
@@ -8451,7 +7866,7 @@
         "skill-description-trigger-authoring"
       ],
       "specialist": "technical-writer",
-      "surface_sha256": "72aa7e41ebbbf14be73c19a3d23647a7de68779a618531718640378e2dc55923",
+      "surface_sha256": "f1184d3b5e857242478a80b47c37d3b868675bb46a045b6ac4826a31017af1ef",
       "tools": []
     },
     {
@@ -8545,21 +7960,9 @@
             "requirement": "preferred"
           },
           {
-            "availability": "mcp-operation",
-            "evidence": "chrono-research-arsenal",
-            "id": "perplexity_search",
-            "requirement": "preferred"
-          },
-          {
             "availability": "harness-only",
             "evidence": "runtime-map:requires_approval",
             "id": "WebFetch",
-            "requirement": "preferred"
-          },
-          {
-            "availability": "mcp-operation",
-            "evidence": "chrono-research-arsenal",
-            "id": "xai_search",
             "requirement": "preferred"
           }
         ]
@@ -8652,21 +8055,9 @@
             "requirement": "preferred"
           },
           {
-            "availability": "mcp-operation",
-            "evidence": "chrono-research-arsenal",
-            "id": "perplexity_search",
-            "requirement": "preferred"
-          },
-          {
             "availability": "harness-only",
             "evidence": "runtime-map:requires_approval",
             "id": "WebFetch",
-            "requirement": "preferred"
-          },
-          {
-            "availability": "mcp-operation",
-            "evidence": "chrono-research-arsenal",
-            "id": "xai_search",
             "requirement": "preferred"
           }
         ]
@@ -8755,12 +8146,6 @@
             "requirement": "preferred"
           },
           {
-            "availability": "mcp-operation",
-            "evidence": "chrono-research-arsenal",
-            "id": "perplexity_search",
-            "requirement": "preferred"
-          },
-          {
             "availability": "needs-operator-install",
             "evidence": "operator-install-required",
             "id": "prior_art_check",
@@ -8770,12 +8155,6 @@
             "availability": "harness-only",
             "evidence": "runtime-map:requires_approval",
             "id": "WebFetch",
-            "requirement": "preferred"
-          },
-          {
-            "availability": "mcp-operation",
-            "evidence": "chrono-research-arsenal",
-            "id": "xai_search",
             "requirement": "preferred"
           }
         ]
@@ -8957,21 +8336,9 @@
             "requirement": "preferred"
           },
           {
-            "availability": "mcp-operation",
-            "evidence": "chrono-research-arsenal",
-            "id": "perplexity_search",
-            "requirement": "preferred"
-          },
-          {
             "availability": "harness-only",
             "evidence": "runtime-map:requires_approval",
             "id": "WebFetch",
-            "requirement": "preferred"
-          },
-          {
-            "availability": "mcp-operation",
-            "evidence": "chrono-research-arsenal",
-            "id": "xai_search",
             "requirement": "preferred"
           }
         ]
@@ -9060,21 +8427,9 @@
             "requirement": "preferred"
           },
           {
-            "availability": "mcp-operation",
-            "evidence": "chrono-research-arsenal",
-            "id": "perplexity_search",
-            "requirement": "preferred"
-          },
-          {
             "availability": "harness-only",
             "evidence": "runtime-map:requires_approval",
             "id": "WebFetch",
-            "requirement": "preferred"
-          },
-          {
-            "availability": "mcp-operation",
-            "evidence": "chrono-research-arsenal",
-            "id": "xai_search",
             "requirement": "preferred"
           }
         ]
@@ -9652,9 +9007,9 @@
     }
   ],
   "generated": true,
-  "policy_sha256": "2cd22d8eb482ceb15a2f2b02fbef8b902c3c88ba1f644e7f98d0bc46ee71a3f9",
+  "policy_sha256": "0fdddf28317c3e14f9b4ae9dae5555050efcfd03f7dcacc070af3c6ad898ecf7",
   "schema": "specialist-adapter-capability-index/v2",
   "source": "model-lanes/specialist-lane-capabilities.v1.json",
-  "source_sha256": "c16dad3b4285660ca0e18b0b7ac0a60fca55c745f1656f2f300e65918b773f20",
-  "surface_count": 111
+  "source_sha256": "efea0007013e967a9c4ceadcc3c7573485671b1ad465f6602c386ead95a96b1f",
+  "surface_count": 113
 }

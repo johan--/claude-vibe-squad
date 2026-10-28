@@ -16,11 +16,11 @@ gates: []
 
 ## Availability in a fresh clone
 
-A zero-key checkout gets this protocol and its validation metadata as documentation; automated dispatch is `needs_tool`. To make it runnable, install and authenticate the selected model CLI, configure every MCP declared by the dispatched specialists, bind the private vault (`CHRONO_VAULT_ROOT`; Kimi also requires its exact vault context), install any required host-local binaries, and provide approved credentials plus a bounded budget for any metered provider named below. After setup, re-run the production role planner and validators on that host; availability remains subject to the narrower gaps and operator gates documented in this card.
+A zero-key checkout gets this protocol and its validation metadata as documentation; automated dispatch is `needs_tool`. To make it runnable, install and authenticate the selected model CLI, configure every MCP declared by the dispatched specialists, bind the private vault (`CHRONO_VAULT_ROOT`), install any required host-local binaries, and provide approved credentials plus a bounded budget for any metered provider named below. After setup, re-run the production role planner and validators on that host; availability remains subject to the narrower gaps and operator gates documented in this card.
 
 **When to use:** extract and wrangle structured data from machine-readable sources — CSV/JSON/HTML/tabular/
-plain-text data — into a clean, schema-shaped output. Web-sourced extraction uses `firecrawl`
-(Claude-lane); local files are parsed via the lane shell. ALL PDF inputs (text-layer + scanned/image) +
+plain-text data — into a clean, schema-shaped output. Web-sourced extraction uses `Apify`
+(Codex-lane); local files are parsed via the lane shell. ALL PDF inputs (text-layer + scanned/image) +
 format-specific docs are `needs_tool` (no PDF parser/OCR cataloged — see Profiles). PII fires the privacy
 overlay **and** the sensitive-topic durable-note operator approval.
 
@@ -29,20 +29,19 @@ overlay **and** the sensitive-topic durable-note operator approval.
 | **S0** Intake/Admit | `Chrono`, `triage` | `chrono-vault` | — | memory overlay (recall) |
 | **S1** Frame (data contract + schema) | `product-manager`, `data-extraction-engineer` | — | `scope-decomposition` | privacy overlay if PII |
 | **S2** Design (extraction plan) | `data-extraction-engineer` | — | — | — |
-| **S3** Produce (parse machine-readable + clean + shape) | `data-extraction-engineer` | `firecrawl`, `Apify`, `Brave Search`, `Serper` | `structured-data-authoring` | local-code branch (shell/script) for CSV/JSON/HTML/tabular/plain-text; ALL PDF + OCR = `needs_tool`; `Apify` scraping requires a target-authorization + spend gate |
+| **S3** Produce (parse machine-readable + clean + shape) | `data-extraction-engineer` | `Apify`, `Brave Search`, `Serper` | `structured-data-authoring` | local-code branch (shell/script) for CSV/JSON/HTML/tabular/plain-text; ALL PDF + OCR = `needs_tool`; `Apify` scraping requires a target-authorization + spend gate |
 | **S4** Verify (schema + integrity check) | `data-extraction-engineer`, `skeptic` | — | `structured-data-authoring` | privacy overlay if PII |
 | **S5** Review/Gate | `code-reviewer`, `cross-family-reviewer` | — | — | review overlay (if the dataset feeds a downstream decision) |
 | **S6** Ship/Deliver (dataset) | `data-extraction-engineer` | `chrono-obsidian` | `structured-data-authoring` | — |
 | **S7** Capture | `Chrono`, `memory-curator` | `chrono-vault` | — | memory overlay (record); sensitive-topic durable-note operator approval if PII-bearing |
 
 **Notes.** The live core is local parsing/cleaning/schema-shaping of machine-readable formats via the lane
-shell (no catalog-absent tool) + `firecrawl` (Claude-lane, `metered`) for web sources; a hit rate/budget limit
+shell (no catalog-absent tool) + `Apify` (Codex-lane, `metered`) for web sources; a hit rate/budget limit
 is a typed `needs_tool`/degraded result.
 
 **Needs-tool profile (NOT part of the live claim):** ALL PDF inputs (text-layer AND scanned/image) and
 format-specific documents are `needs_tool` — PDF extraction is format-specific and needs a real parser/OCR
-runtime, and none is registry-verified (Bash+stdlib includes no PDF parser). Do not name a specific PDF
-parser or OCR tool until one is cataloged for the lane.
+runtime. `pdfplumber` and `pymupdf` are cataloged for the Codex lane (import-only via the repo `.venv`), but their install is unreconciled in the measured runtime, so text-layer PDF stays `needs_tool` here until a parse is reproduced; OCR (scanned/image PDF, e.g. tesseract) is a separate uncataloged gap.
 
 PII-bearing captures fire the privacy overlay (`privacy-steward`) **and** require the research sensitive-topic
 durable-note operator approval before a durable dataset note is recorded (the privacy overlay alone does not

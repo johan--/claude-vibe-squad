@@ -109,7 +109,7 @@ class AgyLaneRepointTests(unittest.TestCase):
             encoding="utf-8"
         )
         launcher = source.split("    def gemini_ordered_launcher(", 1)[1].split(
-            "\n    def kimi_role_launcher(", 1
+            "\n    def grok_role_launcher(", 1
         )[0]
         for retired in (
             "--allowed-mcp-server-names",
@@ -144,7 +144,7 @@ class AgyLaneRepointTests(unittest.TestCase):
             encoding="utf-8"
         )
         launcher = source.split("    def gemini_ordered_launcher(", 1)[1].split(
-            "\n    def kimi_role_launcher(", 1
+            "\n    def grok_role_launcher(", 1
         )[0]
         self.assertIn('"--print-timeout"', launcher)
         # Derived from the board's own wall, never a second hardcoded number.
@@ -249,7 +249,7 @@ class AgyLaneRepointTests(unittest.TestCase):
     def test_agy_mode_docs_do_not_invent_a_board_flag(self) -> None:
         board = (ROOT / "bin" / "board-supervisor.sh").read_text(encoding="utf-8")
         launcher = board.split("    def gemini_ordered_launcher(", 1)[1].split(
-            "\n    def kimi_role_launcher(", 1
+            "\n    def grok_role_launcher(", 1
         )[0]
         self.assertNotIn('"--mode"', launcher)
         for relative in (

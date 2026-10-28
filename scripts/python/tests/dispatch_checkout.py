@@ -170,12 +170,12 @@ def normal_checkout_root(root: Path) -> Path:
     )
     subprocess.run(["tar", "-xf", str(archive), "-C", str(repo)], check=True, timeout=10)
     for cmd in (
-        ["git", "init", "-q", "."],
-        ["git", "add", "-A"],
-        ["git", "-c", "user.email=tests@vibesquad.local", "-c", "user.name=tests",
+        ["git", "-c", "core.looseCompression=0", "init", "-q", "."],
+        ["git", "-c", "core.looseCompression=0", "add", "-A"],
+        ["git", "-c", "core.looseCompression=0", "-c", "user.email=tests@vibesquad.local", "-c", "user.name=tests",
          "commit", "-q", "-m", "test checkout"],
     ):
-        subprocess.run(cmd, cwd=str(repo), check=False, capture_output=True, timeout=10)
+        subprocess.run(cmd, cwd=str(repo), check=False, capture_output=True, timeout=60)
     _warn_ignored_changes(root)
     _CACHE[root] = repo
     return repo

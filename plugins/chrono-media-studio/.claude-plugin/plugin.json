@@ -1,7 +1,7 @@
 {
   "name": "chrono-media-studio",
   "version": "0.1.0",
-  "description": "Chrono content generation: images (gpt-image-2, Gemini via the agy CLI, Grok Imagine), videos (Sora 2, Grok Imagine), audio (ElevenLabs). Gemini video/music retired: Gemini runs through agy, which has no video or audio tool. Owner roles: content media specialists (image-designer, video-director, music-composer, sound-designer, voice-narrator, voice-agent-builder).",
+  "description": "Chrono content generation: images (OpenAI via the Codex CLI's built-in image tool - subscription-backed CLI route; API-key route is opt-in via openai_route=\"api\" - plus Gemini via the agy CLI and Grok Imagine), videos (Sora 2, Grok Imagine - still metered API routes), audio (ElevenLabs). Gemini video/music retired: Gemini runs through agy, which has no video or audio tool. Owner roles: content media specialists (image-designer, video-director, music-composer, sound-designer, voice-narrator, voice-agent-builder).",
   "license": "AGPL-3.0-or-later",
   "mcpServers": {
     "chrono-media-studio": {

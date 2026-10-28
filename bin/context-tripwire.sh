@@ -10,12 +10,17 @@
 # Contract: always exit 0; print either one valid hook JSON object or nothing. A missing
 # or unreadable transcript, malformed stdin, or any internal error prints nothing.
 #
-#   CHRONO_CONTEXT_WARN  default 400000  finish the current step, then handoff + /clear
-#   CHRONO_CONTEXT_HARD  default 600000  handoff + /clear this turn, before anything else
+#   CHRONO_CONTEXT_WARN  default 600000  finish the current step, then handoff + /clear
+#   CHRONO_CONTEXT_HARD  default 750000  handoff + /clear this turn, before anything else
 #
-# Registered in chrono/.claude/settings.json as "${CLAUDE_PROJECT_DIR:-.}/../bin/...": hooks
-# run with cwd = the launch directory (chrono/), so the "." fallback resolves the same path
-# and an unset CLAUDE_PROJECT_DIR does not surface as a "No such file" hook error.
+# Retired from automatic registration on 2026-09-21; retained for explicit/manual use.
+# See shared/lifecycle.md § 8.
+#
+# Historical, and still the live path resolution whenever this script is invoked that
+# way: it was registered in chrono/.claude/settings.json as
+# "${CLAUDE_PROJECT_DIR:-.}/../bin/...". Hooks run with cwd = the launch directory
+# (chrono/), so the "." fallback resolves the same path and an unset
+# CLAUDE_PROJECT_DIR does not surface as a "No such file" hook error.
 
 set -uo pipefail
 
@@ -92,8 +97,8 @@ def main():
     if context is None:
         return
 
-    warn = threshold("CHRONO_CONTEXT_WARN", 400000)
-    hard = threshold("CHRONO_CONTEXT_HARD", 600000)
+    warn = threshold("CHRONO_CONTEXT_WARN", 600000)
+    hard = threshold("CHRONO_CONTEXT_HARD", 750000)
     # min() so a WARN misconfigured above HARD cannot silence a context already past HARD.
     if context < min(warn, hard):
         return

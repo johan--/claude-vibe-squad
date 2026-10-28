@@ -407,9 +407,9 @@ def seed_instruction_surfaces(root: Path, *, specialists: int = 4) -> None:
     registry.write_text(f"specialist\tto_model\n{rows}\n", encoding="utf-8")
 
 
-def seed_five_lane_authorities(root: Path) -> None:
-    """Write the five-lane routing facts independently of doctor's parser."""
-    lanes = ("claude", "codex", "gemini", "grok", "kimi")
+def seed_four_lane_authorities(root: Path) -> None:
+    """Write the four-lane routing facts independently of doctor's parser."""
+    lanes = ("claude", "codex", "gemini", "grok")
     registry = root / "shared" / "specialist-runtime-map.tsv"
     registry.write_text(
         "specialist\tprimary_lane\n"
@@ -479,9 +479,9 @@ class InstructionDriftSeverityTest(DoctorCalibrationRunner):
 
         def setup(root, _local_bin, _environment):
             seed_instruction_surfaces(root, specialists=5)
-            seed_five_lane_authorities(root)
+            seed_four_lane_authorities(root)
             (root / "bin" / "fixture-banner.sh").write_text(
-                "#!/bin/bash\necho '4 lanes standing by'\n", encoding="utf-8"
+                "#!/bin/bash\necho '3 lanes standing by'\n", encoding="utf-8"
             )
 
         result, summary, report = self.run_doctor(setup=setup)
@@ -497,10 +497,10 @@ class InstructionDriftSeverityTest(DoctorCalibrationRunner):
 
         def setup(root, _local_bin, _environment):
             seed_instruction_surfaces(root, specialists=5)
-            seed_five_lane_authorities(root)
+            seed_four_lane_authorities(root)
             (root / "bin" / "fixture-sidebar.sh").write_text(
                 "#!/bin/bash\n"
-                "echo 'Dashboard: gpt-codex, claude, gemini, kimi.'\n",
+                "echo 'Dashboard: gpt-codex, claude, gemini.'\n",
                 encoding="utf-8",
             )
 
@@ -517,7 +517,7 @@ class InstructionDriftSeverityTest(DoctorCalibrationRunner):
 
         def setup(root, _local_bin, _environment):
             seed_instruction_surfaces(root, specialists=5)
-            seed_five_lane_authorities(root)
+            seed_four_lane_authorities(root)
             (root / "bin" / "fixture-banner.sh").write_text(
                 "#!/bin/bash\n"
                 "echo \"${LANE_COUNT} lanes standing by\"\n"

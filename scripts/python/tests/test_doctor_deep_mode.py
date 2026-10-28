@@ -72,7 +72,7 @@ class DoctorDeepModeTest(unittest.TestCase):
             doctor_fixture.write_stub(local_bin, "ps", _EMPTY_PS)
             # Doctor now gates on the launcher's required-command list, so the
             # fixture supplies it rather than inheriting the maintainer host's
-            # answer to "is kimi installed".
+            # answer to "is grok installed".
             doctor_fixture.stub_launch_dependencies(local_bin, ROOT)
 
             environment = {

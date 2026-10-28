@@ -241,7 +241,7 @@ class ModeRuleHasOneHomeTests(unittest.TestCase):
         """
 
         text = SEND_TASK.read_text(encoding="utf-8")
-        self.assertIn("resolve_packet_mode() in", text)
+        self.assertIn("Mirror resolve_packet_mode in", text)
         match = re.search(
             r'task_frontmatter_has_field "mode" && MODE_PRESENT=true\n'
             r"if ! \$MODE_PRESENT; then\n"

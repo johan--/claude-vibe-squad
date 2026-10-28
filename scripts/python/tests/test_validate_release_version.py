@@ -37,6 +37,10 @@ class ReleaseVersionTests(unittest.TestCase):
         self._seed(self.root)
         # Read the concrete fixture's heading independently of the implementation;
         # controls continue to work after a release without another version copy.
+        self.release_heading = next(
+            line for line in (self.root / "CHANGELOG.md").read_text().splitlines()
+            if line.casefold().startswith("## v")
+        )
         self.version = next(
             line.split()[1].casefold()
             for line in (self.root / "CHANGELOG.md").read_text().splitlines()
@@ -147,7 +151,7 @@ class ReleaseVersionTests(unittest.TestCase):
         for _, path, claim in self.claims:
             swapped = claim.replace(self.version.upper(), self.version) if path == "CLAUDE.md" else claim.replace(self.version, self.version.upper())
             self._replace(path, claim, swapped)
-        self._replace("CHANGELOG.md", f"## {self.version}\n", f"## {self.version.upper()}\n")
+        self._replace("CHANGELOG.md", self.release_heading, self.release_heading.replace(self.version, self.version.upper()))
         self._assert_pass(self._validate())
 
     def test_missing_claim_fails_at_each_site(self) -> None:
@@ -268,7 +272,7 @@ class ReleaseVersionTests(unittest.TestCase):
         self._assert_failure(self._validate(staged=True), "CHANGELOG.md source of truth")
 
     def test_malformed_top_release_does_not_fall_back_to_history(self) -> None:
-        self._replace("CHANGELOG.md", f"## {self.version}\n", "## release-version-missing\n")
+        self._replace("CHANGELOG.md", self.release_heading, "## release-version-missing")
         self._assert_failure(self._validate(), "CHANGELOG.md source of truth")
 
     def test_no_released_header_fails(self) -> None:
@@ -304,7 +308,7 @@ class ReleaseVersionTests(unittest.TestCase):
     def test_staged_changelog_is_source_of_truth(self) -> None:
         self._init_index()
         original = (self.root / "CHANGELOG.md").read_text(encoding="utf-8")
-        self._replace("CHANGELOG.md", f"## {self.version}\n", f"## {self.drift}\n")
+        self._replace("CHANGELOG.md", self.release_heading, self.release_heading.replace(self.version, self.drift))
         self._git("add", "--", "CHANGELOG.md")
         (self.root / "CHANGELOG.md").write_text(original, encoding="utf-8")
         result = self._validate(staged=True)

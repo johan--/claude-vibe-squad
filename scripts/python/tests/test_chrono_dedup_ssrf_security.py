@@ -85,7 +85,7 @@ class PublicPluginCapabilityTests(unittest.TestCase):
             policy["deny"].append("plugins/control-withheld/**")
             policy_path.write_text(json.dumps(policy))
             direct = root / "model-lanes/gpt-codex/.codex/agents/control.toml"
-            brokered = root / "model-lanes/kimi/.kimi/agents/control.yaml"
+            brokered = root / "model-lanes/grok/.grok/agents/control.yaml"
             direct.write_text('mcps = ["control-withheld"]\n')
             brokered.write_text('mcps: ["lead:control-withheld"]\n')
             issues = self.check.audit(root)
@@ -105,7 +105,7 @@ class PublicPluginCapabilityTests(unittest.TestCase):
             policy_path.write_text(json.dumps(policy))
             issues = self.check.audit(root, self.check.load_policy(policy_path))
             self.assertEqual({i["identifier"] for i in issues},
-                             {"chrono-vault", "lead:chrono-vault"})
+                             {"chrono-vault"})
             paths = {i["path"] for i in issues}
             self.assertTrue({"model-lanes/specialist-lane-capabilities.v1.json",
                              "model-lanes/generated-specialist-capabilities.json",

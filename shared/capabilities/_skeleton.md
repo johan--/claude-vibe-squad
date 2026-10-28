@@ -6,7 +6,7 @@ per-capability files (`shared/capabilities/<mode>/<capability>.md`) fill it in. 
 executable — the `capability_state` deriving validator (`bin/validate-capabilities.sh`) is a later
 Phase-2 step.
 
-Derived by abstracting the two most-developed existing flows: `bounty` (12-phase, `shared/modes/bounty.md`)
+Derived by abstracting the two most-developed existing flows: `bounty` (8-phase, `shared/modes/bounty.md`)
 and `project` (8-phase, `shared/modes/project.md`).
 
 ---
@@ -90,10 +90,10 @@ every `specialists` entry must exist in `shared/specialist-runtime-map.tsv`.
 
 Every tool in a step carries a cost class so a protocol's metered exposure is visible up front:
 
-- **`subscription`** (flat-rate, **default**) — the 4 CLI lanes (Claude, Codex, Gemini, Kimi). Launch rails
+- **`subscription`** (flat-rate, **default**) — the 3 subscription CLI lanes (Claude, Codex, Gemini). Launch rails
   unset paid API-key env vars so subscription auth is preferred. Use for volume.
 - **`metered`** (pay-per-token, **opt-in, guarded**) — the configured direct-API providers (xAI/Grok,
-  DeepSeek, OpenAI API, Gemini/Google API, Perplexity, ElevenLabs, Higgsfield). Rules: prefer the
+  DeepSeek, OpenAI API, Gemini/Google API, ElevenLabs, Higgsfield). Rules: prefer the
   equivalent subscription-lane tool where one exists; choose a metered provider only where its capability
   is **unique or materially better**; every metered step carries a cost/rate-limit note + a budget guard;
   **hitting a rate/budget limit is a typed `needs_tool`/degraded result, never a silent stall.**

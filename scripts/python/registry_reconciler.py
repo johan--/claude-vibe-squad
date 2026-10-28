@@ -17,6 +17,7 @@ import subprocess
 import sys
 import time
 import uuid
+from collections import Counter
 from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 from functools import lru_cache
@@ -50,6 +51,7 @@ LONG_RUNNING_STALE_AGE = timedelta(hours=12)
 SQUAD_SESSION = os.environ.get("SQUAD_SESSION", "squad")
 TMUX_BIN = os.environ.get("TMUX_BIN", "tmux")
 CHRONO_TMUX_TARGET = os.environ.get("CHRONO_TMUX_TARGET", f"{SQUAD_SESSION}:chrono")
+CHRONO_NOTICE_PREFIX = "[vibesquad]"
 CHRONO_PANE_HELPER = Path(__file__).resolve().parents[2] / "shared" / "chrono-pane.sh"
 RESPONSE_MIN_AGE = timedelta(seconds=float(os.environ.get("RESPONSE_MIN_AGE_SECONDS", "5")))
 NO_ENVELOPE_GRACE = timedelta(
@@ -83,6 +85,17 @@ NEVER_LAUNCHED_GRACE = timedelta(
 )
 SETTLED_WITHOUT_ENVELOPE = "work-done-no-envelope"
 REVIEW_REQUIRED = "review-required"
+# settle_review() is the only writer of a settlement marker; this is its whole
+# vocabulary. An AST test pins the two in both directions, so a fourth class
+# added at the settle_review() end fails rather than silently missing the guard,
+# and a value added here that settle_review() never writes fails too. The
+# reopen path also writes a "chrono-" value ("chrono-reopened") and that is the
+# opposite of a settlement, so a prefix test cannot stand in for membership.
+CONTROLLER_SETTLEMENT_MARKERS = frozenset({
+    "chrono-explicit",
+    "chrono-explicit-independent",
+    "chrono-factual-attestation",
+})
 # The supervisor is the source of this receipt marker. The focused recovery
 # test pins this mirror to bin/board-supervisor.sh because shell/Python receipt
 # producers cannot share an import without reversing the controller dependency.
@@ -121,7 +134,6 @@ LANE_AUTHOR_FAMILY = {
     "claude": "anthropic",
     "gemini": "google",
     "grok": "xai",
-    "kimi": "moonshot",
 }
 
 TEST_ISOLATION_ENV = "SQUAD_TEST_ISOLATION"
@@ -329,17 +341,36 @@ def read_text(path: Path, default: str = "") -> str:
         return default
 
 
-def append_chrono_queue(status: str, task_ref: str, summary: str) -> None:
+def append_chrono_queue(
+    status: str, task_ref: str, summary: str, generation: int | None = None
+) -> None:
+    # Only notification delivery opts into identity-based deduplication.
+    # Recurring audit writers must preserve every heartbeat/repair/settlement.
+    marker = ""
+    if generation is not None:
+        task_id = task_ref.rsplit("/", 1)[-1]
+        identity = json.dumps(
+            [task_id, generation, _notification_state_token(status)], separators=(",", ":")
+        )
+        marker = f" <!-- queue-event:{hashlib.sha256(identity.encode()).hexdigest()} -->"
     safe_summary = re.sub(r"\s+", " ", summary or "").strip().replace("|", "/")
     if not safe_summary:
         safe_summary = "(no pane snippet)"
-    safe_summary = safe_summary[:200]
-    line = f"{datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')} | {status} | {task_ref} | {safe_summary}\n"
+    # Keep the complete recovery detail here; only pane text is abbreviated.
+    # Preserve the four-column contract used by bin/outbox-watcher.sh's
+    # task_already_handled: the optional Python notification marker belongs
+    # to the summary column. Bash rows have no marker and are not deduped here.
+    line = f"{datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')} | {status} | {task_ref} | {safe_summary}{marker}\n"
     with lockdir(CHRONO_QUEUE_PATH.with_suffix(CHRONO_QUEUE_PATH.suffix + ".lockdir")):
         existing = read_text(
             CHRONO_QUEUE_PATH,
             "# Chrono Queue\n# timestamp | status | namespace/task-id | summary\n\n",
         )
+        # The identity and row commit together under the same queue lock. A
+        # crash before registry acknowledgement can safely replay this append
+        # until chrono-queue-backfill.sh archives the row out of this queue.
+        if marker and any(row.endswith(marker) for row in existing.splitlines()):
+            return
         atomic_write(CHRONO_QUEUE_PATH, existing + line)
 
 
@@ -353,27 +384,61 @@ def notification_receipt_path(event_key: str) -> Path:
     return CHRONO_NOTIFY_RECEIPTS_DIR / f"{digest}.sent"
 
 
-def chrono_pane_has_coordinator() -> bool:
-    """Use the same version-independent presence probe as sibling notifiers."""
+def chrono_pane_resolve_coordinator_id() -> str:
+    """Return the validated recipient, never reduce it to a window Boolean."""
 
     if CHRONO_PANE_HELPER.is_symlink() or not CHRONO_PANE_HELPER.is_file():
-        return False
+        return ""
     completed = subprocess.run(
         [
             "/bin/bash",
             "-c",
-            'source "$1"; chrono_pane_has_coordinator "$2"',
+            'source "$1"; chrono_pane_resolve_coordinator_id "$2"',
             "chrono-pane-presence",
             str(CHRONO_PANE_HELPER),
             CHRONO_TMUX_TARGET,
         ],
         capture_output=True,
+        text=True,
         timeout=5,
+        env={**os.environ, "VAULT_ROOT": str(VAULT_ROOT), "TMUX_BIN": TMUX_BIN},
     )
-    return completed.returncode == 0
+    pane_id = (completed.stdout or "").strip()
+    return pane_id if completed.returncode == 0 and re.fullmatch(r"%[0-9]+", pane_id) else ""
 
 
-def nudge_chrono(message: str, event_key: str | None = None) -> bool:
+def _prune_completed_digest_markers() -> None:
+    """Under the notify lock, retire malformed maps and fully receipted groups."""
+    try:
+        groups: dict[str, list[Path]] = {}
+        retired: list[Path] = []
+        for marker in CHRONO_NOTIFY_RECEIPTS_DIR.glob("*.digest"):
+            if marker.is_symlink():
+                continue
+            try:
+                digest = marker.read_text(encoding="utf-8").strip()
+            except UnicodeError:
+                digest = ""
+            if re.fullmatch(r"digest:[0-9a-f]{64}", digest):
+                groups.setdefault(digest, []).append(marker)
+            else:
+                retired.append(marker)
+        for markers in groups.values():
+            # Invalid names cannot identify members, but keep them alongside a
+            # live group until every valid member has its delivery receipt.
+            members = [marker for marker in markers if re.fullmatch(r"[0-9a-f]{64}", marker.stem)]
+            if all(marker.with_suffix(".sent").is_file() for marker in members):
+                retired.extend(markers)
+        for marker in retired:
+            marker.unlink(missing_ok=True)
+    except (OSError, UnicodeError):
+        # Cleanup is best effort; it must never invalidate a delivered receipt.
+        pass
+
+
+def nudge_chrono(
+    message: str, event_key: str | None = None, *, digest_events: tuple[tuple, ...] = ()
+) -> bool:
     """Send one serialized, receipt-backed nudge to the ``chrono`` window.
 
     The shared lock spans both tmux calls, so one notification's text cannot
@@ -394,8 +459,46 @@ def nudge_chrono(message: str, event_key: str | None = None) -> bool:
         )
     try:
         with lockdir(CHRONO_NOTIFY_LOCKDIR):
+            member_event_keys = tuple(
+                notification_event_key(event[1], event[0]) for event in digest_events
+            )
+            # Recover committed members BEFORE choosing what to send, with the
+            # send lock held. Concurrent overlapping sweeps must not overwrite
+            # membership or send a member another digest already delivered.
+            for key in member_event_keys or (event_key,):
+                member_receipt = notification_receipt_path(key)
+                prior_digest = read_text(member_receipt.with_suffix(".digest")).strip()
+                if not member_receipt.is_file() and prior_digest and notification_receipt_path(prior_digest).is_file():
+                    prior_payload = json.loads(read_text(notification_receipt_path(prior_digest)))
+                    atomic_write(member_receipt, json.dumps({
+                        **prior_payload, "event_key": key, "digest_event_key": prior_digest,
+                    }, sort_keys=True) + "\n")
+            _prune_completed_digest_markers()
+            if digest_events:
+                unsent = [event for event, key in zip(digest_events, member_event_keys)
+                          if not notification_receipt_path(key).is_file()]
+                if not unsent:
+                    return True
+                member_event_keys = tuple(sorted(
+                    notification_event_key(event[1], event[0]) for event in unsent
+                ))
+                event_key = "digest:" + hashlib.sha256(json.dumps(member_event_keys).encode()).hexdigest()
+                message = notification_digest(unsent)
+                # Persist membership before sending so an interrupted receipt
+                # fanout is recoverable even when the next pending set differs.
+                for key in member_event_keys:
+                    atomic_write(notification_receipt_path(key).with_suffix(".digest"), event_key + "\n")
             receipt = notification_receipt_path(event_key)
             if receipt.is_file():
+                # A digest receipt is the commit point for all its members.
+                # Repair per-event receipts after a crash partway through fanout.
+                if member_event_keys:
+                    payload = json.loads(read_text(receipt))
+                    for member in member_event_keys:
+                        atomic_write(notification_receipt_path(member), json.dumps({
+                            **payload, "event_key": member, "digest_event_key": event_key,
+                        }, sort_keys=True) + "\n")
+                    _prune_completed_digest_markers()
                 return True
             session = subprocess.run(
                 [TMUX_BIN, "has-session", "-t", SQUAD_SESSION],
@@ -404,10 +507,13 @@ def nudge_chrono(message: str, event_key: str | None = None) -> bool:
             )
             if session.returncode != 0:
                 return False
-            if not chrono_pane_has_coordinator():
+            pane_id = chrono_pane_resolve_coordinator_id()
+            if not pane_id:
                 return False
+            if not message.startswith(f"{CHRONO_NOTICE_PREFIX} "):
+                message = f"{CHRONO_NOTICE_PREFIX} {message}"
             literal = subprocess.run(
-                [TMUX_BIN, "send-keys", "-l", "-t", CHRONO_TMUX_TARGET, message],
+                [TMUX_BIN, "send-keys", "-l", "-t", pane_id, message],
                 capture_output=True,
                 timeout=5,
             )
@@ -417,7 +523,7 @@ def nudge_chrono(message: str, event_key: str | None = None) -> bool:
             # settle delay and Enter, so no other notifier can interleave.
             time.sleep(0.3)
             submit = subprocess.run(
-                [TMUX_BIN, "send-keys", "-t", CHRONO_TMUX_TARGET, "Enter"],
+                [TMUX_BIN, "send-keys", "-t", pane_id, "Enter"],
                 capture_output=True,
                 timeout=5,
             )
@@ -427,19 +533,24 @@ def nudge_chrono(message: str, event_key: str | None = None) -> bool:
                 "event_key": event_key,
                 "message_sha256": hashlib.sha256(message.encode("utf-8")).hexdigest(),
                 "sent_at": datetime.now(timezone.utc).isoformat(),
-                "target": CHRONO_TMUX_TARGET,
+                "target": pane_id,
             }
             try:
                 atomic_write(
                     receipt,
                     json.dumps(receipt_payload, sort_keys=True, ensure_ascii=False) + "\n",
                 )
+                for member in member_event_keys:
+                    atomic_write(notification_receipt_path(member), json.dumps({
+                        **receipt_payload, "event_key": member, "digest_event_key": event_key,
+                    }, sort_keys=True) + "\n")
             except OSError:
                 # The durable queue entry already exists. Surface failure so
                 # the caller cannot claim receipt-backed delivery.
                 return False
+            _prune_completed_digest_markers()
             return True
-    except (FileNotFoundError, subprocess.TimeoutExpired):
+    except (OSError, ValueError, subprocess.TimeoutExpired):
         return False
 
 
@@ -504,12 +615,14 @@ def registered_in_canonical_registry(task_id: str) -> bool:
     return readable == 0
 
 
-def emit_event(status: str, task_ref: str, summary: str, nudge: str) -> bool:
+def emit_event(
+    status: str, task_ref: str, summary: str, nudge: str, generation: int = 1
+) -> bool:
     # Durable-first: if queueing fails, do not type an unrecoverable nudge.
-    # The queue append is VAULT_ROOT-scoped and unconditional -- it is the
+    # The queue append is VAULT_ROOT-scoped and idempotent -- it is the
     # recovery record, and withholding it would degrade replay. Only the
     # host-global page is gated (see registered_in_canonical_registry).
-    append_chrono_queue(status, task_ref, summary)
+    append_chrono_queue(status, task_ref, notification_queue_detail(task_ref, summary, nudge), generation)
     return deliver_event(status, task_ref, nudge)
 
 
@@ -518,7 +631,180 @@ def deliver_event(status: str, task_ref: str, nudge: str) -> bool:
 
     if not registered_in_canonical_registry(task_ref.rsplit("/", 1)[-1]):
         return False
-    return nudge_chrono(nudge, notification_event_key(task_ref, status))
+    return nudge_chrono(compact_notice(status, task_ref, nudge), notification_event_key(task_ref, status))
+
+
+def notification_queue_detail(task_ref: str, summary: str, nudge: str) -> str:
+    """Retain both the evidence summary and delivery instructions in the queue."""
+    return summary if not nudge or nudge == summary else f"{summary} / {nudge}"
+
+
+def compact_notice(status: str, task_ref: str, detail: str) -> str:
+    """The pane is a signal and pointer; the queue carries unabridged detail."""
+    task_id = task_ref.rsplit("/", 1)[-1]
+    state = _notification_state_token(status)
+    message = f"{CHRONO_NOTICE_PREFIX} {state}: {task_id}; details: _state/chrono-queue.md."
+    if "coordination requested" in detail.casefold() or state == "coordination-requested":
+        message += " Coordination requested; see queue."
+    return message
+
+
+def notification_digest(events: list[tuple]) -> str:
+    counts = Counter(_notification_state_token(event[0]) for event in events)
+    statuses = ", ".join(f"{status}={count}" for status, count in sorted(counts.items()))
+    action: dict[str, set[str]] = {}
+    coordination = 0
+    for status, task_ref, _summary, nudge, *_rest in events:
+        state = _notification_state_token(status)
+        task_id = task_ref.rsplit("/", 1)[-1]
+        if state in {"review-required", "needs-review", "needs-human", "blocked"}:
+            action.setdefault(state, set()).add(task_id)
+        if "coordination requested" in nudge.casefold() or state == "coordination-requested":
+            action.setdefault("coordination-requested", set()).add(task_id)
+            coordination += 1
+    names = "; ".join(f"{state}: {', '.join(sorted(tasks))}" for state, tasks in sorted(action.items()))
+    message = f"{CHRONO_NOTICE_PREFIX} BOARD DIGEST: {statuses}"
+    if names:
+        message += f"; action: {names}"
+    message += "; details: _state/chrono-queue.md."
+    if coordination:
+        message += f" Coordination requested in {coordination} notice(s); see queue."
+    return message
+
+
+def publish_durable_notices(registry, deliveries, coordination_records, now, task_id_filter=None):
+    """Keep enqueue retries independent of legacy transport acknowledgment.
+
+    Called under the registry lock. A successful enqueue precedes clearing its
+    intent; a crash in that gap safely replays the stable notice ID. Store failure
+    retains the full payload without blocking the P1 legacy transport.
+    """
+    from chrono_state.notifications import NotificationStore
+
+    before = {
+        task_id: json.dumps(entry.get("notice_pending_events"), sort_keys=True)
+        for task_id, entry in registry.items() if isinstance(entry, dict)
+    }
+    errors = []
+    for status, task_ref, summary, nudge, pending_key, _queued in deliveries:
+        task_id = task_ref.rsplit("/", 1)[-1]
+        entry = registry.get(task_id)
+        if not isinstance(entry, dict):
+            continue
+        record = _pending_notification_events(entry).get(pending_key, {})
+        generation = int(record.get("delivery_generation") or entry.get("delivery_generation") or 1)
+        key = f"{task_id}|{status}|{generation}"
+        intent = {"generation": generation, "kind": status,
+                  "summary": notification_queue_detail(task_ref, summary, nudge),
+                  "occurred_at": record.get("created_at") or now.isoformat()}
+        pending = entry.setdefault("notice_pending_events", {})
+        if pending.get(key) != intent:
+            pending[key] = intent
+        # Receipt-only completions coalesce their transport page, but the store
+        # retains the coordination obligation under its own event kind.
+        if (entry.get("coordination_requested")
+                and entry.get("coordination_notification_delivery_generation") == generation):
+            coordination_key = f"{task_id}|{COORDINATION_REQUESTED}|{generation}"
+            if coordination_key not in pending:
+                pending[coordination_key] = {
+                    "generation": generation, "kind": COORDINATION_REQUESTED,
+                    "summary": str(entry.get("coordination_request_summary") or "Coordination requested"),
+                    "occurred_at": intent["occurred_at"],
+                }
+    for status, task_ref, summary in coordination_records:
+        task_id = task_ref.rsplit("/", 1)[-1]
+        entry = registry[task_id]
+        generation = int(entry.get("delivery_generation") or 1)
+        key = f"{task_id}|{status}|{generation}"
+        pending = entry.setdefault("notice_pending_events", {})
+        if key not in pending:
+            pending[key] = {"generation": generation, "kind": status,
+                            "summary": summary, "occurred_at": now.isoformat()}
+    store = NotificationStore(VAULT_ROOT)
+    try:
+        store.initialize()
+        for task_id, entry in registry.items():
+            if task_id_filter and task_id != task_id_filter:
+                continue
+            if not isinstance(entry, dict):
+                continue
+            pending = entry.get("notice_pending_events", {})
+            if not isinstance(pending, dict):
+                errors.append(f"durable-notice enqueue deferred for {task_id}: invalid pending intents")
+                continue
+            for key, intent in list(pending.items()):
+                try:
+                    store.enqueue_task(task_id, intent["generation"], intent["kind"],
+                                       intent["summary"], occurred_at=intent["occurred_at"])
+                except Exception as exc:
+                    errors.append(f"durable-notice enqueue deferred for {task_id}/{key}: {exc}")
+                    continue
+                del pending[key]
+            if "notice_pending_events" in entry and not pending:
+                del entry["notice_pending_events"]
+    except Exception as exc:
+        # Settlement and legacy delivery must survive optional store failures.
+        errors.append(f"durable-notice enqueue deferred: {exc}")
+    changed = any(
+        json.dumps(entry.get("notice_pending_events"), sort_keys=True) != before[task_id]
+        for task_id, entry in registry.items() if isinstance(entry, dict)
+    )
+    return changed, errors
+
+
+def deliver_notification_sweep(deliveries: list[tuple], registry: dict, now: datetime) -> list[bool]:
+    """Coalesce bursts/old retries while preserving per-event queue and receipts.
+
+    Selection is after the canonical-task guard. Already receipted events are
+    acknowledged without counting toward a burst. A digest receipt commits all
+    members before their individual acknowledgements; retries can discover that
+    receipt even if the pending subset changed after a process crash.
+    """
+    eligible, old = [], set()
+    outcomes = [False] * len(deliveries)
+    for index, event in enumerate(deliveries):
+        status, task_ref, _summary, _nudge, pending_key, _queued = event
+        if not registered_in_canonical_registry(task_ref.rsplit("/", 1)[-1]):
+            continue
+        entry = registry.get(task_ref.rsplit("/", 1)[-1], {})
+        record = _pending_notification_events(entry).get(pending_key, {})
+        key = notification_event_key(task_ref, status)
+        if notification_receipt_path(key).is_file():
+            outcomes[index] = True
+            continue
+        eligible.append(index)
+        created = parse_dt(record.get("created_at"))
+        if created is not None and now - created > timedelta(hours=6):
+            old.add(index)
+
+    grouped = set(eligible) if len(eligible) > 3 else old
+    for index, event in enumerate(deliveries):
+        status, task_ref, summary, nudge, pending_key, queued = event
+        entry = registry.get(task_ref.rsplit("/", 1)[-1], {})
+        record = _pending_notification_events(entry).get(pending_key, {})
+        generation = int(record.get("delivery_generation") or entry.get("delivery_generation") or 1)
+        if index not in grouped and not outcomes[index]:
+            if pending_key and queued:
+                outcomes[index] = deliver_event(status, task_ref, nudge)
+            else:
+                outcomes[index] = emit_event(status, task_ref, summary, nudge, generation)
+        elif index in grouped and not (pending_key and queued):
+            append_chrono_queue(status, task_ref, notification_queue_detail(task_ref, summary, nudge), generation)
+
+    if grouped:
+        members = tuple(deliveries[index] for index in sorted(grouped))
+        sent = nudge_chrono("", digest_events=members)
+        for index in grouped:
+            outcomes[index] = sent
+    elif not eligible and any(outcomes) and os.environ.get(TEST_ISOLATION_ENV) != "1":
+        # A crash after complete receipt fanout can bypass nudge_chrono on the
+        # next sweep. Retire its markers even when no new nudge is necessary.
+        try:
+            with lockdir(CHRONO_NOTIFY_LOCKDIR):
+                _prune_completed_digest_markers()
+        except OSError:
+            pass  # Successful receipts remain authoritative if cleanup fails.
+    return outcomes
 
 
 def notification_delivery_key(
@@ -680,7 +966,7 @@ def acknowledge_notification_delivery(
     pending_key: str,
     delivered_at: datetime | None = None,
 ) -> bool:
-    """Promote one exact pending attempt to the delivered-event marker."""
+    """Retire legacy transport intent; this never acknowledges a durable notice."""
 
     delivered_at = delivered_at or datetime.now(timezone.utc)
     with locked_registry() as _lock:
@@ -1763,18 +2049,7 @@ def preserved_work_statement(
             promoted = promoted_artifact_statement(entry)
             conventional = attempt_evidence_ref(task_id, entry)
             if promoted:
-                if conventional:
-                    return (
-                        f"{promoted}. This receipt attached no evidence block, which is "
-                        "expected for an artifact under gitignored `_state/`; read the "
-                        f"path above. `git log -1 {conventional}` covers only committed "
-                        "code and will not show it"
-                    )
-                return (
-                    f"{promoted}. This receipt attached no evidence block, which is "
-                    "expected for an artifact under gitignored `_state/`; read the path "
-                    "above"
-                )
+                return promoted
             if not conventional:
                 return (
                     "PRESERVED WORK: NOT RECORDED by this receipt, this entry names no "
@@ -1782,8 +2057,7 @@ def preserved_work_statement(
                     "on disk -- do not conclude nothing was produced"
                 )
             return (
-                "PRESERVED WORK: NOT RECORDED -- this receipt attached no evidence "
-                "block and no promoted artifact is on disk; check "
+                "PRESERVED WORK: NOT RECORDED -- no promoted artifact is on disk; check "
                 f"`git log -1 {conventional}` before concluding nothing was produced"
             )
 
@@ -1822,11 +2096,11 @@ def preserved_work_statement(
             or bool(out_of_scope_paths)
         )
         if out_of_scope_paths:
-            names = ", ".join(out_of_scope_paths)
+            names = ", ".join(str(path) for path in out_of_scope_paths[:3])
             location = worktree or "the retained attempt worktree"
             statement += (
                 f". OUT-OF-SCOPE RESIDUE: {out_of_scope_count} path(s) ({names}) "
-                f"remain in {location} -- do not prune it"
+                f"remain in {location} -- do not prune it; full list: terminal receipt"
             )
         elif must_retain_worktree and "do not prune" not in statement:
             location = worktree or "the attempt worktree named by the receipt"
@@ -1844,7 +2118,7 @@ def preserved_work_statement(
     if recovery_status == "integrated" and recovery_commit:
         recovered_paths = diagnostics.get("work_recovery_paths")
         where = (
-            f" ({', '.join(recovered_paths)})"
+            f" ({len(recovered_paths)} path(s): {', '.join(str(path) for path in recovered_paths[:3])}; full list: terminal receipt)"
             if isinstance(recovered_paths, list) and recovered_paths
             else ""
         )
@@ -3995,9 +4269,9 @@ def close_task(
 
     The full batch is validated before any entry is changed, then every changed
     entry is committed in one atomic registry write. Replaying the same terminal
-    status and normalized reason is idempotent. A different close request for
-    any already closed task fails the entire batch closed so audit history
-    cannot be silently rewritten.
+    status and normalized reason is idempotent. Keeping an automatically closed
+    task closed also returns its original closure without rewriting history.
+    Conflicting terminal states and explicit-close reasons refuse the batch.
 
     Returns a `CloseReport` holding one outcome per requested id. It is truthy
     exactly when the registry changed, so `bool(close_task(...))` keeps its
@@ -4044,6 +4318,18 @@ def close_task(
             current = str(entry.get("status") or "")
             namespace = _canonical_mailbox_label()
             if current in allowed:
+                if (
+                    current == target_status == "closed"
+                    and entry.get("lifecycle_closed_by") == "registry-reconciler-auto"
+                ):
+                    prepared.append((task_id, entry, current, namespace, False))
+                    plan[task_id] = CloseOutcome(
+                        task_id,
+                        CLOSE_ALREADY,
+                        f"already closed at {entry.get('lifecycle_closed_at')}; "
+                        f"reason={entry.get('closure_reason')}; no change",
+                    )
+                    continue
                 if (
                     current == target_status
                     and entry.get("closure_reason") == normalized_reason
@@ -4698,7 +4984,28 @@ def reconcile(task_id_filter: str | None, dry_run: bool) -> tuple[int, list[str]
                 continue
             current_status = str(raw_entry.get("status", ""))
             schema, process_descriptor = settlement_process(task_id, raw_entry)
-            if current_status in {"blocked", "complete", "completed"}:
+            # Explicit Chrono settlement outranks receipt-derived dispositions,
+            # including quarantine. Membership, not a "chrono-" prefix: reopen
+            # writes chrono-reopened, which a prefix test would have honoured as
+            # a settlement.
+            #
+            # A settled row skips this whole branch rather than entering it to
+            # refresh receipt diagnostics. Entering it costs three contracts at
+            # once: reconciled_at is rewritten and `changed` bumped on every
+            # pass (so reconcile never converges and `changes=N` has a permanent
+            # nonzero floor), completed_at is rewound from the settlement time to
+            # the receipt's, and the row stops reaching the already-settled
+            # emission below -- the exact line bin/outbox-watcher.sh greps to set
+            # reconciler_handled, without which settled work is re-queued to
+            # Chrono and its packet is left in the live mailbox. Falling through
+            # keeps all three. The attempt's diagnostics remain readable from the
+            # receipt file named by terminal_receipt_path.
+            explicitly_settled = (
+                current_status == "complete"
+                and str(raw_entry.get("review_settled_by") or "")
+                in CONTROLLER_SETTLEMENT_MARKERS
+            )
+            if current_status in {"blocked", "complete", "completed"} and not explicitly_settled:
                 terminal_receipt, receipt_status, raw_receipt_status, receipt_completed_at = (
                     terminal_board_receipt(
                         task_id, raw_entry, schema, process_descriptor
@@ -4714,13 +5021,15 @@ def reconcile(task_id_filter: str | None, dry_run: bool) -> tuple[int, list[str]
                 )
                 if (
                     terminal_receipt is not None
-                    and (
-                        receipt_status in {"blocked", "complete"}
-                        or controller_quarantine
+                    and not (
+                        controller_quarantine
+                        and not packet_declares_review(raw_entry)
+                        and raw_entry.get("review_disposition") == "transport-quarantine-not-required"
                     )
+                    and (receipt_status in {"blocked", "complete"} or controller_quarantine)
                 ):
                     namespace = _canonical_mailbox_label()
-                    if controller_quarantine:
+                    if controller_quarantine and packet_declares_review(raw_entry):
                         _executing_lane, review_lane = (
                             controller_quarantine_review_target(raw_entry)
                         )
@@ -4772,6 +5081,18 @@ def reconcile(task_id_filter: str | None, dry_run: bool) -> tuple[int, list[str]
                             f"status {raw_receipt_status}; {reason}. "
                             f"{preserved}.",
                         )
+                    elif controller_quarantine:
+                        messages.append(f"reconciled {task_id} -> complete via terminal board receipt (transport quarantine)")
+                        raw_entry["status"] = "complete"
+                        raw_entry["review_disposition"] = "transport-quarantine-not-required"
+                        raw_entry.pop("review_required_by", None)
+                        apply_worker_outcome_metadata(
+                            raw_entry, reported_status="", coordination_requested=True,
+                            coordination_source="controller-transport-quarantine",
+                            coordination_summary="Validated output recovered after CLI transport failure; optional Chrono spot-check requested.",
+                        )
+                        append_terminal_event(events, raw_entry, task_id, namespace, now,
+                                              "complete", preserved, "Recovered validated output; coordination requested.")
                     else:
                         auto_close_terminal_receipt(
                             task_id,
@@ -5010,11 +5331,18 @@ def reconcile(task_id_filter: str | None, dry_run: bool) -> tuple[int, list[str]
                 )
                 worker_status = status
                 raw_worker_status = raw_response_status(response)
+                # An envelope is worker-writable. Only a fenced terminal receipt
+                # can authenticate controller transport-recovery provenance.
+                quarantine_receipt, *_ = terminal_board_receipt(
+                    task_id, raw_entry, schema, process_descriptor
+                )
                 controller_quarantine = (
                     worker_status == "needs_review"
                     and response_controller_quarantine_active(response)
+                    and quarantine_receipt is not None
+                    and controller_quarantine_active(receipt_failure_diagnostics(quarantine_receipt))
                 )
-                if controller_quarantine:
+                if controller_quarantine and packet_declares_review(raw_entry):
                     resolved_status = "needs_review"
                     legacy_coordination = False
                 else:
@@ -5036,6 +5364,12 @@ def reconcile(task_id_filter: str | None, dry_run: bool) -> tuple[int, list[str]
                     if legacy_coordination
                     else ""
                 )
+                if controller_quarantine and not packet_declares_review(raw_entry):
+                    coordination_requested = True
+                    coordination_source = "controller-transport-quarantine"
+                    coordination_summary = "Validated output recovered after CLI transport failure; optional Chrono spot-check requested."
+                    raw_entry["response_controller_quarantine"] = CONTROLLER_QUARANTINE_MARKER
+                    raw_entry.pop("review_required_by", None)
                 if legacy_coordination and not coordination_summary:
                     coordination_summary = response_summary(response)
                 outcome_metadata_changed = apply_worker_outcome_metadata(
@@ -5057,7 +5391,7 @@ def reconcile(task_id_filter: str | None, dry_run: bool) -> tuple[int, list[str]
                 # its own response or on any parsed review file. It stays held
                 # until Chrono explicitly runs --settle-review after reading the
                 # review. Unknown or malformed review state is therefore inert.
-                if controller_quarantine:
+                if controller_quarantine and packet_declares_review(raw_entry):
                     executing_lane, review_lane = controller_quarantine_review_target(
                         raw_entry
                     )
@@ -5139,7 +5473,9 @@ def reconcile(task_id_filter: str | None, dry_run: bool) -> tuple[int, list[str]
                     # the author's own verified response closes automatically
                     # only after the trigger contract says no review is owed.
                     raw_entry["review_disposition"] = (
-                        "read-only-verdict-exemption"
+                        "transport-quarantine-not-required"
+                        if controller_quarantine and not packet_declares_review(raw_entry)
+                        else "read-only-verdict-exemption"
                         if str(raw_entry.get("mandatory_review", "")).strip().lower()
                         == "true"
                         else "not-required"
@@ -5207,13 +5543,14 @@ def reconcile(task_id_filter: str | None, dry_run: bool) -> tuple[int, list[str]
                         receipt_response = None
                 explicit_coordination = False
                 coordination_summary = ""
-                if controller_quarantine:
-                    # This is a controller disposition authenticated by the V2
-                    # receipt fence, not the worker's status intent. In
-                    # particular, do not call resolve_worker_status(): its
-                    # ordinary untriggered needs_review -> complete coercion is
-                    # intentionally inapplicable to quarantined partial work.
+                if controller_quarantine and packet_declares_review(raw_entry):
+                    # Triggered transport recoveries retain the existing review hold.
                     resolved_receipt_status = "needs_review"
+                    legacy_coordination = False
+                elif controller_quarantine:
+                    # CLI failure maps the transport status to blocked even when
+                    # the authenticated recovery marker attests validated output.
+                    resolved_receipt_status = "complete"
                     legacy_coordination = False
                 else:
                     resolved_receipt_status, legacy_coordination = resolve_worker_status(
@@ -5235,6 +5572,11 @@ def reconcile(task_id_filter: str | None, dry_run: bool) -> tuple[int, list[str]
                     if legacy_coordination
                     else ""
                 )
+                if controller_quarantine and not packet_declares_review(raw_entry):
+                    coordination_requested = True
+                    coordination_source = "controller-transport-quarantine"
+                    coordination_summary = "Validated output recovered after CLI transport failure; optional Chrono spot-check requested."
+                    raw_entry.pop("review_required_by", None)
                 if legacy_coordination and not coordination_summary:
                     coordination_summary = (
                         response_summary(receipt_response)
@@ -5291,7 +5633,7 @@ def reconcile(task_id_filter: str | None, dry_run: bool) -> tuple[int, list[str]
                 raw_entry["terminal_receipt_path"] = receipt_path
                 raw_entry["terminal_receipt_status"] = raw_receipt_status
                 raw_entry.pop("invalid_response_status", None)
-                if controller_quarantine:
+                if controller_quarantine and packet_declares_review(raw_entry):
                     executing_lane, review_lane = controller_quarantine_review_target(
                         raw_entry
                     )
@@ -5339,12 +5681,16 @@ def reconcile(task_id_filter: str | None, dry_run: bool) -> tuple[int, list[str]
                         changed += 1
                     continue
                 auto_close_on_next_pass = (
-                    receipt_status in {"blocked", "complete"}
+                    not controller_quarantine
+                    and receipt_status in {"blocked", "complete"}
                     and resolved_receipt_status in {"blocked", "complete"}
                 )
                 receipt_status = resolved_receipt_status
                 if receipt_status == "complete":
-                    raw_entry["review_disposition"] = "not-required"
+                    raw_entry["review_disposition"] = (
+                        "transport-quarantine-not-required" if controller_quarantine
+                        else "not-required"
+                    )
                 raw_entry["status"] = receipt_status
                 # This status mutation earns the increment; unlike the review
                 # arm, it does not depend on whether an event key was added.
@@ -5477,6 +5823,12 @@ def reconcile(task_id_filter: str | None, dry_run: bool) -> tuple[int, list[str]
         delivery_events, payload_changed = _prepare_notification_deliveries(
             registry, events, task_id_filter
         )
+        if not dry_run:
+            notices_changed, notice_errors = publish_durable_notices(
+                registry, delivery_events, coordination_queue_records, now, task_id_filter
+            )
+            payload_changed = payload_changed or notices_changed
+            messages.extend(notice_errors)
         if payload_changed and changed == 0:
             changed = 1
         if changed and not dry_run:
@@ -5496,19 +5848,16 @@ def reconcile(task_id_filter: str | None, dry_run: bool) -> tuple[int, list[str]
                     "archived inbox packet "
                     f"{_canonical_mailbox_label()}/{archived_task_id}"
                 )
-        for status, task_ref, summary, nudge, pending_key, queue_recorded in delivery_events:
-            nudged = (
-                deliver_event(status, task_ref, nudge)
-                if pending_key and queue_recorded
-                else emit_event(status, task_ref, summary, nudge)
-            )
+        outcomes = deliver_notification_sweep(delivery_events, registry, now)
+        for (status, task_ref, summary, nudge, pending_key, queue_recorded), nudged in zip(delivery_events, outcomes):
             if pending_key:
                 task_id = task_ref.rsplit("/", 1)[-1]
                 if nudged:
                     acknowledge_notification_delivery(task_id, pending_key)
                 else:
                     record_notification_delivery_failure(task_id, pending_key)
-            messages.append(f"chrono-nudge {'sent' if nudged else 'queued-only'} {task_ref}")
+            disposition = "sent" if nudged else "queued-only"
+            messages.append(f"chrono-nudge {disposition} {task_ref}")
         # Completion and coordination remain separate durable audit facts even
         # when the promoted-response path coalesces their operator page.
         for status, task_ref, summary in coordination_queue_records:

@@ -38,6 +38,57 @@ HASH = hashlib.sha256(b"integration-fixture").hexdigest()
 REPO_ROOT = Path(__file__).resolve().parents[3]
 
 
+class VaultAuditDirectoryDefaultTests(unittest.TestCase):
+    """The supervisor owns the root-independent default copied by the launcher."""
+
+    def _assignments(self) -> dict[str, str]:
+        assignments = {}
+        for script in ("board-supervisor.sh", "launch-squad.sh"):
+            source = (REPO_ROOT / "bin" / script).read_text(encoding="utf-8")
+            matches = re.findall(r"^export CHRONO_VAULT_AUDIT_DIR=.+$", source, re.M)
+            self.assertEqual(len(matches), 1, script)
+            assignments[script] = matches[0]
+        return assignments
+
+    def test_entrypoint_defaults_are_identical(self) -> None:
+        assignments = self._assignments()
+        self.assertEqual(
+            assignments["launch-squad.sh"], assignments["board-supervisor.sh"]
+        )
+
+    def test_default_and_override_resolution(self) -> None:
+        # Execute only the exported assignment, never either launcher's lifecycle.
+        for script, assignment in self._assignments().items():
+            for fixture_home in ("/fixture/home with spaces", "", None):
+                for audit_override in ("/fixture/audit override", "", None):
+                    with self.subTest(
+                        script=script, home=fixture_home, override=audit_override
+                    ):
+                        environment = {
+                            "PATH": "/usr/bin:/bin",
+                            "VAULT_ROOT": "/fixture/unavailable-repository",
+                            "CHRONO_VAULT_ROOT": "/fixture/unavailable-vault",
+                        }
+                        if fixture_home is not None:
+                            environment["HOME"] = fixture_home
+                        if audit_override is not None:
+                            environment["CHRONO_VAULT_AUDIT_DIR"] = audit_override
+                        completed = subprocess.run(
+                            [
+                                "/bin/bash", "-euc",
+                                assignment + '\nprintf "%s" "$CHRONO_VAULT_AUDIT_DIR"',
+                            ],
+                            env=environment, capture_output=True, text=True,
+                            check=False, timeout=5,
+                        )
+                        self.assertEqual(completed.returncode, 0, completed.stderr)
+                        default_home = fixture_home or f"/var/tmp/chrono-vault-{os.geteuid()}"
+                        self.assertEqual(
+                            completed.stdout,
+                            audit_override or f"{default_home}/.local/state/chrono-vault/audit",
+                        )
+
+
 class ReconciliationScopeTests(unittest.TestCase):
     def test_recased_sibling_cannot_alias_authorized_scope(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
@@ -372,7 +423,7 @@ class BoardSupervisorLaunchTests(unittest.TestCase):
 
 class CodexVaultContextConfigTests(unittest.TestCase):
     @staticmethod
-    def _prepare_codex_home():
+    def _supervisor_codex_namespace():
         source = (REPO_ROOT / "bin" / "board-supervisor.sh").read_text(
             encoding="utf-8"
         )
@@ -394,7 +445,11 @@ class CodexVaultContextConfigTests(unittest.TestCase):
             "RESEARCH_API_KEY_NAMES": RESEARCH_API_KEY_NAMES,
         }
         exec(compile(source[start:end], "board-supervisor.sh", "exec"), namespace)
-        return namespace["_prepare_codex_home"]
+        return namespace
+
+    @classmethod
+    def _prepare_codex_home(cls):
+        return cls._supervisor_codex_namespace()["_prepare_codex_home"]
 
     @staticmethod
     def _vault_environment(config_text: str) -> dict[str, str]:
@@ -584,6 +639,145 @@ class CodexVaultContextConfigTests(unittest.TestCase):
             generated = (spawn_home / "config.toml").read_text(encoding="utf-8")
             self.assertEqual(generated, base_text)
             self.assertNotIn("CHRONO_VAULT_CONTEXT", generated)
+
+    def test_codex_launch_overrides_parses_model_and_effort(self) -> None:
+        overrides = self._supervisor_codex_namespace()["_codex_launch_overrides"]
+        self.assertEqual(
+            overrides(
+                ["exec", "--model", "gpt-5.6-sol", "-c", 'model_reasoning_effort="max"']
+            ),
+            ("gpt-5.6-sol", "max"),
+        )
+        # A missing effort stays None so the config is left untouched, not guessed.
+        self.assertEqual(
+            overrides(["exec", "--model", "gpt-5.6-sol"]), ("gpt-5.6-sol", None)
+        )
+        self.assertEqual(overrides([]), (None, None))
+        self.assertEqual(overrides(None), (None, None))
+
+    def test_codex_home_pins_selected_effort_over_stale_root_default(self) -> None:
+        # The exact bug: the per-attempt config.toml is unioned from the operator's
+        # live ~/.codex/config.toml, whose root pins model_reasoning_effort="high".
+        # Native sub-agents re-read this file and ignore the launch `-c`, so the
+        # selected model/effort must overwrite the stale root pin here too.
+        prepare = self._prepare_codex_home()
+        base_text = textwrap.dedent(
+            """\
+            model = "gpt-5-codex"
+            model_reasoning_effort = "high"
+
+            [mcp_servers.sequential-thinking]
+            command = "/usr/local/bin/sequential-thinking"
+            """
+        )
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            base_home = root / "base"
+            spawn_home = root / "spawn"
+            base_home.mkdir()
+            (base_home / "config.toml").write_text(base_text, encoding="utf-8")
+
+            prepare(
+                base_home,
+                root / "missing-repo-config.toml",
+                spawn_home,
+                '{"task_id":"TASK-effort-pin"}',
+                selected_model="gpt-5.6-sol",
+                selected_effort="max",
+            )
+
+            generated = (spawn_home / "config.toml").read_text(encoding="utf-8")
+            self.assertRegex(generated, r'(?m)^model_reasoning_effort = "max"$')
+            self.assertRegex(generated, r'(?m)^model = "gpt-5.6-sol"$')
+            self.assertNotIn('"high"', generated)
+            self.assertNotIn('"gpt-5-codex"', generated)
+            # Exactly one root pin apiece -- no duplicate second answer left behind.
+            self.assertEqual(generated.count("model_reasoning_effort ="), 1)
+            self.assertEqual(generated.count('model = "'), 1)
+
+    def test_codex_home_inserts_effort_when_base_omits_it(self) -> None:
+        prepare = self._prepare_codex_home()
+        base_text = "[mcp_servers.sequential-thinking]\ncommand = \"/x\"\n"
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            base_home = root / "base"
+            spawn_home = root / "spawn"
+            base_home.mkdir()
+            (base_home / "config.toml").write_text(base_text, encoding="utf-8")
+
+            prepare(
+                base_home,
+                root / "missing-repo-config.toml",
+                spawn_home,
+                '{"task_id":"TASK-effort-insert"}',
+                selected_model="gpt-5.6-sol",
+                selected_effort="max",
+            )
+
+            generated = (spawn_home / "config.toml").read_text(encoding="utf-8")
+            # A root key must precede the first table header to be valid TOML.
+            self.assertLess(
+                generated.index("model_reasoning_effort ="),
+                generated.index("[mcp_servers"),
+            )
+            self.assertLess(
+                generated.index('model = "'), generated.index("[mcp_servers")
+            )
+
+    def test_config_effort_equals_selected_profile_effort_by_tier(self) -> None:
+        # Ask 3: the per-attempt config effort equals the SELECTED profile's effort
+        # for primary and escalate tiers, driven end-to-end from the real profile
+        # registry through the same launch args the dispatcher authenticates.
+        import dispatch_context_builder as dcb
+
+        namespace = self._supervisor_codex_namespace()
+        prepare = namespace["_prepare_codex_home"]
+        overrides = namespace["_codex_launch_overrides"]
+        specialist = "devops-engineer"
+        base_text = 'model = "gpt-5-codex"\nmodel_reasoning_effort = "high"\n'
+
+        for tier in ("primary", "escalate"):
+            with self.subTest(tier=tier):
+                lane_args = dcb.trusted_lane_args_for(
+                    REPO_ROOT, lane="codex", specialist=specialist, route_tier=tier
+                )
+                model, effort = overrides(lane_args)
+                row = dcb._runtime_row(REPO_ROOT, specialist)
+                profile = dcb._profile_row(
+                    REPO_ROOT,
+                    lane="codex",
+                    profile_id=dcb._selected_profile(row, "codex", route_tier=tier),
+                )
+                # The parse recovered exactly the profile the dispatcher selected.
+                self.assertEqual(
+                    (model, effort), (profile["model_id"], profile["effort"])
+                )
+                with tempfile.TemporaryDirectory() as temporary_directory:
+                    root = Path(temporary_directory)
+                    base_home = root / "base"
+                    spawn_home = root / "spawn"
+                    base_home.mkdir()
+                    (base_home / "config.toml").write_text(
+                        base_text, encoding="utf-8"
+                    )
+
+                    prepare(
+                        base_home,
+                        root / "missing-repo-config.toml",
+                        spawn_home,
+                        '{"task_id":"TASK-tier-effort"}',
+                        selected_model=model,
+                        selected_effort=effort,
+                    )
+
+                    generated = (spawn_home / "config.toml").read_text(
+                        encoding="utf-8"
+                    )
+                    self.assertRegex(
+                        generated,
+                        rf'(?m)^model_reasoning_effort = "{re.escape(profile["effort"])}"$',
+                    )
+                    self.assertEqual(generated.count("model_reasoning_effort ="), 1)
 
 
 class BlockReasonClassificationTests(unittest.TestCase):

@@ -3,8 +3,9 @@
 
 chrono/CLAUDE.md step 7 tells Chrono to read `_state/chrono-queue.md` directly, but
 the capsule — the only thing a session actually reads at start — never included it:
-3,722 lines, zero handled. This proves the section renders from the queue, is absent
-(not crashing) when the queue is missing, and sits before the operator-turn section.
+3,722 lines, zero handled. This proves the section renders from the queue and is absent
+(not crashing) when the queue is missing. (The `## Latest operator instruction` section
+this suite once ordered against was deleted — audit Rec 3.)
 """
 
 from __future__ import annotations
@@ -37,12 +38,15 @@ class TestPendingCompletions(unittest.TestCase):
                 # HOST's thread-charters/complete, so real debt would eat a
                 # fixture capsule's token bound.
                 mock.patch.object(resume, "ARCHIVED_DEBT_ROOT", Path(d)),
+                # Same host-isolation trap as QUEUE/debt above: unmocked,
+                # open_work_items() reads this HOST's real OPEN-WORK.md (12 live
+                # items), whose rows eat the fixture capsule's token bound and
+                # made test_..._collapses_under_the_token_bound host-dependent.
+                mock.patch.object(resume, "open_work_items", return_value=[]),
                 mock.patch.object(resume, "registry_view", return_value=EMPTY_VIEW),
                 mock.patch.object(resume, "active_decisions", return_value=[]),
             ):
-                return resume.render_capsule(
-                    "sess-1", latest_operator_turn="go", max_tokens=max_tokens
-                )
+                return resume.render_capsule("sess-1", max_tokens=max_tokens)
 
     def test_grouped_counts_render_for_two_lines_in_one_namespace_status(self):
         queue = (
@@ -60,11 +64,14 @@ class TestPendingCompletions(unittest.TestCase):
         self.assertNotIn(resume.QUEUE_HEADING, cap)
         self.assertNotIn("Pending completions", cap)
 
-    def test_section_appears_before_latest_operator_instruction(self):
+    def test_section_renders_and_the_operator_instruction_section_is_gone(self):
+        # The `## Latest operator instruction` section this test used to order
+        # against was deleted (audit Rec 3); the pending section must still
+        # render, and the dead section must stay gone.
         queue = "2026-08-16T00:00:00Z | needs_review | coding/TASK-1 | first\n"
         cap = self.render_with_queue(queue)
         self.assertIn(resume.QUEUE_HEADING, cap)
-        self.assertLess(cap.index(resume.QUEUE_HEADING), cap.index(resume.TURN_HEADING))
+        self.assertNotIn("Latest operator instruction", cap)
 
     def test_pending_completions_direct_grouping_and_sort_order(self):
         with tempfile.TemporaryDirectory() as d:
@@ -105,8 +112,8 @@ class TestPendingCompletions(unittest.TestCase):
         # tokens fits that form but not the full 60-group listing.
         cap = self.render_with_queue("\n".join(lines) + "\n", max_tokens=180)
         self.assertLessEqual(len(cap) // 4, 180)
-        # the latest operator instruction is never dropped
-        self.assertIn("go", cap)
+        # the capsule title is never dropped
+        self.assertIn("# Chrono resume capsule", cap)
 
     def test_pending_completions_invalid_utf8_is_unknown_not_a_crash(self):
         """A corrupt queue (e.g. raw ANSI/control bytes) must not break the capsule.
@@ -133,17 +140,16 @@ class TestPendingCompletions(unittest.TestCase):
                 # HOST's thread-charters/complete, so real debt would eat a
                 # fixture capsule's token bound.
                 mock.patch.object(resume, "ARCHIVED_DEBT_ROOT", Path(d)),
+                mock.patch.object(resume, "open_work_items", return_value=[]),
                 mock.patch.object(resume, "registry_view", return_value=EMPTY_VIEW),
                 mock.patch.object(resume, "active_decisions", return_value=[]),
             ):
-                cap = resume.render_capsule(
-                    "sess-1", latest_operator_turn="go", max_tokens=3000
-                )
+                cap = resume.render_capsule("sess-1", max_tokens=3000)
         # The capsule still renders, and now declares the blind spot rather
         # than dropping the section (which read as "the queue is empty").
         self.assertIn(resume.QUEUE_HEADING, cap)
         self.assertIn("unavailable", cap)
-        self.assertIn("go", cap)
+        self.assertIn("# Chrono resume capsule", cap)
 
 
 if __name__ == "__main__":

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Plan D Task 4: doctor verifies that the five lane CLIs are authenticated.
+"""Plan D Task 4: doctor verifies that the four lane CLIs are authenticated.
 
 For a system whose entire premise is five authenticated native CLIs, doctor
 verified auth for none of them. The whole check was one hardcoded line --
@@ -16,7 +16,7 @@ SAFETY, read before touching anything here
 No test in this file runs a real CLI, reaches a network, or reads a real
 credential. Doctor prepends ``$HOME/.local/bin`` to PATH, so the lane stubs
 placed there WIN over the operator's real ``claude``/``codex``/``agy``/
-``grok``/``kimi``, and every credential file a test looks at is one the test just wrote
+``grok``, and every credential file a test looks at is one the test just wrote
 inside its own temporary HOME.
 
 ``test_api_key_value_never_reaches_the_report`` is the one that matters most
@@ -92,10 +92,6 @@ CREDENTIAL_WITHOUT_REFRESH = json.dumps(
 )
 
 
-def kimi_credential(home: Path) -> Path:
-    return home / ".kimi" / "credentials" / "kimi-code.json"
-
-
 def write_credential(path: Path, body: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(body, encoding="utf-8")
@@ -103,7 +99,7 @@ def write_credential(path: Path, body: str) -> None:
 
 
 class DoctorAuthRunner(unittest.TestCase):
-    """Runs a real bin/doctor.sh whose five lane CLIs are stubs."""
+    """Runs a real bin/doctor.sh whose four lane CLIs are stubs."""
 
     def run_doctor(
         self,
@@ -124,10 +120,9 @@ class DoctorAuthRunner(unittest.TestCase):
             local_bin = home / ".local" / "bin"
             doctor_fixture.write_stub(local_bin, "ps", doctor_fixture.EMPTY_PS)
             doctor_fixture.stub_launch_dependencies(local_bin, ROOT)
-            for lane in ("claude", "codex", "agy", "grok", "kimi"):
+            for lane in ("claude", "codex", "agy", "grok"):
                 doctor_fixture.write_stub(local_bin, lane, LANE_CLI_WITH_AUTH)
             if credentials:
-                write_credential(kimi_credential(home), CREDENTIAL_WITH_REFRESH)
                 grok_secrets = home / ".config" / "shell" / "secrets.zsh"
                 grok_secrets.parent.mkdir(parents=True, exist_ok=True)
                 grok_secrets.write_text(
@@ -288,18 +283,16 @@ class CodexAuthProbeTest(DoctorAuthRunner):
 
 
 class CredentialFileLaneTest(DoctorAuthRunner):
-    """agy, grok, and kimi expose no zero-token status subcommand."""
+    """agy and grok expose no zero-token status subcommand."""
 
     def test_refresh_credential_is_unknown_never_a_pass(self):
         """A credential at rest is not a login result, and must not read as one."""
         _result, summary, report = self.run_doctor()
-        for lane in ("gemini", "kimi"):
-            self.assertTrue(
-                any(lane in unknown and "login state not verifiable" in unknown for unknown in summary["unknowns"]),
-                (lane, summary["unknowns"]),
-            )
+        self.assertTrue(
+            any("gemini" in unknown and "login state not verifiable" in unknown for unknown in summary["unknowns"]),
+            summary["unknowns"],
+        )
         self.assertIn("agy exposes no zero-token auth status", report)
-        self.assertIn(".kimi/credentials/kimi-code.json", report)
         self.assertTrue(
             any(
                 "grok login state not verifiable" in unknown
@@ -310,31 +303,10 @@ class CredentialFileLaneTest(DoctorAuthRunner):
         )
         self.assertNotIn("fixture-xai-key-never-log", report)
 
-    def test_missing_credential_is_a_warning_naming_the_fix(self):
+    def test_missing_gemini_credential_does_not_emit_retired_warning(self):
         _result, summary, _report = self.run_doctor(credentials=False)
-        self.assertTrue(
-            any(
-                "kimi has no credential" in warning and "kimi login" in warning
-                for warning in summary["warnings"]
-            ),
-            summary["warnings"],
-        )
         self.assertFalse(any("gemini has no credential" in warning for warning in summary["warnings"]))
 
-    def test_credential_without_a_refresh_token_is_a_warning(self):
-        """An access token alone cannot re-authenticate a headless dispatch."""
-
-        def setup(_root, home, _local_bin, _environment):
-            write_credential(kimi_credential(home), CREDENTIAL_WITHOUT_REFRESH)
-
-        _result, summary, _report = self.run_doctor(credentials=True, setup=setup)
-        self.assertTrue(
-            any(
-                "kimi credential file is present but carries no refresh token" in warning
-                for warning in summary["warnings"]
-            ),
-            summary["warnings"],
-        )
 
     def test_api_key_value_never_reaches_the_report_or_counts_as_lane_auth(self):
         """The retired lane key is neither logged nor accepted as agy auth."""

@@ -16,7 +16,7 @@ gates: [public_release]
 
 ## Availability in a fresh clone
 
-A zero-key checkout gets this protocol and its validation metadata as documentation; automated dispatch is `needs_tool`. To make it runnable, install and authenticate the selected model CLI, configure every MCP declared by the dispatched specialists, bind the private vault (`CHRONO_VAULT_ROOT`; Kimi also requires its exact vault context), install any required host-local binaries, and provide approved credentials plus a bounded budget for any metered provider named below. After setup, re-run the production role planner and validators on that host; availability remains subject to the narrower gaps and operator gates documented in this card.
+A zero-key checkout gets this protocol and its validation metadata as documentation; automated dispatch is `needs_tool`. To make it runnable, install and authenticate the selected model CLI, configure every MCP declared by the dispatched specialists, bind the private vault (`CHRONO_VAULT_ROOT`), install any required host-local binaries, and provide approved credentials plus a bounded budget for any metered provider named below. After setup, re-run the production role planner and validators on that host; availability remains subject to the narrower gaps and operator gates documented in this card.
 
 **When to use:** write an article, technical doc, ADR, or other longform text deliverable. Load-bearing
 factual claims must be grounded (truth-rights / Rule-8); a model cutoff is never verification evidence.
@@ -33,11 +33,10 @@ factual claims must be grounded (truth-rights / Rule-8); a model cutoff is never
 
 **Notes.** Truth grounding is a first-class S4 stage, not review-lane alone: a load-bearing web/factual claim
 without a grounding-tool evidence bundle is `needs_tool`/unverifiable — the primary must NOT PASS and hope the
-reviewer supplies evidence later (`content-verifier` owns the Rule-8 gate). No media generation here (that is
+reviewer supplies evidence later (`content-verifier` owns the Rule-8 gate). For recency and cited-source
+verification beyond local context, route Gemini `Google Search grounding` (live, cited) via the research
+fan-out default in `shared/routing.md`. No media generation here (that is
 `content/image`/`video`/`audio-assets`). Localization and accessibility are overlays/handoffs, not this card.
 The terminology gate remains mandatory: S1 applies supplied glossary/do-not-translate constraints through
 `locale-adaptation`, and S3 checks approved terminology through `copy-refinement`; neither assumes a
 durable glossary exists, and missing authority stops the terminology-specific work.
-
-**Optional Enhancement Profiles (prose-only `needs_tool`):**
-1. **Perplexity Sonar Alternative:** For structured + recency search checks on the Codex lane, `Perplexity Sonar structured+recency` is available (`partial` state, metered). When activated via a `needs_tool` profile, it enforces strict truth-gate filters (`claim_to_citation=true`, `date_window=7d`, `reject_unsupported=true`) ensuring all claims map to returned citation sources.

@@ -5,6 +5,15 @@
 # --public-export for the fail-closed publication gate. Use --apply with
 # SQUAD_CLEAN_CONFIRM=1 to remove operator-local runtime debris from the product
 # repo working tree.
+#
+# Flags:
+#   --apply                      remove detected debris (needs SQUAD_CLEAN_CONFIRM=1)
+#   --public-export              fail-closed publication gate (strict)
+#   --root <dir>                 vault root to scan (default: repo root)
+#   --report <path>              write the JSON report here
+#   --policy <path>              hygiene policy file
+#   --identifier-denylist <path> extra identifier denylist for the content scan
+#   --help, -h                   show this header
 
 set -uo pipefail
 
@@ -40,7 +49,7 @@ while [[ "$#" -gt 0 ]]; do
             shift 2
             ;;
         --help|-h)
-            sed -n '2,28p' "$0"
+            sed -n '2,16p' "$0"
             exit 0
             ;;
         *)

@@ -1427,13 +1427,14 @@ class DiscoverOrchestratorTests(unittest.TestCase):
             f'coordinator_pid_is_live_claude(){{ return {live_rc}; }}\n'
             f'pid_identity_still_matches(){{ return {identity_rc}; }}\n'
             f'chrono_pane_has_coordinator(){{ case "$1" in {pane_ok}) return 0;; *) return 1;; esac; }}\n'
+            f'chrono_pane_resolve_coordinator_id(){{ [[ {pane_ready} == 1 ]] || return 1; case "$1" in {pane_ok}) printf "%%42\\n";; *) return 1;; esac; }}\n'
         )
 
     def test_positive_control_pane_hosted_orchestrator(self) -> None:
         # Pidfile names a live, identity-matched coordinator whose pane still
         # hosts it.
         out = self._discover(self._stubs("pane 4242 squad:chrono -", 0, 0, "squad:chrono"))
-        self.assertEqual(out, "pane squad:chrono")
+        self.assertEqual(out, "pane %42")
 
     def test_positive_control_background_job_orchestrator(self) -> None:
         # The shape LIFE-01 exists for: a live, identity-matched coordinator with
@@ -1446,7 +1447,7 @@ class DiscoverOrchestratorTests(unittest.TestCase):
         # No usable pidfile (pf_rc=1): the backward-compatible path asks the
         # pane directly, so a pre-LIFE-01 session keeps working unchanged.
         out = self._discover(self._stubs("", 1, 1, "squad:chrono"))
-        self.assertEqual(out, "pane squad:chrono")
+        self.assertEqual(out, "pane %42")
 
     def test_negative_control_no_orchestrator(self) -> None:
         # No pidfile AND no coordinator in the pane: distinctly "none", never a
@@ -1465,13 +1466,13 @@ class DiscoverOrchestratorTests(unittest.TestCase):
         # Pidfile PID is no longer a live claude (recycled/dead): ignore the
         # pidfile, fall back to the live pane scan.
         out = self._discover(self._stubs("pane 4242 squad:chrono -", 0, 1, "squad:chrono"))
-        self.assertEqual(out, "pane squad:chrono")
+        self.assertEqual(out, "pane %42")
 
     def test_custom_session_name_honored_in_fallback(self) -> None:
         out = self._discover(
             self._stubs("", 1, 1, "mysquad:chrono"), session="mysquad"
         )
-        self.assertEqual(out, "pane mysquad:chrono")
+        self.assertEqual(out, "pane %42")
 
     def test_recycled_pid_is_not_reported_as_background_job(self) -> None:
         # Defect 1, the worst of the three: a background-job pidfile whose PID was
@@ -1490,18 +1491,14 @@ class DiscoverOrchestratorTests(unittest.TestCase):
         out = self._discover(
             self._stubs("pane 4242 squad:chrono -", 0, 0, "squad:chrono", identity_rc=1)
         )
-        self.assertEqual(out, "pane squad:chrono")
+        self.assertEqual(out, "pane %42")
 
-    def test_pane_pidfile_is_believed_when_the_pane_helper_failed_to_load(self) -> None:
-        # Defect 3 / review P1: an identity-matched live claude recorded shape=pane
-        # with a target, but shared/chrono-pane.sh could not load (pane_ready="0"),
-        # so the pane predicate cannot confirm the child. The coordinator's own
-        # PID+fingerprint IS an independent authority, so discovery trusts the
-        # recorded target rather than collapsing a live coordinator into none.
+    def test_pane_helper_failure_never_returns_an_unvalidated_window(self) -> None:
+        # PID identity alone cannot prove which pane would receive keys.
         out = self._discover(
             self._stubs("pane 4242 squad:chrono -", 0, 0, "__none__", pane_ready="0")
         )
-        self.assertEqual(out, "pane squad:chrono")
+        self.assertEqual(out, "none")
 
     def test_background_job_requires_a_live_claude(self) -> None:
         # Bounds the background-job claim in the other direction: a dead recorded

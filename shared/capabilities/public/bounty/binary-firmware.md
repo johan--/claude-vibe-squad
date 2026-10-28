@@ -16,7 +16,7 @@ gates: [public_release]
 
 ## Availability in a fresh clone
 
-A zero-key checkout gets this protocol and its validation metadata as documentation; automated dispatch is `needs_tool`. To make it runnable, install and authenticate the selected model CLI, configure every MCP declared by the dispatched specialists, bind the private vault (`CHRONO_VAULT_ROOT`; Kimi also requires its exact vault context), install any required host-local binaries, and provide approved credentials plus a bounded budget for any metered provider named below. After setup, re-run the production role planner and validators on that host; availability remains subject to the narrower gaps and operator gates documented in this card.
+A zero-key checkout gets this protocol and its validation metadata as documentation; automated dispatch is `needs_tool`. To make it runnable, install and authenticate the selected model CLI, configure every MCP declared by the dispatched specialists, bind the private vault (`CHRONO_VAULT_ROOT`), install any required host-local binaries, and provide approved credentials plus a bounded budget for any metered provider named below. After setup, re-run the production role planner and validators on that host; availability remains subject to the narrower gaps and operator gates documented in this card.
 
 **When to use:** authorized research against a binary, malware sample, or firmware image. Heightened-risk,
 isolation-required. **Currently `needs_tool`** — static inspection is live through radare2, but unpacking,
@@ -26,9 +26,9 @@ requires verified isolation; outputs are analytical evidence, never weaponized d
 | Step | Specialists | Tools `` | Skills `(type)` | Gate / Overlay |
 |---|---|---|---|---|
 | **S0** Intake/Admit | `Chrono` | `chrono-vault` | `sandbox-provision-discipline` | memory overlay (recall); target authorization + isolation precheck |
-| **S1** Frame (target intel + scope) | `scout`, `research` | `chrono-recon`, `perplexity_search`, `codex --search`, `Brave Search`, `Serper`, `Google Search grounding` | `security-threat-model`, `program-rubric-lookup`, `dedup-prior-art-check` | operator target-engage gate; **prior-art/dedup runs BEFORE effort** (`dedup-prior-art-check` — CVE/advisory DBs + `chrono-dedup`); `Google Search grounding` = CVE/advisory source-fact grounding, not a substitute for the RE analysis |
+| **S1** Frame (target intel + scope) | `scout`, `research` | `chrono-recon`, `codex --search`, `Brave Search`, `Serper`, `Google Search grounding` | `security-threat-model`, `program-rubric-lookup`, `dedup-prior-art-check` | operator target-engage gate; **prior-art/dedup runs BEFORE effort** (`dedup-prior-art-check` — CVE/advisory DBs + `chrono-dedup`); `Google Search grounding` = CVE/advisory source-fact grounding, not a substitute for the RE analysis |
 | **S2** Design (analysis plan + isolation) | `threat-modeler`, `reverse-engineer`, `experimental-attacker` | `chrono-vault` | `systematic-attacking`, `sandbox-provision-discipline` | isolation required (operator-provisioned); governing method: this card is the binary/firmware domain branch of `systematic-attacking` (Phase 2 attack-surface + impact model); **impact-class first** — pre-register HIGH/CRIT termini in the payout classes; **dedicated novel-attack ideation pass every engagement** (Phase 2b) — `experimental-attacker` (codex) generates broad/novel hypotheses (leads only) fanning out to heavy-hitter (Sol / Opus 5) validation; push past known + known-advisory classes, full-arsenal distance is the FLOOR; leads re-enter the verification spine, never ship unproven |
-| **S3** Produce (static RE / unpack / dynamic) | `reverse-engineer`, `exploit-developer` | `radare2`, `ropgadget`, `ghidra`, `binwalk`, `qemu`, `osv-scanner`, `codex --sandbox`, `claude --worktree` | `data-flow-trace` | static inspection may use radare2; unpacking/emulation remain blocked; heightened-risk; **admission-enforced declaration holds: `offensive_execution` / `malware_detonation`**; admission authenticates declarations but does not remove underlying tool capability or add action-time enforcement; no out-of-scope execution; workspace controls do NOT satisfy malware-grade isolation; **exhaustive-arsenal every engagement** — the standard is to CLOSE the gap, not skip: symbolic (`angr`) + multi-fuzzer (AFL++/honggfuzz/libfuzzer) + unpack/emulate (`binwalk`/`qemu`/`ghidra`) run as Linux builds inside an operator-provisioned isolated container (colima/docker present), never marked "couldn't run" |
+| **S3** Produce (static RE / unpack / dynamic) | `reverse-engineer`, `exploit-developer` | `radare2`, `ropgadget`, `ghidra`, `angr`, `binwalk`, `qemu`, `osv-scanner`, `codex --sandbox`, `claude --worktree` | `data-flow-trace` | static inspection may use radare2; unpacking/emulation remain blocked; heightened-risk; **admission-enforced declaration holds: `offensive_execution` / `malware_detonation`**; admission authenticates declarations but does not remove underlying tool capability or add action-time enforcement; no out-of-scope execution; workspace controls do NOT satisfy malware-grade isolation; **exhaustive-arsenal every engagement** — the standard is to CLOSE the gap, not skip: symbolic (`angr`) + multi-fuzzer (AFL++/honggfuzz/libfuzzer) + unpack/emulate (`binwalk`/`qemu`/`ghidra`) run as Linux builds inside an operator-provisioned isolated container (colima/docker present), never marked "couldn't run" |
 | **S4** Verify (impact + repro in isolation) | `impact-validator`, `skeptic`, `cross-family-reviewer` | `gdb` | `systematic-attacking`, `claim-verification` | offline parsing only; host target execution failed; impact G1–G4 overlay; **evidence-gate on all four observable predicates** inside isolation before a candidate reaches the operator / heavy-hitter lane; repro only inside an operator-provisioned isolated environment; runs `systematic-attacking`'s Phase 4 chaining (chain-strike v2) → Phase 6 impact-bar spine |
 | **S5** Review/Gate (submission) | `skeptic`, `cross-family-reviewer`, `operator` | `codex review`, `claude --from-pr` | — | review overlay (review tools MECHANICS ONLY — never replace the independent cross-family reviewer); **final Submit = per-report operator "go"** (irreversible) |
 | **S6** Ship/Deliver (report) | `technical-writer`, `security-analyst` | `chrono-obsidian` | `citation-audit`, `claim-verification` | public disclosure gate |
@@ -45,8 +45,10 @@ genuine refusal surfaces and is never cross-family re-dispatched.
 
 **Depth standard (operator).** Full-arsenal distance is the FLOOR, not the ceiling — and here the arsenal is the
 gap. `radare2` covers static disassembly and `gdb` offline parsing, but the
-load-bearing depth tools are absent from the enforced registry and host PATH: **symbolic execution** (`angr`),
-**multiple fuzzers** (AFL++, honggfuzz, libFuzzer), and **unpack/emulate** (`binwalk`, `qemu`, `ghidra`). The
+load-bearing depth tools are split: **symbolic execution** (`angr`) and the `ghidra` unpack/analyze stack are
+registry-verified on codex, and `libFuzzer` is cataloged (clang `-fsanitize=fuzzer` / `cargo-fuzz`); the
+remaining gaps are **the extra fuzzers** (AFL++, honggfuzz) and **unpack/emulate** (`binwalk`, `qemu`), still
+absent from the enforced registry and host PATH. The
 operator standard is to CLOSE the macOS→Linux gap — install and run those as Linux builds inside an
 operator-provisioned isolated container (colima + docker present) — never to accept "couldn't run"; that container
 also supplies the malware-grade isolation workspace controls do not. Each engagement additionally runs a
@@ -74,8 +76,9 @@ but is intentionally not added: one live enumerator fills that role without dupl
 This narrows gadget enumeration only; the card remains `needs_tool`, and none of its other tracked
 gaps is closed.
 
-**Elite tooling — prose/`needs_tool` (not live tuples).** Beyond the absent `angr`/AFL++/`binwalk`/`qemu`/
-`ghidra` container arsenal already noted, two corpus-C LLM-driven harnessing methodologies are a noted
+**Elite tooling — prose/`needs_tool` (not live tuples).** Beyond the still-absent AFL++/honggfuzz/`binwalk`/
+`qemu` container arsenal already noted (`angr`, `ghidra`, and `libFuzzer` are registry-verified; the remaining
+gaps are emulation and the extra fuzzers), two corpus-C LLM-driven harnessing methodologies are a noted
 follow-up skill set: `state-machine-fuzz-harnessing` (SynapseFlow — structural-flow-graph + function-triplet
 harness synthesis) and `firmware-rehosting-recovery` (FirmPilot — multi-agent NVRAM/boot-script/network
 reconstruction for QEMU rehosting). Both are authored later and run only inside the operator-provisioned

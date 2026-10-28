@@ -13,7 +13,9 @@
 # must start bin/board-notify.sh as a best-effort target-state observer and consume
 # its stdout; launch-squad starts this outbox watcher, not that registry watcher.
 #
-# Usage:  bash bin/outbox-watcher.sh <source-namespace>
+# Usage:  bash bin/outbox-watcher.sh <compatibility/mailbox-namespace>
+#         bash bin/outbox-watcher.sh all
+#         bash bin/outbox-watcher.sh --notify-once <event-key> <message>
 # Typically launched by launch-squad.sh in the watcher/status window.
 
 set -uo pipefail
@@ -30,7 +32,9 @@ else
     NAMESPACE="${1:-}"
 fi
 if [[ -z "${NAMESPACE}" ]]; then
-    echo "usage: $0 <coding|security|content|sysmgmt|research>"
+    echo "usage: $0 <compatibility/mailbox-namespace>"
+    echo "       $0 all"
+    echo "       $0 --notify-once <event-key> <message>"
     exit 1
 fi
 
@@ -41,14 +45,13 @@ fi
 
 # shellcheck source-path=SCRIPTDIR source=../shared/repo-root.sh disable=SC1091
 source "$(cd -- "$(dirname -- "$(readlink -f -- "${BASH_SOURCE[0]}" 2>/dev/null || printf '%s' "${BASH_SOURCE[0]}")")/.." && pwd -P)/shared/repo-root.sh"
+NOTIFICATION_MODULE="$(cd -- "$(dirname -- "$(readlink -f -- "${BASH_SOURCE[0]}" 2>/dev/null || printf '%s' "${BASH_SOURCE[0]}")")/.." && pwd -P)/scripts/python/chrono_state/notifications.py"
 SESSION="${SQUAD_SESSION:-squad}"
 TMUX_BIN="${TMUX_BIN:-tmux}"
 source "${VAULT_ROOT}/shared/chrono-pane.sh"
-CHRONO_TMUX_TARGET="${SESSION}:chrono.0"
-# Kept only for the skip message. It is NOT the test any more: the live pane
-# reports the versioned executable ("2.1.233"), so comparing to this literal
-# skipped every nudge while Chrono was running. See shared/chrono-pane.sh.
-EXPECTED_CHRONO_PANE_COMMAND="the coordinator CLI"
+# Resolve the coordinator anywhere in this window, then keep that exact pane
+# through text, Enter, and the receipt even if the active pane changes.
+CHRONO_TMUX_TARGET="${SESSION}:chrono"
 RESPONSE_MIN_AGE_SECONDS="${RESPONSE_MIN_AGE_SECONDS:-5}"
 if [[ ! "$RESPONSE_MIN_AGE_SECONDS" =~ ^[0-9]+$ ]]; then
     echo "RESPONSE_MIN_AGE_SECONDS must be a non-negative integer" >&2
@@ -134,7 +137,13 @@ acquire_chrono_notify_lock() {
 }
 
 send_chrono_notification_once() {
-    local event_key="$1" message="$2" receipt_hash receipt tmp pane_current_command
+    local event_key="$1" message="$2" receipt_hash receipt tmp pane_id notice_status=0
+    # Durable enqueue and legacy transport receipt are independent facts.
+    if [[ "${NOTICE_ALREADY_ENQUEUED:-0}" != 1 ]]; then
+        python3 "$NOTIFICATION_MODULE" --vault "$VAULT_ROOT" enqueue-resource \
+            --resource outbox-watcher --episode "$event_key" --summary "$message" >/dev/null \
+            || notice_status=1
+    fi
     acquire_chrono_notify_lock || return $?
     receipt_hash="$(printf '%s' "$event_key" | shasum -a 256 | awk '{print $1}')"
     receipt="${CHRONO_NOTIFY_RECEIPTS_DIR}/${receipt_hash}.sent"
@@ -142,7 +151,7 @@ send_chrono_notification_once() {
     if [[ -f "$receipt" ]]; then
         release_chrono_notify_lock || return 1
         echo "[$(date '+%H:%M:%S')] duplicate chrono nudge suppressed: ${event_key}"
-        return 0
+        return "$notice_status"
     fi
     if ! "$TMUX_BIN" has-session -t "$SESSION" 2>/dev/null \
         || ! "$TMUX_BIN" list-windows -t "$SESSION" -F '#{window_name}' 2>/dev/null | grep -qx "chrono"; then
@@ -150,19 +159,24 @@ send_chrono_notification_once() {
         release_chrono_notify_lock || return 1
         return 2
     fi
-    pane_current_command="$(chrono_pane_observed_command "$CHRONO_TMUX_TARGET")"
-    if ! chrono_pane_has_coordinator "$CHRONO_TMUX_TARGET"; then
-        printf "[%s] chrono pane nudge skipped: target=%s expected_command=%q actual_command=%q; no notification lost: registry/outbox records persist and bin/board-notify.sh serves headless registry readers\n" \
-            "$(date '+%H:%M:%S')" "$CHRONO_TMUX_TARGET" "$EXPECTED_CHRONO_PANE_COMMAND" "${pane_current_command:-unavailable}" >&2
+    if ! pane_id="$(chrono_pane_resolve_coordinator_id "$CHRONO_TMUX_TARGET")" \
+        || ! [[ "$pane_id" =~ ^%[0-9]+$ ]]; then
+        printf "[%s] chrono pane nudge skipped: target=%s coordinator pane unresolved or ambiguous (observed command: %s); no notification lost: registry/outbox records persist and bin/board-notify.sh serves headless registry readers\n" \
+            "$(date '+%H:%M:%S')" "$CHRONO_TMUX_TARGET" \
+            "$(chrono_pane_observed_command "$CHRONO_TMUX_TARGET")" >&2
         release_chrono_notify_lock || return 1
         return 2
     fi
-    if ! "$TMUX_BIN" send-keys -l -t "$CHRONO_TMUX_TARGET" "$message"; then
+    case "$message" in
+        '[vibesquad] '*) ;;
+        *) message="[vibesquad] ${message}" ;;
+    esac
+    if ! "$TMUX_BIN" send-keys -l -t "$pane_id" "$message"; then
         release_chrono_notify_lock || return 1
         return 1
     fi
     sleep 0.3
-    if ! "$TMUX_BIN" send-keys -t "$CHRONO_TMUX_TARGET" Enter; then
+    if ! "$TMUX_BIN" send-keys -t "$pane_id" Enter; then
         release_chrono_notify_lock || return 1
         return 1
     fi
@@ -170,14 +184,14 @@ send_chrono_notification_once() {
         "$event_key" \
         "$(printf '%s' "$message" | shasum -a 256 | awk '{print $1}')" \
         "$(date -u +%FT%TZ)" \
-        "$CHRONO_TMUX_TARGET" > "$tmp" \
+        "$pane_id" > "$tmp" \
         || ! mv "$tmp" "$receipt"; then
         rm -f "$tmp" 2>/dev/null || true
         release_chrono_notify_lock || true
         return 1
     fi
     release_chrono_notify_lock || return 1
-    return 0
+    return "$notice_status"
 }
 
 if [[ "$NOTIFY_ONCE_MODE" == 1 ]]; then
@@ -210,6 +224,12 @@ fi
 if [[ "$NAMESPACE" == "coding" || "$ALL_NAMESPACES" == "1" ]]; then
     (
         while true; do
+            # Use this daemon's existing timer; no additional launchd label.
+            # Check headroom each tick; successful sweeps have a 30m cooldown.
+            if [[ -x "${VAULT_ROOT}/bin/disk-hygiene.sh" ]]; then
+                "${VAULT_ROOT}/bin/disk-hygiene.sh" --periodic \
+                    || echo "[$(date '+%H:%M:%S')] warning: periodic disk hygiene deferred or failed" >&2
+            fi
             sleep 900
             if ! "${VAULT_ROOT}/bin/registry-reconciler.sh" >/dev/null 2>&1; then
                 echo "[$(date '+%H:%M:%S')] warning: periodic registry reconciliation failed" >&2
@@ -509,13 +529,15 @@ release_chrono_queue_lock() {
 # registry-reconciler.sh report "already-settled" may itself have been
 # pruned -- so the replay falls into the reconciler_handled==0 fallback below
 # and would silently undo the backfill's archival on every restart. Both
-# writers use the identical " ${ts} | ${status} | ${task_ref} | ${summary}"
-# line shape (registry_reconciler.py:244, append_chrono_queue below), so a
-# literal `-F` match on " | ${task_ref} | " is exact -- task_ref is a bare
-# namespace/task-id with no pipe characters. Reading chrono-queue-handled.md
-# here is lock-free by design: its only writer (chrono-queue-backfill.sh)
-# replaces it via tempfile+os.replace, an atomic rename, so a concurrent
-# reader always sees a fully-old or fully-new file, never a torn one.
+# writers use the four-column "${ts} | ${status} | ${task_ref} | ${summary}"
+# line shape (append_chrono_queue in registry_reconciler.py and below). The
+# Python notification marker lives inside the summary column and is absent
+# from bash rows. A literal `-F` match on " | ${task_ref} | " is exact --
+# task_ref is a bare namespace/task-id with no pipe characters. Reading
+# chrono-queue-handled.md here is lock-free by design: its only writer
+# (chrono-queue-backfill.sh) replaces it via tempfile+os.replace, an atomic
+# rename, so a concurrent reader always sees a fully-old or fully-new file,
+# never a torn one.
 task_already_handled() {
     local task_ref="$1" handled="${STATE_DIR}/chrono-queue-handled.md"
     [[ -f "$handled" ]] || return 1
@@ -589,6 +611,39 @@ append_chrono_queue() {
 
 PROCESSED_PATHS="|"
 PENDING_PATHS="|"
+QUEUED_PATHS="|"
+
+schedule_response_retry() {
+    local path="$1" mtime now
+    case "$PENDING_PATHS" in
+        *"|$path|"*) return ;;
+    esac
+    mtime="$(stat -c %Y "$path" 2>/dev/null || stat -f %m "$path" 2>/dev/null)" || return
+    [[ "$mtime" =~ ^[0-9]+$ ]] || return
+    now="$(date +%s)"
+    if (( now - mtime > 7 * 24 * 60 * 60 )); then
+        echo "[$(date '+%H:%M:%S')] response retry skipped: $(basename "$path"); mtime older than 7 days"
+        return
+    fi
+    PENDING_PATHS="${PENDING_PATHS}${path}|"
+    echo "[$(date '+%H:%M:%S')] response not status-ready yet: $(basename "$path"); scheduling delayed retry"
+    (
+        local started=$SECONDS polls=0
+        # Bound both elapsed time and polls: a clock change must not keep a
+        # status-less legacy envelope alive for the watcher's entire lifetime.
+        while [[ -f "$path" ]] && (( SECONDS - started < 600 && polls < 120 )); do
+            sleep 5
+            polls=$((polls + 1))
+            if legacy_response_ready_for_status "$path"; then
+                handle_response_path "$path"
+                exit
+            fi
+        done
+        if [[ -f "$path" ]]; then
+            echo "[$(date '+%H:%M:%S')] response retry expired after 600s: $(basename "$path")"
+        fi
+    ) &
+}
 
 handle_response_path() {
     local path="$1" fname ctx status status_prefix task_id NUDGE_MSG state task_file can_nudge dept reconciler_handled reconcile_output event_state event_key nudge_status
@@ -651,26 +706,10 @@ handle_response_path() {
             status="$(response_status "$path")"
             status_prefix="$(status_nudge_prefix "$status")"
         else
-            echo "[$(date '+%H:%M:%S')] response not status-ready yet: ${fname}; scheduling delayed retry"
-            case "$PENDING_PATHS" in
-                    *"|$path|"*) ;;
-                    *)
-                        PENDING_PATHS="${PENDING_PATHS}${path}|"
-                        (
-                            while [[ -f "$path" ]]; do
-                                sleep 1
-                                if legacy_response_ready_for_status "$path"; then
-                                    handle_response_path "$path"
-                                    break
-                                fi
-                            done
-                        ) &
-                        ;;
-                esac
+            schedule_response_retry "$path"
             return
         fi
     fi
-    PROCESSED_PATHS="${PROCESSED_PATHS}${path}|"
     if [[ "$fname" == TASK-*-response.md ]]; then
         autocapture_dispatch "$path"
         # A handled V2 settlement proves the descriptor and completed worker
@@ -679,6 +718,12 @@ handle_response_path() {
         # watcher windows.
         if [[ "$reconciler_handled" == 1 ]]; then
             record_skill_telemetry_best_effort "$task_id"
+            # Resolve ONLY this task's current attempt. The pruner rechecks
+            # terminal evidence, live processes and NEEDS-RESCUE itself.
+            if [[ -x "${VAULT_ROOT}/bin/disk-hygiene.sh" ]]; then
+                "${VAULT_ROOT}/bin/disk-hygiene.sh" --task-id "$task_id" \
+                    || echo "[$(date '+%H:%M:%S')] warning: settlement cleanup retained ${task_id}; periodic sweep will retry" >&2
+            fi
         fi
     fi
     can_nudge=1
@@ -695,10 +740,14 @@ handle_response_path() {
                 echo "[$(date '+%H:%M:%S')] skipping fallback queue: ${NAMESPACE}/${task_id} already archived in chrono-queue-handled.md"
             else
                 echo "[$(date '+%H:%M:%S')] shared reconciler found no settled registry entry; using notification fallback: ${task_id}"
-                if append_chrono_queue "$task_id" "$status" "$path"; then
+                if [[ "$QUEUED_PATHS" == *"|$path|"* ]]; then
+                    : # Store retry must not replay the fallback queue append.
+                elif append_chrono_queue "$task_id" "$status" "$path"; then
+                    QUEUED_PATHS="${QUEUED_PATHS}${path}|"
                     echo "[$(date '+%H:%M:%S')] fallback queued chrono status entry: ${status} ${NAMESPACE}/${task_id}"
                 else
                     echo "[$(date '+%H:%M:%S')] warning: failed to queue chrono status entry: ${status} ${NAMESPACE}/${task_id}" >&2
+                    return 1
                 fi
             fi
         fi
@@ -729,6 +778,7 @@ handle_response_path() {
     # TASK responses are queued and nudged by the shared reconciler. Keep this
     # legacy path for RESP-* replies or successful, unhandled V1 reconciliation.
     if [[ "$fname" == TASK-*-response.md && "$reconciler_handled" == 1 ]]; then
+        PROCESSED_PATHS="${PROCESSED_PATHS}${path}|"
         return
     fi
 
@@ -741,11 +791,33 @@ handle_response_path() {
     fi
     echo "[$(date '+%H:%M:%S')] nudge: ${NUDGE_MSG}"
 
+    # Publish even when there is no tmux recipient. File mtime gates startup
+    # replay at the store cutoff; task generation comes from the registry fence.
+    local notice_generation=1 notice_time notice_status=0
+    notice_time="$(python3 - "$path" <<'NOTICE_TIME'
+from datetime import datetime, timezone
+from pathlib import Path
+import sys
+print(datetime.fromtimestamp(Path(sys.argv[1]).stat().st_mtime, timezone.utc).isoformat())
+NOTICE_TIME
+)"
+    if [[ -n "$task_id" ]]; then
+        notice_generation="$(jq -r --arg task "$task_id" '.[$task].delivery_generation // 1' "${STATE_DIR}/active-tasks.json" 2>/dev/null)"
+        [[ "$notice_generation" =~ ^[1-9][0-9]*$ ]] || notice_generation=1
+        python3 "$NOTIFICATION_MODULE" --vault "$VAULT_ROOT" enqueue-task \
+            --task-id "$task_id" --generation "$notice_generation" --kind "$status" \
+            --summary "$NUDGE_MSG" --occurred-at "$notice_time" >/dev/null || notice_status=1
+    else
+        python3 "$NOTIFICATION_MODULE" --vault "$VAULT_ROOT" enqueue-resource \
+            --resource "outbox:${NAMESPACE}/${fname}" --episode "$notice_time" \
+            --summary "$NUDGE_MSG" --occurred-at "$notice_time" >/dev/null || notice_status=1
+    fi
+    [[ "$notice_status" == 0 ]] || echo "durable outbox notice enqueue failed: ${fname}" >&2
     if [[ "$can_nudge" == 1 ]]; then
         event_state="$status"
         [[ "$event_state" == "needs_review" ]] && event_state="review-required"
         event_key="$(notification_event_key "${NAMESPACE}/${task_id:-$fname}" "$event_state")"
-        if send_chrono_notification_once "$event_key" "$NUDGE_MSG"; then
+        if NOTICE_ALREADY_ENQUEUED=1 send_chrono_notification_once "$event_key" "$NUDGE_MSG"; then
             true
         else
             nudge_status=$?
@@ -755,6 +827,9 @@ handle_response_path() {
         fi
     else
         echo "[$(date '+%H:%M:%S')] chrono pane unavailable; no tmux recipient: ${fname}"
+    fi
+    if [[ "$notice_status" == 0 ]]; then
+        PROCESSED_PATHS="${PROCESSED_PATHS}${path}|"
     fi
 }
 

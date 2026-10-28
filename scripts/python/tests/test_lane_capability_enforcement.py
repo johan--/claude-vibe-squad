@@ -24,17 +24,20 @@ from lane_capability_enforcement import (  # noqa: E402
     AGY_GLOBAL_CHRONO_MCPS,
     MCP_HEALTH_INSPECTED_LANES,
     CapabilityDenied,
-    KimiLocalHostArtifacts,
+    claude_plugins_to_disable,
     cli_args_for_materialized,
     load_json_mcp_servers,
     load_projection,
     load_tool_classes,
+    materialize_disabled_plugins_settings,
     materialize_role_config,
     mcp_health,
     parse_claude_enabled_plugins,
+    parse_claude_plugin_components,
     parse_claude_project_plugin_dirs,
     parse_live_mcp_listing,
     plan_lane,
+    render_disabled_plugins_settings,
 )
 from specialist_capability_source import load_source  # noqa: E402
 import seatbelt_profile  # noqa: E402
@@ -44,36 +47,7 @@ from scripts.python.tests.ci_host_independence import (  # noqa: E402
 
 
 class LaneCapabilityEnforcementTests(unittest.TestCase):
-    def setUp(self) -> None:
-        super().setUp()
-        directory = tempfile.TemporaryDirectory()
-        self.addCleanup(directory.cleanup)
-        root = Path(directory.name)
-        interpreter = root / "python"
-        sequential_thinking = root / "mcp-server-sequential-thinking"
-        for executable in (interpreter, sequential_thinking):
-            executable.write_text("fixture executable\n", encoding="utf-8")
-            executable.chmod(0o700)
-        self.kimi_host_artifacts = KimiLocalHostArtifacts(
-            interpreter=interpreter,
-            sequential_thinking=sequential_thinking,
-        )
 
-    @staticmethod
-    def _kimi_vault_environment() -> dict[str, str]:
-        context = json.dumps(
-            {
-                "aperture": "focused",
-                "schema": "chrono-vault-context/v1",
-                "task_id": "TASK-2026-08-08-1300-v4-capability-kimi",
-            },
-            sort_keys=True,
-            separators=(",", ":"),
-        )
-        return {
-            "CHRONO_VAULT_ROOT": "/private/chrono-vault",
-            "CHRONO_VAULT_CONTEXT": context,
-        }
 
     @staticmethod
     def _agy_configured(
@@ -210,7 +184,7 @@ class LaneCapabilityEnforcementTests(unittest.TestCase):
             )
         return completed.returncode, json.loads(completed.stdout)
 
-    def test_projection_reads_aliases_and_separates_kimi_lead_brokered_mcps(
+    def test_projection_reads_aliases_and_separates_lead_brokered_mcps(
         self,
     ) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -227,7 +201,7 @@ class LaneCapabilityEnforcementTests(unittest.TestCase):
                 encoding="utf-8",
             )
             projection = load_projection(
-                lane="kimi",
+                lane="claude",
                 specialist="summarizer",
                 adapter_path=adapter,
                 overlay_path=overlay,
@@ -336,6 +310,25 @@ class LaneCapabilityEnforcementTests(unittest.TestCase):
                 ),
             )
 
+    def test_claude_live_inventory_normalizes_elevenlabs_connector(self) -> None:
+        claude = parse_live_mcp_listing(
+            lane="claude",
+            output=(
+                "Checking MCP server health…\n"
+                "claude.ai ElevenLabs: https://example.invalid/mcp - ✔ Connected\n"
+                "plugin:chrono-vault:chrono-vault: /bin/tool - ✔ Connected\n"
+            ),
+        )
+        self.assertEqual(set(claude), {"claude-ai-elevenlabs", "chrono-vault"})
+        self.assertEqual(
+            claude["claude-ai-elevenlabs"],
+            {
+                "live_name": "claude.ai ElevenLabs",
+                "tool_namespace": "claude_ai_ElevenLabs",
+                "status": "✔ Connected",
+            },
+        )
+
     def test_claude_live_inventory_rejects_unknown_first_party_rows(self) -> None:
         with self.assertRaisesRegex(CapabilityDenied, "unsafe server name"):
             parse_live_mcp_listing(
@@ -393,7 +386,7 @@ class LaneCapabilityEnforcementTests(unittest.TestCase):
                 json.dumps(
                     [
                         {
-                            "id": "firecrawl@claude-plugins-official",
+                            "id": "example-plugin@claude-plugins-official",
                             "enabled": True,
                         },
                         {
@@ -403,7 +396,7 @@ class LaneCapabilityEnforcementTests(unittest.TestCase):
                     ]
                 )
             ),
-            ("firecrawl",),
+            ("example-plugin",),
         )
         with self.assertRaisesRegex(CapabilityDenied, "wrong schema"):
             parse_claude_enabled_plugins("{}")
@@ -450,6 +443,11 @@ class LaneCapabilityEnforcementTests(unittest.TestCase):
                 "tool_namespace": "sequential-thinking",
                 "status": "✔ Connected",
             },
+            "claude-ai-elevenlabs": {
+                "live_name": "claude.ai ElevenLabs",
+                "tool_namespace": "claude_ai_ElevenLabs",
+                "status": "✔ Connected",
+            },
             "claude-ai-gmail": {
                 "live_name": "claude.ai Gmail",
                 "tool_namespace": "claude_ai_Gmail",
@@ -476,6 +474,7 @@ class LaneCapabilityEnforcementTests(unittest.TestCase):
             plan.disabled_mcps,
             (
                 "chrono-recon",
+                "claude-ai-elevenlabs",
                 "claude-ai-gmail",
                 "claude-ai-google-calendar",
                 "claude-ai-google-drive",
@@ -493,6 +492,7 @@ class LaneCapabilityEnforcementTests(unittest.TestCase):
                 "--disallowedTools",
                 (
                     "mcp__plugin_chrono-recon_chrono-recon__*,"
+                    "mcp__claude_ai_ElevenLabs__*,"
                     "mcp__claude_ai_Gmail__*,"
                     "mcp__claude_ai_Google_Calendar__*,"
                     "mcp__claude_ai_Google_Drive__*,"
@@ -724,7 +724,7 @@ class LaneCapabilityEnforcementTests(unittest.TestCase):
         # dispatch. One predicate now decides, and the lanes differ only in
         # whether they collect a status at all.
         self.assertEqual(MCP_HEALTH_INSPECTED_LANES, frozenset({"claude"}))
-        for lane in ("claude", "gemini", "codex", "kimi"):
+        for lane in ("claude", "gemini", "codex"):
             with self.subTest(lane=lane):
                 self.assertEqual(
                     mcp_health(lane=lane, details={"status": "✔ Connected"}), "healthy"
@@ -854,345 +854,8 @@ class LaneCapabilityEnforcementTests(unittest.TestCase):
             plan.capability_enforcement, "grok-cli-global-mcp-exposure/v1"
         )
 
-    def test_kimi_uses_only_exact_local_templates_and_ignores_host_config(self) -> None:
-        vault_environment = self._kimi_vault_environment()
-        python = str(self.kimi_host_artifacts.interpreter)
-        expected = {
-            name: {
-                "command": python,
-                "args": [str(ROOT / "plugins" / name / "mcp_server.py")],
-            }
-            for name in (
-                "chrono-dedup",
-                "chrono-research-arsenal",
-                "chrono-vault",
-            )
-        }
-        expected["sequential-thinking"] = {
-            "command": str(self.kimi_host_artifacts.sequential_thinking)
-        }
-        expected["chrono-vault"]["env"] = vault_environment
-        secret = "synthetic-host-secret"
-        hostile = {
-            name: {
-                "url": f"https://user:{secret}@example.test/mcp",
-                "headers": {"Authorization": secret},
-                "env": {"TOKEN": secret},
-            }
-            for name in expected
-        }
-        hostile["unrelated-global"] = {"command": f"/tmp/{secret}"}
-        all_names = sorted(expected)
-        plan = plan_lane(
-            lane="kimi",
-            projection={"mcps": [], "brokered_mcps": all_names, "tools": []},
-            configured_servers=hostile,
-            repo_root=ROOT,
-            kimi_vault_environment=vault_environment,
-            kimi_host_artifacts=self.kimi_host_artifacts,
-        )
-        self.assertEqual(json.loads(plan.role_config_json), {"mcpServers": expected})
-        self.assertEqual(plan.configured_mcps, tuple(all_names))
-        self.assertEqual(plan.disabled_mcps, ())
-        self.assertNotIn(secret, plan.role_config_json)
-        self.assertTrue(
-            all(
-                not ({"headers", "auth", "url"} & set(config))
-                for config in expected.values()
-            )
-        )
-        self.assertTrue(
-            all(
-                "env" not in config
-                for name, config in expected.items()
-                if name != "chrono-vault"
-            )
-        )
-        subset = plan_lane(
-            lane="kimi",
-            projection={
-                "mcps": [],
-                "brokered_mcps": ["chrono-vault", "sequential-thinking"],
-                "tools": [],
-            },
-            configured_servers=hostile,
-            repo_root=ROOT,
-            kimi_vault_environment=vault_environment,
-            kimi_host_artifacts=self.kimi_host_artifacts,
-        )
-        self.assertEqual(
-            set(json.loads(subset.role_config_json)["mcpServers"]),
-            {"chrono-vault", "sequential-thinking"},
-        )
 
-    def test_kimi_vault_template_receives_only_bound_vault_environment(self) -> None:
-        vault_environment = self._kimi_vault_environment()
-        plan = plan_lane(
-            lane="kimi",
-            projection={
-                "mcps": [],
-                "brokered_mcps": ["chrono-vault", "sequential-thinking"],
-                "tools": [],
-            },
-            configured_servers={"hostile": {"env": {"TOKEN": "secret"}}},
-            repo_root=ROOT,
-            kimi_vault_environment=vault_environment,
-            kimi_host_artifacts=self.kimi_host_artifacts,
-        )
-        servers = json.loads(plan.role_config_json)["mcpServers"]
-        self.assertEqual(servers["chrono-vault"]["env"], vault_environment)
-        self.assertNotIn("env", servers["sequential-thinking"])
-        self.assertNotIn("TOKEN", plan.role_config_json)
-
-        for invalid in (
-            None,
-            {"CHRONO_VAULT_ROOT": "/private/chrono-vault"},
-            {**vault_environment, "TOKEN": "secret"},
-            {**vault_environment, "CHRONO_VAULT_ROOT": "relative"},
-            {**vault_environment, "CHRONO_VAULT_CONTEXT": "{}"},
-            {
-                **vault_environment,
-                "CHRONO_VAULT_CONTEXT": (
-                    '{"schema":"chrono-vault-context/v1","x":NaN}'
-                ),
-            },
-        ):
-            with self.subTest(invalid=invalid), self.assertRaises(CapabilityDenied):
-                plan_lane(
-                    lane="kimi",
-                    projection={
-                        "mcps": [],
-                        "brokered_mcps": ["chrono-vault"],
-                        "tools": [],
-                    },
-                    configured_servers={},
-                    repo_root=ROOT,
-                    kimi_vault_environment=invalid,
-                    kimi_host_artifacts=self.kimi_host_artifacts,
-                )
-
-    def test_kimi_none_aperture_projects_without_vault_binding(self) -> None:
-        none_context = json.dumps(
-            {
-                "aperture": "none",
-                "schema": "chrono-vault-context/v1",
-                "task_id": "TASK-2026-08-14-1900-small-batch",
-            },
-            sort_keys=True,
-            separators=(",", ":"),
-        )
-        projection = {
-            "mcps": [],
-            "brokered_mcps": ["chrono-vault", "sequential-thinking"],
-            "tools": [],
-        }
-
-        plan = plan_lane(
-            lane="kimi",
-            projection=projection,
-            configured_servers={},
-            repo_root=ROOT,
-            kimi_vault_environment={"CHRONO_VAULT_CONTEXT": none_context},
-            kimi_host_artifacts=self.kimi_host_artifacts,
-        )
-
-        self.assertEqual(plan.authorized_mcps, ("sequential-thinking",))
-        self.assertEqual(plan.brokered_mcps, ("sequential-thinking",))
-        self.assertEqual(
-            json.loads(plan.role_config_json),
-            {
-                "mcpServers": {
-                    "sequential-thinking": {
-                        "command": str(
-                            self.kimi_host_artifacts.sequential_thinking
-                        )
-                    }
-                }
-            },
-        )
-
-        focused_context = json.dumps(
-            {
-                "aperture": "focused",
-                "schema": "chrono-vault-context/v1",
-                "task_id": "TASK-2026-08-14-1900-small-batch",
-            },
-            sort_keys=True,
-            separators=(",", ":"),
-        )
-        with self.assertRaisesRegex(CapabilityDenied, "not exactly bound"):
-            plan_lane(
-                lane="kimi",
-                projection=projection,
-                configured_servers={},
-                repo_root=ROOT,
-                kimi_vault_environment={
-                    "CHRONO_VAULT_CONTEXT": focused_context
-                },
-                kimi_host_artifacts=self.kimi_host_artifacts,
-            )
-
-    def test_kimi_local_templates_fail_closed_on_unknown_or_missing_paths(self) -> None:
-        def projection(name: str) -> dict[str, object]:
-            return {"mcps": [], "brokered_mcps": [name], "tools": []}
-
-        with self.assertRaisesRegex(CapabilityDenied, "unsupported local template"):
-            plan_lane(
-                lane="kimi",
-                projection=projection("unknown-server"),
-                configured_servers={},
-                repo_root=ROOT,
-            )
-        missing_interpreter = KimiLocalHostArtifacts(
-            interpreter=self.kimi_host_artifacts.interpreter.with_name(
-                "missing-python"
-            ),
-            sequential_thinking=self.kimi_host_artifacts.sequential_thinking,
-        )
-        with self.assertRaisesRegex(CapabilityDenied, "interpreter"):
-            plan_lane(
-                lane="kimi",
-                projection=projection("chrono-vault"),
-                configured_servers={},
-                repo_root=ROOT,
-                kimi_vault_environment=self._kimi_vault_environment(),
-                kimi_host_artifacts=missing_interpreter,
-            )
-        missing_sequential = KimiLocalHostArtifacts(
-            interpreter=self.kimi_host_artifacts.interpreter,
-            sequential_thinking=self.kimi_host_artifacts.sequential_thinking.with_name(
-                "missing-sequential-thinking"
-            ),
-        )
-        with self.assertRaisesRegex(
-            CapabilityDenied, "sequential-thinking executable"
-        ):
-            plan_lane(
-                lane="kimi",
-                projection=projection("sequential-thinking"),
-                configured_servers={},
-                repo_root=ROOT,
-                kimi_host_artifacts=missing_sequential,
-            )
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory) / "repo"
-            script = root / "plugins" / "chrono-vault" / "mcp_server.py"
-            script.parent.mkdir(parents=True)
-            script.write_text("# local test server\n", encoding="utf-8")
-            with self.assertRaisesRegex(CapabilityDenied, "interpreter"):
-                plan_lane(
-                    lane="kimi",
-                    projection=projection("chrono-vault"),
-                    configured_servers={},
-                    repo_root=root,
-                    kimi_vault_environment=self._kimi_vault_environment(),
-                )
-            interpreter = root / ".venv" / "bin" / "python"
-            interpreter.parent.mkdir(parents=True)
-            interpreter.write_text("#!/bin/sh\n", encoding="utf-8")
-            interpreter.chmod(0o755)
-            script.unlink()
-            with self.assertRaisesRegex(CapabilityDenied, "server script"):
-                plan_lane(
-                    lane="kimi",
-                    projection=projection("chrono-vault"),
-                    configured_servers={},
-                    repo_root=root,
-                    kimi_vault_environment=self._kimi_vault_environment(),
-                )
-            outside = Path(directory) / "outside.py"
-            outside.write_text("# outside repo\n", encoding="utf-8")
-            script.symlink_to(outside)
-            with self.assertRaisesRegex(CapabilityDenied, "server script"):
-                plan_lane(
-                    lane="kimi",
-                    projection=projection("chrono-vault"),
-                    configured_servers={},
-                    repo_root=root,
-                    kimi_vault_environment=self._kimi_vault_environment(),
-                )
-
-    def test_all_runtime_mapped_kimi_roles_plan_from_templates_without_host_config(
-        self,
-    ) -> None:
-        adapters = sorted(
-            (ROOT / "model-lanes" / "kimi" / ".kimi" / "agents").glob("*.yaml")
-        )
-        with (ROOT / "shared" / "specialist-runtime-map.tsv").open(
-            encoding="utf-8", newline=""
-        ) as stream:
-            rows = csv.DictReader(stream, delimiter="\t")
-            route_fields = (
-                "primary_lane",
-                "backup_lane",
-                "escalate_lane",
-                "review_lane",
-                "throughput_lane",
-            )
-            expected_specialists = {
-                row["specialist"]
-                for row in rows
-                if any(row[field] == "kimi" for field in route_fields)
-            }
-        self.assertEqual({adapter.stem for adapter in adapters}, expected_specialists)
-        for adapter in adapters:
-            with self.subTest(specialist=adapter.stem):
-                projection = load_projection(
-                    lane="kimi",
-                    specialist=adapter.stem,
-                    adapter_path=adapter,
-                    overlay_path=adapter,
-                )
-                plan = plan_lane(
-                    lane="kimi",
-                    projection=projection,
-                    configured_servers={"hostile": {"url": "https://invalid"}},
-                    repo_root=ROOT,
-                    tool_lookup=lambda name: f"/declared/{name}",
-                    kimi_vault_environment=self._kimi_vault_environment(),
-                    kimi_host_artifacts=self.kimi_host_artifacts,
-                )
-                self.assertEqual(plan.authorized_mcps, plan.brokered_mcps)
-
-    def test_kimi_rejects_direct_unstripped_or_noncanonical_mcp_declarations(
-        self,
-    ) -> None:
-        base = {
-            "lane": "kimi",
-            "specialist": "summarizer",
-            "mcps": [],
-            "brokered_mcps": ["chrono-vault", "sequential-thinking"],
-            "tools": [],
-            "skills": [],
-            "sources": [],
-            "schema": "role-capability-projection/v1",
-        }
-        configured = {
-            "chrono-vault": {"command": "/bin/chrono-vault"},
-            "sequential-thinking": {"command": "/bin/sequential-thinking"},
-        }
-        for field, value, reason in (
-            ("mcps", ["chrono-vault"], "direct role MCP"),
-            ("brokered_mcps", ["lead:chrono-vault"], "stripped"),
-            (
-                "brokered_mcps",
-                ["sequential-thinking", "chrono-vault"],
-                "sorted unique",
-            ),
-            ("brokered_mcps", ["chrono-vault", "chrono-vault"], "sorted unique"),
-        ):
-            projection = {**base, field: value}
-            with self.subTest(field=field, value=value), self.assertRaisesRegex(
-                CapabilityDenied, reason
-            ):
-                plan_lane(
-                    lane="kimi",
-                    projection=projection,
-                    configured_servers=configured,
-                    repo_root=ROOT,
-                )
-
-    def test_non_kimi_lanes_fail_closed_on_missing_authorized_mcp(self) -> None:
+    def test_lanes_fail_closed_on_missing_authorized_mcp(self) -> None:
         for lane in ("codex", "claude", "gemini"):
             with self.subTest(lane=lane):
                 projection = {
@@ -1243,23 +906,11 @@ class LaneCapabilityEnforcementTests(unittest.TestCase):
             )
 
     def test_materialized_config_is_worktree_local_and_owner_only(self) -> None:
-        projection = {
-            "lane": "kimi",
-            "specialist": "sample",
-            "mcps": [],
-            "brokered_mcps": ["chrono-vault"],
-            "tools": [],
-            "skills": [],
-            "sources": [],
-            "schema": "role-capability-projection/v1",
-        }
+        server = {"command": "/usr/bin/false"}
         plan = plan_lane(
-            lane="kimi",
-            projection=projection,
-            configured_servers={},
-            repo_root=ROOT,
-            kimi_vault_environment=self._kimi_vault_environment(),
-            kimi_host_artifacts=self.kimi_host_artifacts,
+            lane="claude",
+            projection={"mcps": ["chrono-vault"], "tools": []},
+            configured_servers={"chrono-vault": {"project_config": server}},
         )
         with tempfile.TemporaryDirectory() as directory:
             worktree = Path(directory)
@@ -1271,17 +922,7 @@ class LaneCapabilityEnforcementTests(unittest.TestCase):
             )
             self.assertEqual(
                 json.loads(path.read_text()),
-                {
-                    "mcpServers": {
-                        "chrono-vault": {
-                            "command": str(self.kimi_host_artifacts.interpreter),
-                            "args": [
-                                str(ROOT / "plugins" / "chrono-vault" / "mcp_server.py")
-                            ],
-                            "env": self._kimi_vault_environment(),
-                        }
-                    }
-                },
+                {"mcpServers": {"chrono-vault": server}},
             )
             self.assertEqual(
                 stat.S_IMODE(path.stat().st_mode),
@@ -1290,7 +931,7 @@ class LaneCapabilityEnforcementTests(unittest.TestCase):
             self.assertTrue(path.is_relative_to(worktree.resolve()))
             self.assertEqual(
                 cli_args_for_materialized(plan, path),
-                ("--mcp-config-file", str(path)),
+                ("--mcp-config", str(path)),
             )
 
     def _assert_all_real_adapters_plan_from_live_inventory(
@@ -1435,6 +1076,222 @@ class LaneCapabilityEnforcementTests(unittest.TestCase):
             adapter_root=ROOT / "model-lanes/gemini/.gemini/agents",
             project_config_path=None,
         )
+
+
+class ClaudePluginTrimTests(unittest.TestCase):
+    """Keeping unused operator-enabled plugins from spawning their MCP servers."""
+
+    PLUGIN_LISTING = json.dumps(
+        [
+            {
+                "id": "firebase@claude-plugins-official",
+                "enabled": True,
+                "scope": "user",
+                "installPath": "/x/firebase",
+                "mcpServers": {"firebase": {"command": "npx"}},
+            },
+            {
+                "id": "playwright@claude-plugins-official",
+                "enabled": True,
+                "scope": "user",
+                "installPath": "/x/playwright",
+                "mcpServers": {"playwright": {"command": "npx"}},
+            },
+            {
+                "id": "figma@claude-plugins-official",
+                "enabled": True,
+                "scope": "user",
+                "installPath": "/x/figma",
+                "mcpServers": {"figma": {"type": "http"}},
+            },
+            {
+                "id": "chrono-vault@claude-vibe-squad",
+                "enabled": True,
+                "scope": "user",
+                "installPath": "/x/chrono-vault",
+                "mcpServers": {"chrono-vault": {}, "chrono-kg": {}},
+            },
+            {
+                "id": "superpowers@claude-plugins-official",
+                "enabled": True,
+                "scope": "user",
+                "installPath": "/x/superpowers",
+                "mcpServers": {},
+            },
+            {
+                "id": "disabled-thing@claude-plugins-official",
+                "enabled": False,
+                "scope": "user",
+                "installPath": "/x/disabled",
+                "mcpServers": {"disabled-thing": {}},
+            },
+        ]
+    )
+
+    def test_parse_components_keys_by_full_id_and_skips_disabled(self):
+        components = parse_claude_plugin_components(self.PLUGIN_LISTING)
+        self.assertIn("firebase@claude-plugins-official", components)
+        self.assertNotIn("disabled-thing@claude-plugins-official", components)
+        self.assertEqual(
+            components["chrono-vault@claude-vibe-squad"]["mcp_servers"],
+            ("chrono-kg", "chrono-vault"),
+        )
+        self.assertEqual(
+            components["superpowers@claude-plugins-official"]["mcp_servers"], ()
+        )
+
+    def test_parse_components_rejects_unsafe_records(self):
+        for bad in (
+            '[{"id":"noatsign","enabled":true,"installPath":"/x","mcpServers":{}}]',
+            '[{"id":"p@m","enabled":true,"installPath":"relative","mcpServers":{}}]',
+            '[{"id":"p@m","enabled":true,"installPath":"/x","mcpServers":{"bad name":{}}}]',
+            "not json",
+            '{"not":"a list"}',
+        ):
+            with self.assertRaises(CapabilityDenied):
+                parse_claude_plugin_components(bad)
+
+    def test_parse_components_merges_duplicate_scopes(self):
+        # A plugin enabled in both user and project scope appears twice with the
+        # same id; merge into the superset of MCP servers instead of failing.
+        listing = json.dumps(
+            [
+                {
+                    "id": "chrono-media-studio@claude-vibe-squad",
+                    "enabled": True,
+                    "scope": "user",
+                    "installPath": "/x/cms",
+                    "mcpServers": {"chrono-media-studio": {}, "elevenlabs": {}},
+                },
+                {
+                    "id": "chrono-media-studio@claude-vibe-squad",
+                    "enabled": True,
+                    "scope": "project",
+                    "installPath": "/x/cms",
+                    "mcpServers": {"chrono-media-studio": {}, "higgsfield": {}},
+                },
+            ]
+        )
+        components = parse_claude_plugin_components(listing)
+        self.assertEqual(len(components), 1)
+        self.assertEqual(
+            components["chrono-media-studio@claude-vibe-squad"]["mcp_servers"],
+            ("chrono-media-studio", "elevenlabs", "higgsfield"),
+        )
+
+    def _resolve(self, components, *, skills_by_plugin=None, ships=None):
+        skills_by_plugin = skills_by_plugin or {}
+        ships = ships or {}
+        resolved = {}
+        for plugin_id, record in components.items():
+            resolved[plugin_id] = {
+                "mcp_servers": record["mcp_servers"],
+                "skills": tuple(skills_by_plugin.get(plugin_id, ())),
+                "provides_commands": ships.get(plugin_id, (False, False))[0],
+                "provides_agents": ships.get(plugin_id, (False, False))[1],
+            }
+        return resolved
+
+    def test_disables_unused_pure_mcp_plugin(self):
+        components = parse_claude_plugin_components(self.PLUGIN_LISTING)
+        resolved = self._resolve(components)
+        disable = claude_plugins_to_disable(
+            plugin_components=resolved,
+            authorized_mcps=("chrono-vault", "chrono-kg"),
+        )
+        # firebase, playwright, figma are unauthorized pure-MCP (no skills in
+        # this fixture) -> disabled. chrono-vault has an authorized server ->
+        # kept. superpowers has no MCP server -> never touched.
+        self.assertEqual(
+            disable,
+            (
+                "figma@claude-plugins-official",
+                "firebase@claude-plugins-official",
+                "playwright@claude-plugins-official",
+            ),
+        )
+
+    def test_keeps_plugin_when_its_mcp_is_authorized(self):
+        components = parse_claude_plugin_components(self.PLUGIN_LISTING)
+        resolved = self._resolve(components)
+        disable = claude_plugins_to_disable(
+            plugin_components=resolved,
+            authorized_mcps=("playwright", "chrono-vault", "chrono-kg"),
+        )
+        self.assertNotIn("playwright@claude-plugins-official", disable)
+
+    def test_keeps_plugin_that_ships_skills(self):
+        # A plugin that ships ANY skill is kept, even when its MCP is unused and
+        # the skill is not projected: disabling it would strip skills the worker
+        # can reach opportunistically. figma's skills keep it alive.
+        components = parse_claude_plugin_components(self.PLUGIN_LISTING)
+        resolved = self._resolve(
+            components,
+            skills_by_plugin={
+                "figma@claude-plugins-official": ("figma-code-connect",),
+            },
+        )
+        disable = claude_plugins_to_disable(
+            plugin_components=resolved,
+            authorized_mcps=("chrono-vault", "chrono-kg"),
+        )
+        self.assertNotIn("figma@claude-plugins-official", disable)
+        self.assertIn("firebase@claude-plugins-official", disable)
+
+    def test_keeps_plugin_that_ships_commands_or_agents(self):
+        components = parse_claude_plugin_components(self.PLUGIN_LISTING)
+        resolved = self._resolve(
+            components,
+            ships={"firebase@claude-plugins-official": (False, True)},
+        )
+        disable = claude_plugins_to_disable(
+            plugin_components=resolved,
+            authorized_mcps=(),
+        )
+        self.assertNotIn("firebase@claude-plugins-official", disable)
+
+    def test_render_settings_is_canonical_and_merges(self):
+        rendered = render_disabled_plugins_settings(
+            ("playwright@claude-plugins-official", "firebase@claude-plugins-official")
+        )
+        self.assertEqual(
+            rendered,
+            '{"enabledPlugins":{"firebase@claude-plugins-official":false,'
+            '"playwright@claude-plugins-official":false}}',
+        )
+        self.assertEqual(json.loads(rendered)["enabledPlugins"][
+            "firebase@claude-plugins-official"], False)
+
+    def test_render_settings_rejects_unsafe_id(self):
+        with self.assertRaises(CapabilityDenied):
+            render_disabled_plugins_settings(("no-at-sign",))
+
+    def test_materialize_writes_owner_only_file_in_worktree(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            worktree = Path(tmp)
+            path = materialize_disabled_plugins_settings(
+                ("firebase@claude-plugins-official",),
+                worktree_root=worktree,
+                task_id="TASK-2026-09-26-1507-4788a9cb",
+                attempt_id="d0deadbeef",
+            )
+            self.assertTrue(path.is_file())
+            self.assertEqual(stat.S_IMODE(path.stat().st_mode), 0o600)
+            self.assertTrue(str(path.resolve()).startswith(str(worktree.resolve())))
+            payload = json.loads(path.read_text())
+            self.assertIs(
+                payload["enabledPlugins"]["firebase@claude-plugins-official"], False
+            )
+
+    def test_materialize_refuses_empty(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            with self.assertRaises(CapabilityDenied):
+                materialize_disabled_plugins_settings(
+                    (),
+                    worktree_root=Path(tmp),
+                    task_id="TASK-x",
+                    attempt_id="d0",
+                )
 
 
 if __name__ == "__main__":

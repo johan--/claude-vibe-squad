@@ -92,9 +92,12 @@ def _clone_detached_checkout(root: Path) -> Path:
     repo = root / "repo"
     source_head = _git(["rev-parse", "HEAD"], cwd=ROOT).stdout.strip()
     _git(
-        ["clone", "--no-local", "--quiet", str(ROOT), str(repo)],
+        ["clone", "--shared", "--no-checkout", "--quiet", str(ROOT), str(repo)],
         cwd=root,
     )
+    # Exercise committed code without copying excluded non-export fixtures.
+    _git(["sparse-checkout", "set", "--no-cone", "/*", "!/media/", "!/assets/",
+          "!/colosseum-demo-2026-10-12/", "!/projects/", "!/research/", "!/_state/"], cwd=repo)
     _git(["config", "user.email", "detached-head@example.com"], cwd=repo)
     _git(["config", "user.name", "Detached Head Test"], cwd=repo)
     _git(["checkout", "--quiet", "--detach", source_head], cwd=repo)

@@ -1,7 +1,7 @@
 #!/bin/bash
 # Weekly deep run (Sunday 04:00) — wraps Python implementation.
-# Phases: deep KG cleanup, 7-day dream, subscription audit, mode archival,
-# cross-source synthesis, weekly brief.
+# Phases: deep KG cleanup, CLI authentication (subscription) audit, mode archival census,
+# weekly brief.
 
 set -uo pipefail
 

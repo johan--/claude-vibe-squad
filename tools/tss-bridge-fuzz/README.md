@@ -37,7 +37,9 @@ answer.
 ## Retargeting — what you must change
 
 **One file: a `TargetSpec` impl.** Nothing in `rig/` knows about any particular
-bridge. `targets/svm-gateway/src/lib.rs` is the worked example.
+bridge. The public workspace contains the reusable `rig` library only; target
+adapters, smoke binaries, canaries, and campaign entry points are private.
+Create a separate crate implementing `rig/src/spec.rs` for your authorized target.
 
 ```
 rig/                        target-agnostic — DO NOT edit to retarget
@@ -48,9 +50,6 @@ rig/                        target-agnostic — DO NOT edit to retarget
   engine.rs                 Mollusk driver, state commit, invariant checks
   ledger.rs                 outcome accounting + the non-vacuity gate
   buf.rs                    borsh/Anchor byte builder
-targets/<your-bridge>/      target-specific — this is what you write
-fuzz/                       cargo-fuzz entry point (target-agnostic except the use line)
-canary/                     proves Mollusk actually executes an ELF
 ```
 
 To point the rig at a new bridge, implement these on your spec:
@@ -83,57 +82,23 @@ To point the rig at a new bridge, implement these on your spec:
    `SignatureExpired`. The adapter defaults to a valid window and restores the
    raw value under a flag bit, so expiry stays fuzzable without dominating.
 
-## Building the target ELF
+## Build the reusable library
 
-`anchor test` does **not** work: `anchor build` generates a local keypair that
-never matches `declare_id!` and writes it into the IDL. Build the ELF directly
-and load it at the **declared** id.
+From this directory:
 
 ```bash
-export PATH="$HOME/.local/share/solana/install/active_release/bin:$PATH"   # required
-cargo-build-sbf --manifest-path <program>/Cargo.toml --sbf-out-dir ./.build/deploy
+cargo build --release -p tss-bridge-fuzz-rig
 ```
 
-Without that `PATH` line Homebrew shadows the Agave install and `cargo-build-sbf`
-exits 101.
-
-**Verify the ELF matches the id you load it at.** Run the canary; a program
-whose `declare_id!` differs returns Anchor `4100 DeclaredProgramIdMismatch`
-instead of `101 InstructionFallbackNotFound`:
-
-```bash
-cargo run --release -p mollusk-canary --manifest-path canary/Cargo.toml -- <path/to/program.so>
-```
-
-## Running
-
-```bash
-# Deterministic smoke run — reports how many calls SUCCEEDED, and runs the
-# false twin. Exits non-zero on a vacuous run.
-cargo build --release
-RUST_LOG=off ./target/release/smoke .build/deploy/universal_gateway.so 400
-
-# libFuzzer campaign
-TSS_BRIDGE_FUZZ_ELF=$PWD/.build/deploy/universal_gateway.so \
-  cargo +nightly fuzz run tss_bridge --fuzz-dir fuzz --sanitizer=none -- -max_total_time=600
-
-# What the campaign ACTUALLY reached (libFuzzer reports sessions, not successes)
-RUST_LOG=off ./target/release/corpus-report \
-  .build/deploy/universal_gateway.so fuzz/corpus/tss_bridge
-```
-
-`RUST_LOG=off` matters: Mollusk enables `solana_logger` by default, so a run
-without it emits a program log line per instruction. Drop it when you want the
-logs.
+A target run additionally needs your own adapter, compiled program ELF, and
+smoke or fuzz entry point. Load the ELF at the program's declared ID and verify
+an authorized call succeeds before measuring coverage. The public library does
+not provide a ready-to-run target campaign.
 
 ## The non-vacuity gate
 
-A prior campaign reported **6.2 million "passing" calls with zero successful
-calls** — a harness bouncing every input off an auth check, printed as a clean
-run. A tool that silently failed to run and a tool that found nothing produce
-the same empty output.
-
-So this rig refuses to report a run as meaningful unless it can name:
+A harness that rejects every input at authentication has not exercised the
+post-signature state space. A meaningful run must report:
 
 * how many calls **SUCCEEDED** (not how many ran),
 * how many **distinct instruction kinds** were reached — `covered N of M`,

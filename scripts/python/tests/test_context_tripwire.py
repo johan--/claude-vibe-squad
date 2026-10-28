@@ -97,10 +97,10 @@ class ContextTripwireTests(unittest.TestCase):
         self.assertEqual(out, "")
 
     def test_warn_band_prints_warn_text(self) -> None:
-        rc, out, _ = self.run_hook(self.hook_payload(self.write_transcript(450_000)))
+        rc, out, _ = self.run_hook(self.hook_payload(self.write_transcript(650_000)))
         self.assertEqual(rc, 0)
         text = self.parse(out)
-        self.assertIn("450000 tokens", text)
+        self.assertIn("650000 tokens", text)
         self.assertIn("WARN", text)
         self.assertNotIn("HARD", text)
         self.assertIn("Finish only the current small step", text)
@@ -110,10 +110,10 @@ class ContextTripwireTests(unittest.TestCase):
         self.assertNotIn("THIS turn", text)
 
     def test_hard_band_prints_hard_text(self) -> None:
-        rc, out, _ = self.run_hook(self.hook_payload(self.write_transcript(700_000)))
+        rc, out, _ = self.run_hook(self.hook_payload(self.write_transcript(800_000)))
         self.assertEqual(rc, 0)
         text = self.parse(out)
-        self.assertIn("700000 tokens", text)
+        self.assertIn("800000 tokens", text)
         self.assertIn("HARD", text)
         self.assertIn("THIS turn before anything else", text)
         self.assertIn("OPEN-WORK.md", text)
@@ -141,19 +141,19 @@ class ContextTripwireTests(unittest.TestCase):
             }
         )
         path = self.tmp / "synthetic.jsonl"
-        lines = [user_record(), assistant_record(700_000, 0, 0), synthetic, user_record("retry")]
+        lines = [user_record(), assistant_record(800_000, 0, 0), synthetic, user_record("retry")]
         path.write_text("\n".join(lines) + "\n", encoding="utf-8")
         rc, out, _ = self.run_hook(self.hook_payload(path))
         self.assertEqual(rc, 0)
         text = self.parse(out)
         self.assertIn("HARD", text)
-        self.assertIn("700000 tokens", text)
+        self.assertIn("800000 tokens", text)
         # A tail record with zero usage but no synthetic marker is skipped the same way.
-        lines = [assistant_record(700_000, 0, 0), assistant_record(0, 0, 0), user_record()]
+        lines = [assistant_record(800_000, 0, 0), assistant_record(0, 0, 0), user_record()]
         path.write_text("\n".join(lines) + "\n", encoding="utf-8")
         rc, out, _ = self.run_hook(self.hook_payload(path))
         self.assertEqual(rc, 0)
-        self.assertIn("700000 tokens", self.parse(out))
+        self.assertIn("800000 tokens", self.parse(out))
 
     def test_env_thresholds_override_defaults(self) -> None:
         payload = self.hook_payload(self.write_transcript(100_000))
@@ -233,15 +233,23 @@ class ContextTripwireTests(unittest.TestCase):
         self.assertEqual(rc, 0)
         self.assertEqual(out, "", "below both thresholds stays silent")
 
-    def test_settings_json_registers_hook_and_resolves_without_project_dir(self) -> None:
+    def test_settings_json_has_hook_retired_and_script_resolves_without_project_dir(self) -> None:
+        # RETIRED 2026-09-21 by operator decision (see shared/lifecycle.md § 8): the
+        # UserPromptSubmit hook is deliberately NOT registered, because the harness
+        # auto-compacts and a forced /clear discarded live state. The script stays on
+        # disk and is still covered below, so re-enabling is a one-line settings change.
         data = json.loads(SETTINGS.read_text(encoding="utf-8"))
-        entries = data["hooks"]["UserPromptSubmit"]
-        self.assertEqual(len(entries), 1)
-        (hook,) = entries[0]["hooks"]
-        self.assertEqual(hook["type"], "command")
-        self.assertIn("bin/context-tripwire.sh", hook["command"])
-        self.assertLessEqual(hook["timeout"], 5)
-        payload = self.hook_payload(self.write_transcript(700_000))
+        self.assertNotIn(
+            "UserPromptSubmit",
+            data.get("hooks", {}),
+            "context tripwire is retired; re-registering it needs an explicit operator decision",
+        )
+        # The command the hook used to carry, kept literal here so the script's own path
+        # resolution stays covered now that settings.json no longer supplies it.
+        hook_command = 'bash "${CLAUDE_PROJECT_DIR:-.}/../bin/context-tripwire.sh"'
+        # Above the 750k default hard limit, so this asserts the HARD band regardless of
+        # where the warn threshold currently sits.
+        payload = self.hook_payload(self.write_transcript(800_000))
         base = {k: v for k, v in os.environ.items() if not k.startswith("CHRONO_CONTEXT_")}
         base.pop("CLAUDE_PROJECT_DIR", None)
         # Path 1: CLAUDE_PROJECT_DIR set, cwd elsewhere (the documented hook environment).
@@ -251,7 +259,7 @@ class ContextTripwireTests(unittest.TestCase):
             (base, ROOT / "chrono"),
         ):
             proc = subprocess.run(
-                ["bash", "-c", hook["command"]],
+                ["bash", "-c", hook_command],
                 input=payload,
                 capture_output=True,
                 text=True,
@@ -271,14 +279,14 @@ class ContextTripwireTests(unittest.TestCase):
         copy = self.tmp / "real-copy.jsonl"
         shutil.copyfile(REAL_TRANSCRIPT, copy)
         with copy.open("a", encoding="utf-8") as fh:
-            fh.write(assistant_record(700_000 - 1100, 1000, 100) + "\n")
+            fh.write(assistant_record(800_000 - 1100, 1000, 100) + "\n")
         started = time.monotonic()
         rc, out, _ = self.run_hook(self.hook_payload(copy))
         elapsed = time.monotonic() - started
         self.assertEqual(rc, 0)
         text = self.parse(out)
         self.assertIn("HARD", text)
-        self.assertIn("700000 tokens", text)
+        self.assertIn("800000 tokens", text)
         self.assertLess(elapsed, 1.0)
         rc, out, _ = self.run_hook(self.hook_payload(REAL_TRANSCRIPT))
         self.assertEqual(rc, 0)

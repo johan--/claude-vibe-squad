@@ -209,6 +209,15 @@ select_python() {
             PYTHON_BLOCK_REASON="dependency:python:uv-environment-missing"
             return
         fi
+        # uv.lock owns runtime dependencies; the CI requirements own test tools
+        # and their compatible versions. Install both into the interpreter that
+        # actually runs the suites (a fresh uv environment has no pytest).
+        if ! env UV_CACHE_DIR="${UV_CACHE_DIR:-${TMPDIR:-/tmp}/uv-cache}" \
+            uv pip install --python "$ROOT/.venv/bin/python" \
+            -r "$ROOT/requirements-dev.txt"; then
+            PYTHON_BLOCK_REASON="dependency:python:test-dependencies"
+            return
+        fi
         candidate="$ROOT/.venv/bin/python"
     elif [[ -x "$ROOT/.venv/bin/python" ]]; then
         candidate="$ROOT/.venv/bin/python"
@@ -558,12 +567,15 @@ SUITE_INVENTORY_DISCOVERY='(^|/)(test_[^/]*|test-[^/]*|[^/]*_test)\.(py|sh)$|\.(
 # shellcheck disable=SC2329
 suite_inventory_rows() {
     cat <<'ROWS'
+^colosseum-demo-2026-10-12/e2e/test_open_projection\.py$|excluded||Archived demonstration fixture outside the product validation surface; never execute third-party demo work in the release gate.
+^media/launch-graphics/generator/test_generator\.py$|excluded||Media production fixture outside the product validation surface; requires a separate media task and is not executed by the Squad release gate.
 ^scripts/python/tests/orphan_supervisor_leak_test\.py$|bin-test|scripts/python/tests/orphan_supervisor_leak_test.py|Invoked by path, because the -p 'test_*.py' discovery pattern does not match a *_test.py name.
 ^scripts/python/tests/test_[^/]+\.py$|bin-test|-s scripts/python/tests|unittest discover, pattern test_*.py.
 ^scripts/python/chrono_state/test_thread_charters\.py$|bin-test|-s scripts/python/chrono_state|Focused unittest discovery for the thread-charter parser and resume projection.
 ^plugins/chrono-vault/tests/test_[^/]+\.py$|bin-test|-s plugins/chrono-vault/tests|unittest discover over the plugin test package.
 ^plugins/chrono-media-studio/tests/test_[^/]+\.py$|bin-test|-s plugins/chrono-media-studio/tests|unittest discover over the plugin test package.
 ^plugins/chrono-research-arsenal/test_[^/]+\.py$|bin-test|-s plugins/chrono-research-arsenal|Tests live beside the module rather than under tests/, hence the plugin-root discovery path.
+^plugins/chrono-research-arsenal/tests/test_[^/]+\.py$|bin-test|-s plugins/chrono-research-arsenal/tests|The plugin grew a second, nested test home. tests/ is not a package, so the plugin-root discovery above does not recurse into it and it needs its own row and its own discovery run.
 ^plugins/chrono-dedup/tests/test_[^/]+\.py$|bin-test-private|-s plugins/chrono-dedup/tests|Runs in the private source tree; the public path policy deliberately withholds the prior-art corpus and plugin.
 ^plugins/security-mcp-stack/test_validate_staged\.py$|bin-test|plugins/security-mcp-stack/test_validate_staged.py|Single stdlib-only module run by path. Wired 2026-08-11.
 ^tools/export/tests/test_[^/]+\.py$|bin-test|tools/export/tests/test_*.py|Every public module runs; modules whose implementation is deliberately private report as one explicit N/A projection suite.
@@ -839,6 +851,20 @@ run_guarded_subset_validation() {
         "$PYTHON_BIN" daemon/tests/test_dispatch_status_coercion.py
 }
 
+# Both research-arsenal test homes in one suite. The module's own tests sit beside
+# mcp_server.py; tests/ holds the tool-surface suite. tests/ is not a package, so the
+# plugin-root discovery does not recurse into it and its tests ran nowhere until
+# 2026-09-23. Deliberately not `&&`: one home failing must not hide the other's result.
+#
+# run_suite invokes this function by name.
+# shellcheck disable=SC2329
+run_research_arsenal() {
+    local rc=0
+    "$PYTHON_BIN" -m unittest discover -s plugins/chrono-research-arsenal -p 'test_*.py' || rc=1
+    "$PYTHON_BIN" -m unittest discover -s plugins/chrono-research-arsenal/tests -p 'test_*.py' || rc=1
+    return "$rc"
+}
+
 path_is_deliberately_private() {
     local relative="$1"
     [[ -f tools/export/path_policy.py && -f tools/export/policy/path-policy.json ]] \
@@ -979,12 +1005,12 @@ else
             "content-media" \
             "$PYTHON_BIN" -m unittest discover -s plugins/chrono-media-studio/tests -p 'test_*.py'
         # research-arsenal was untested by this runner until 2026-08-10. Removing the
-        # duplicate `perplexity` server from its manifest broke test_mcp_server.py and
-        # CI stayed green, because this suite was simply never invoked. Its tests live
-        # beside the module rather than under tests/, hence the different -s path.
+        # duplicate research server from its manifest broke test_mcp_server.py and
+        # CI stayed green, because this suite was simply never invoked. It now has two
+        # test homes; run_research_arsenal covers both.
         run_suite \
             "research-arsenal" \
-            "$PYTHON_BIN" -m unittest discover -s plugins/chrono-research-arsenal -p 'test_*.py'
+            run_research_arsenal
     else
         block_suite "chrono-vault" "dependency:python:httpx-or-mcp"
         block_suite "content-media" "dependency:python:httpx-or-mcp"

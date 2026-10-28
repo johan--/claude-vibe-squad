@@ -1,7 +1,5 @@
 {
-  "fields": {
-    "model_reasoning_effort": "high"
-  },
+  "fields": {},
   "lane": "gpt-codex",
   "schema": "lane-role-overlay/v1",
   "specialist": "game-designer"

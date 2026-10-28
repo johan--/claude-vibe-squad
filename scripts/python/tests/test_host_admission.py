@@ -105,9 +105,9 @@ class AdmissionPredicateTests(unittest.TestCase):
         self.assertEqual(admission.FAMILY_TARGET, 4)
         self.assertEqual(
             set(admission.LANE_FAMILY.values()),
-            {"anthropic", "openai", "google", "xai", "moonshot"},
+            {"anthropic", "openai", "google", "xai"},
         )
-        for lane in ("claude", "codex", "gemini", "grok", "kimi"):
+        for lane in ("claude", "codex", "gemini", "grok"):
             with self.subTest(lane=lane):
                 live = tuple(
                     admission.LiveAttempt(f"live-{index}", lane, "cpu-light")
@@ -144,7 +144,7 @@ class AdmissionPredicateTests(unittest.TestCase):
             candidate("TASK-2026-08-08-0001-a", "claude", "repo-build-test"),
             candidate("TASK-2026-08-08-0002-b", "codex", "repo-build-test"),
             candidate("TASK-2026-08-08-0003-c", "gemini", "repo-build-test"),
-            candidate("TASK-2026-08-08-0004-d", "kimi", "repo-build-test"),
+            candidate("TASK-2026-08-08-0004-d", "grok", "repo-build-test"),
         )
         result = decide(
             tasks,

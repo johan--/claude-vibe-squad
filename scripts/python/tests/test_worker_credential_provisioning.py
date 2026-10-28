@@ -5,7 +5,6 @@ import json
 import os
 from pathlib import Path
 import re
-import shutil
 import subprocess
 import sys
 import tempfile
@@ -23,11 +22,8 @@ sys.path.insert(0, str(ROOT / "scripts" / "python"))
 
 from lane_capability_enforcement import (  # noqa: E402
     RESEARCH_API_KEY_NAMES,
-    CapabilityDenied,
-    KimiLocalHostArtifacts,
     load_tool_classes,
     partition_absent_mcps,
-    plan_lane,
 )
 import worktree_isolation as wti  # noqa: E402
 
@@ -181,201 +177,137 @@ class WorkerCredentialProvisioningTests(unittest.TestCase):
         cls.supervisor_source = SUPERVISOR.read_text(encoding="utf-8")
         cls.research_arsenal_source = RESEARCH_ARSENAL.read_text(encoding="utf-8")
 
-    def test_research_loader_reads_all_three_managed_names(self) -> None:
-        start = self.supervisor_source.index("def load_research_api_keys():")
-        end = self.supervisor_source.index("\n\ndef load_github_mcp_token", start)
+    def _credential_functions(self):
+        start = self.supervisor_source.index("MANAGED_CREDENTIAL_NAMES = (")
+        end = self.supervisor_source.index("\n\ntrusted_environment =", start)
+        namespace = {
+            "MappingProxyType": MappingProxyType,
+            "load_solodit_api_key": mock.Mock(return_value="synthetic-solodit"),
+            "load_grok_api_key": mock.Mock(return_value="synthetic-xai"),
+            "load_github_mcp_token": mock.Mock(return_value="synthetic-github"),
+        }
+        exec(compile(self.supervisor_source[start:end], "board-supervisor.sh", "exec"), namespace)
+        return namespace
+
+    def _scrubbed_environment(self, worker_lane, ambient):
+        start = self.supervisor_source.index("def trusted_worker_environment(")
+        end = self.supervisor_source.index("\n\n", self.supervisor_source.index("    return environment", start))
         namespace = {
             "os": os,
-            "subprocess": subprocess,
-            "RESEARCH_API_KEY_NAMES": RESEARCH_API_KEY_NAMES,
+            "Path": Path,
+            "attempt_id": None,
+            "_validated_trusted_host_path": lambda: "/usr/bin:/bin",
         }
-        exec(
-            compile(
-                self.supervisor_source[start:end],
-                "board-supervisor.sh",
-                "exec",
-            ),
-            namespace,
-        )
-        completed = SimpleNamespace(
-            returncode=0,
-            stdout="synthetic-xai\tsynthetic-perplexity\tsynthetic-firecrawl",
-        )
+        exec(compile(self.supervisor_source[start:end], "board-supervisor.sh", "exec"), namespace)
+        with mock.patch.dict(os.environ, ambient, clear=True):
+            return namespace["trusted_worker_environment"](worker_lane)
+
+    def test_grok_loader_reads_only_xai_and_rejects_invalid_values(self) -> None:
+        start = self.supervisor_source.index("def load_grok_api_key():")
+        end = self.supervisor_source.index("\n\ndef load_github_mcp_token", start)
+        namespace = {"os": os, "subprocess": subprocess}
+        exec(compile(self.supervisor_source[start:end], "board-supervisor.sh", "exec"), namespace)
         with (
-            mock.patch.dict(os.environ, {"HOME": "/synthetic/home"}, clear=False),
-            mock.patch.object(subprocess, "run", return_value=completed) as run,
+            mock.patch.dict(os.environ, {"HOME": "/synthetic/home"}, clear=True),
+            mock.patch.object(subprocess, "run") as run,
         ):
-            loaded = namespace["load_research_api_keys"]()
+            run.return_value = SimpleNamespace(returncode=0, stdout="synthetic-xai")
+            self.assertEqual(namespace["load_grok_api_key"](), "synthetic-xai")
+            command = run.call_args.args[0][-1]
+            self.assertIn("XAI_API_KEY", command)
+            for retired in ("PERPLEXITY_API_KEY", "FIRECRAWL_API_KEY"):
+                self.assertNotIn(retired, command)
+            self.assertEqual(run.call_args.kwargs["env"], {
+                "HOME": "/synthetic/home", "PATH": "/usr/bin:/bin:/usr/sbin:/sbin",
+            })
+            for value in ("", "synthetic\n", "synthetic\t", "synthetic\x00", "x" * 16385):
+                with self.subTest(value_length=len(value)):
+                    run.return_value = SimpleNamespace(returncode=0, stdout=value)
+                    self.assertIsNone(namespace["load_grok_api_key"]())
+            run.return_value = SimpleNamespace(returncode=1, stdout="synthetic-xai")
+            self.assertIsNone(namespace["load_grok_api_key"]())
+            run.side_effect = OSError("synthetic unavailable store")
+            self.assertIsNone(namespace["load_grok_api_key"]())
 
-        self.assertEqual(
-            loaded,
-            {
-                "XAI_API_KEY": "synthetic-xai",
-                "PERPLEXITY_API_KEY": "synthetic-perplexity",
-                "FIRECRAWL_API_KEY": "synthetic-firecrawl",
-            },
-        )
-        command = run.call_args.args[0]
-        for name in loaded:
-            self.assertIn(name, command[-1])
-
-    def test_research_snapshot_reaches_only_an_authorized_worker(self) -> None:
-        start = self.supervisor_source.index("MANAGED_CREDENTIAL_NAMES = (")
-        end = self.supervisor_source.index("\n\ntrusted_environment =", start)
-
-        def load_research_api_keys() -> dict[str, str]:
-            return {
-                "XAI_API_KEY": "synthetic-xai",
-                "PERPLEXITY_API_KEY": "synthetic-perplexity",
-                "FIRECRAWL_API_KEY": "synthetic-firecrawl",
-            }
-
-        namespace = {
-            "MappingProxyType": MappingProxyType,
-            "RESEARCH_API_KEY_NAMES": RESEARCH_API_KEY_NAMES,
-            "load_solodit_api_key": lambda: None,
-            "load_research_api_keys": load_research_api_keys,
-            "load_github_mcp_token": lambda: None,
-        }
-        exec(
-            compile(
-                self.supervisor_source[start:end],
-                "board-supervisor.sh",
-                "exec",
-            ),
-            namespace,
-        )
+    def test_arxiv_needs_no_credentials_and_grok_snapshot_is_reused(self) -> None:
+        namespace = self._credential_functions()
         load = namespace["load_managed_credentials"]
         project = namespace["project_worker_credentials"]
-        base = {"PATH": "/usr/bin:/bin"}
-        for worker_lane in ("claude", "codex", "gemini", "kimi"):
+        for worker_lane in ("claude", "codex", "gemini", "kimi", "unsupported"):
             with self.subTest(worker_lane=worker_lane):
                 snapshot, missing = load(worker_lane, ["chrono-research-arsenal"])
-                projected = project(base, snapshot)
+                self.assertEqual(dict(snapshot), {})
                 self.assertEqual(missing, ())
-                for name in namespace["RESEARCH_API_KEY_NAMES"]:
-                    self.assertIn(name, projected)
+        for loader in ("load_solodit_api_key", "load_grok_api_key", "load_github_mcp_token"):
+            namespace[loader].assert_not_called()
 
-        grok_snapshot, grok_missing = load("grok", [])
-        self.assertEqual(dict(grok_snapshot), {"XAI_API_KEY": "synthetic-xai"})
-        self.assertEqual(grok_missing, ())
-        self.assertEqual(
-            project(base, grok_snapshot),
-            {**base, "XAI_API_KEY": "synthetic-xai"},
-        )
-
-        # Negative control: an unenabled lane must still receive no snapshot,
-        # even when it asks for an MCP whose keys the loader can supply. This
-        # distinguishes lane projection from an unconditional credential load.
-        unknown_snapshot, unknown_missing = load(
-            "unsupported", ["chrono-research-arsenal"]
-        )
-        self.assertEqual(dict(unknown_snapshot), {})
-        self.assertEqual(unknown_missing, ())
-        self.assertEqual(project(base, unknown_snapshot), base)
-
-        unauthorized = project(
-            {
-                **base,
-                "XAI_API_KEY": "ambient-xai",
-                "PERPLEXITY_API_KEY": "ambient-perplexity",
-                "FIRECRAWL_API_KEY": "ambient-firecrawl",
-            },
-            MappingProxyType({}),
-        )
-        self.assertEqual(unauthorized, base)
+        snapshot, missing = load("grok", [])
+        self.assertEqual(dict(snapshot), {"XAI_API_KEY": "synthetic-xai"})
+        self.assertEqual(missing, ())
+        with self.assertRaises(TypeError):
+            snapshot["XAI_API_KEY"] = "replacement"
+        namespace["load_grok_api_key"].return_value = None
+        base = {"PATH": "/usr/bin:/bin", "XAI_API_KEY": "ambient-xai"}
+        health = project(base, snapshot)
+        self.assertEqual(health, {"PATH": "/usr/bin:/bin", "XAI_API_KEY": "synthetic-xai"})
+        self.assertEqual(project(health, snapshot), health)
+        namespace["load_grok_api_key"].assert_called_once_with()
+        self.assertEqual(base["XAI_API_KEY"], "ambient-xai")
+        self.assertEqual(project(base, MappingProxyType({})), {"PATH": "/usr/bin:/bin"})
+        missing_snapshot, missing = load("grok", ["chrono-research-arsenal"])
+        self.assertEqual(dict(missing_snapshot), {})
+        self.assertEqual(missing, ("XAI_API_KEY",))
 
     def test_each_lane_projects_only_credentials_for_authorized_mcps(self) -> None:
-        start = self.supervisor_source.index("MANAGED_CREDENTIAL_NAMES = (")
-        end = self.supervisor_source.index("\n\ntrusted_environment =", start)
-        supplied = {
-            "SOLODIT_API_KEY": "synthetic-solodit",
-            **{
-                name: f"synthetic-{name.lower()}"
-                for name in RESEARCH_API_KEY_NAMES
-            },
-            "GITHUB_PERSONAL_ACCESS_TOKEN": "synthetic-github",
-        }
-        namespace = {
-            "MappingProxyType": MappingProxyType,
-            "RESEARCH_API_KEY_NAMES": RESEARCH_API_KEY_NAMES,
-            "load_solodit_api_key": lambda: supplied["SOLODIT_API_KEY"],
-            "load_research_api_keys": lambda: {
-                name: supplied[name] for name in RESEARCH_API_KEY_NAMES
-            },
-            "load_github_mcp_token": lambda: supplied[
-                "GITHUB_PERSONAL_ACCESS_TOKEN"
-            ],
-        }
-        exec(
-            compile(
-                self.supervisor_source[start:end],
-                "board-supervisor.sh",
-                "exec",
-            ),
-            namespace,
-        )
+        namespace = self._credential_functions()
         load = namespace["load_managed_credentials"]
         project = namespace["project_worker_credentials"]
-        managed_names = set(supplied)
-        base = {
-            "PATH": "/usr/bin:/bin",
-            **{name: f"ambient-{name.lower()}" for name in managed_names},
+        supplied = {
+            "SOLODIT_API_KEY": "synthetic-solodit",
+            "XAI_API_KEY": "synthetic-xai",
+            "GITHUB_PERSONAL_ACCESS_TOKEN": "synthetic-github",
+        }
+        retired = {"PERPLEXITY_API_KEY", "FIRECRAWL_API_KEY"}
+        ambient = {
+            "HOME": "/synthetic/home",
+            **{name: f"ambient-{name.lower()}" for name in set(supplied) | retired},
         }
         cases = (
             ((), set()),
             (("guarded-solodit",), {"SOLODIT_API_KEY"}),
-            (("chrono-research-arsenal",), set(RESEARCH_API_KEY_NAMES)),
+            (("chrono-research-arsenal",), set()),
             (("github",), {"GITHUB_PERSONAL_ACCESS_TOKEN"}),
-            (
-                ("guarded-solodit", "chrono-research-arsenal", "github"),
-                managed_names,
-            ),
+            (("guarded-solodit", "chrono-research-arsenal", "github"),
+             {"SOLODIT_API_KEY", "GITHUB_PERSONAL_ACCESS_TOKEN"}),
         )
-
-        for worker_lane in ("claude", "codex", "gemini", "kimi"):
-            for authorized_mcps, expected_names in cases:
-                with self.subTest(
-                    worker_lane=worker_lane,
-                    authorized_mcps=authorized_mcps,
-                ):
+        for worker_lane in ("claude", "codex", "gemini", "grok", "kimi", "unsupported"):
+            base = self._scrubbed_environment(worker_lane, ambient)
+            self.assertEqual(base["HOME"], ambient["HOME"])
+            self.assertFalse((set(supplied) | retired).intersection(base))
+            for authorized_mcps, mcp_names in cases:
+                with self.subTest(worker_lane=worker_lane, authorized_mcps=authorized_mcps):
+                    expected = ({"XAI_API_KEY"} if worker_lane == "grok" else
+                                set() if worker_lane in {"kimi", "unsupported"} else mcp_names)
                     snapshot, missing = load(worker_lane, authorized_mcps)
-                    projected = project(base, snapshot)
+                    # Still scrub live managed names even if a caller adds an ambient value.
+                    projected = project({**base, **{name: "ambient" for name in supplied}}, snapshot)
                     self.assertEqual(missing, ())
-                    self.assertEqual(set(snapshot), expected_names)
-                    self.assertEqual(
-                        managed_names.intersection(projected),
-                        expected_names,
-                    )
-                    for name in expected_names:
-                        self.assertEqual(projected[name], supplied[name])
+                    self.assertEqual(dict(snapshot), {name: supplied[name] for name in expected})
+                    self.assertEqual(projected, {**base, **dict(snapshot)})
+                    self.assertFalse(retired.intersection(projected))
 
-        for authorized_mcps, _expected_names in cases:
-            with self.subTest(worker_lane="grok", authorized_mcps=authorized_mcps):
-                snapshot, missing = load("grok", authorized_mcps)
-                projected = project(base, snapshot)
-                self.assertEqual(missing, ())
-                self.assertEqual(set(snapshot), {"XAI_API_KEY"})
-                self.assertEqual(
-                    managed_names.intersection(projected), {"XAI_API_KEY"}
-                )
-
-        # Load-bearing negative control: the ambient GitHub token begins in the
-        # input environment, yet a research-only role finishes with the name
-        # genuinely absent. The `github` case above is the positive control that
-        # proves this same path can project the variable when authorized.
-        for worker_lane in ("claude", "codex", "gemini", "kimi"):
-            snapshot, _missing = load(
-                worker_lane,
-                ("chrono-research-arsenal",),
-            )
-            projected = project(base, snapshot)
-            self.assertNotIn("GITHUB_PERSONAL_ACCESS_TOKEN", projected)
+        # Missing credentials remain observable for live MCPs, never for arXiv.
+        for loader in ("load_solodit_api_key", "load_grok_api_key", "load_github_mcp_token"):
+            namespace[loader].return_value = None
+        for worker_lane in ("claude", "codex", "gemini"):
+            snapshot, missing = load(worker_lane, ["guarded-solodit", "github", "chrono-research-arsenal"])
+            self.assertEqual(dict(snapshot), {})
+            self.assertEqual(missing, ("GITHUB_PERSONAL_ACCESS_TOKEN", "SOLODIT_API_KEY"))
 
     def test_arxiv_search_requests_relevance_ordering(self) -> None:
         start = self.research_arsenal_source.index("@mcp.tool()\ndef arxiv_search(")
         end = self.research_arsenal_source.index(
-            "\n\n@mcp.tool()\ndef xai_search(", start
+            '\n\n\nif __name__ == "__main__":', start
         )
         captured: dict[str, Any] = {}
 
@@ -440,182 +372,48 @@ class WorkerCredentialProvisioningTests(unittest.TestCase):
         self.assertIsNot(captured["sort_by"], submitted_date)
         self.assertIs(captured["sort_order"], descending)
 
-    def test_xai_attribute_errors_are_actionable(self) -> None:
-        start = self.research_arsenal_source.index("def _xai_exception_fields(")
-        end = self.research_arsenal_source.index(
-            "\n\ndef _message_text_and_citations(", start
-        )
-        namespace = {
-            "Any": Any,
-            "re": re,
-        }
-        exec(
-            compile(
-                self.research_arsenal_source[start:end],
-                "mcp_server.py",
-                "exec",
-            ),
-            namespace,
-        )
-
-        try:
-            raise AttributeError(
-                "'LegacyResponse' object has no attribute 'reason_phrase'"
-            )
-        except AttributeError as exc:
-            fields = namespace["_xai_exception_fields"](exc)
-        self.assertEqual(fields["exception_type"], "AttributeError")
-        self.assertEqual(fields["attribute"], "reason_phrase")
-        self.assertEqual(fields["object_type"], "LegacyResponse")
-        self.assertRegex(
-            fields["location"],
-            r"^test_xai_attribute_errors_are_actionable:\d+$",
-        )
-
-    def test_xai_http_error_uses_reason_fallback(self) -> None:
-        class FakeHttpStatusError(Exception):
-            def __init__(self, response: object) -> None:
-                super().__init__("synthetic provider error")
-                self.response = response
-
-        class LegacyResponse:
-            status_code = 400
-
-            def raise_for_status(self) -> None:
-                raise FakeHttpStatusError(self)
-
-        class FakeClient:
-            def __init__(self, **_kwargs: Any) -> None:
-                pass
-
-            def __enter__(self) -> FakeClient:
-                return self
-
-            def __exit__(self, *_args: Any) -> None:
-                return None
-
-            @staticmethod
-            def post(*_args: Any, **_kwargs: Any) -> LegacyResponse:
-                return LegacyResponse()
-
-        helper_start = self.research_arsenal_source.index("def _xai_http_status(")
-        helper_end = self.research_arsenal_source.index(
-            "\n\ndef _xai_exception_fields(", helper_start
-        )
-        namespace = {
-            "Any": Any,
-            "HTTPStatus": __import__("http").HTTPStatus,
-        }
-        exec(
-            compile(
-                self.research_arsenal_source[helper_start:helper_end],
-                "mcp_server.py",
-                "exec",
-            ),
-            namespace,
-        )
-        namespace.update(
-            {
-                "json": json,
-                "os": os,
-                "mcp": SimpleNamespace(tool=lambda: (lambda function: function)),
-                "httpx": SimpleNamespace(
-                    Client=FakeClient,
-                    HTTPStatusError=FakeHttpStatusError,
-                ),
-                "_coerce_result": lambda *_args: None,
-                "_message_text_and_citations": lambda *_args: ("", []),
-                "_tool_source_urls": lambda *_args: [],
-                "_err": lambda reason, **extra: {
-                    "ok": False,
-                    "error": reason,
-                    **extra,
-                },
-                "_xai_exception_fields": lambda exc: {
-                    "exception_type": type(exc).__name__
-                },
-            }
-        )
-        function_start = self.research_arsenal_source.index(
-            "@mcp.tool()\ndef xai_search("
-        )
-        function_end = self.research_arsenal_source.index(
-            "\n\n@mcp.tool()\ndef perplexity_search(", function_start
-        )
-        exec(
-            compile(
-                self.research_arsenal_source[function_start:function_end],
-                "mcp_server.py",
-                "exec",
-            ),
-            namespace,
-        )
-
-        with mock.patch.dict(
-            os.environ,
-            {"XAI_API_KEY": "synthetic-xai"},
-            clear=False,
-        ):
-            fields = namespace["xai_search"](
-                "example domain",
-                max_results=1,
-            )
-        self.assertEqual(
-            fields,
-            {
-                "ok": False,
-                "error": "xai_http_error",
-                "query": "example domain",
-                "status_code": 400,
-                "reason_phrase": "Bad Request",
-            },
-        )
-
-    def test_codex_config_drops_only_managed_literal_placeholders(self) -> None:
+    def test_codex_config_does_not_add_research_credentials(self) -> None:
         start = self.supervisor_source.index("def _toml_table_header(")
-        end = self.supervisor_source.index("\n\ndef _inject_codex_vault_context", start)
-        namespace = {"re": re}
-        exec(
-            compile(
-                self.supervisor_source[start:end],
-                "board-supervisor.sh",
-                "exec",
-            ),
-            namespace,
-        )
-        config = """[mcp_servers.chrono-research-arsenal]
-command = "/usr/bin/false"
+        end = self.supervisor_source.index("\n\ndef _validated_trusted_host_path", start)
+        namespace = {"re": re, "json": json, "os": os, "GUARDED_MCP_PREFIX": "guarded-"}
+        exec(compile(self.supervisor_source[start:end], "board-supervisor.sh", "exec"), namespace)
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            base = root / "base"
+            base.mkdir()
+            config = ('[mcp_servers.chrono-research-arsenal]\ncommand = "/usr/bin/false"\n'
+                      '[mcp_servers.chrono-vault]\ncommand = "/usr/bin/false"\n')
+            (base / "config.toml").write_text(config)
+            overlay = root / "overlay.toml"
+            overlay.write_text('[mcp_servers.guarded-solodit]\ncommand = "/usr/bin/false"\n')
+            ambient = {name: f"synthetic-{name}" for name in RESEARCH_API_KEY_NAMES}
+            with mock.patch.dict(os.environ, ambient, clear=True):
+                added = namespace["_prepare_codex_home"](base, overlay, root / "spawn", "synthetic-context")
+            rendered = (root / "spawn/config.toml").read_text()
+            self.assertEqual(added, ["guarded-solodit"])
+            self.assertIn('CHRONO_VAULT_CONTEXT = "synthetic-context"', rendered)
+            self.assertIn('[mcp_servers.chrono-research-arsenal]', rendered)
+            for name, value in ambient.items():
+                self.assertNotIn(name, rendered)
+                self.assertNotIn(value, rendered)
+            self.assertEqual((base / "config.toml").read_text(), config)
 
-[mcp_servers.chrono-research-arsenal.env]
-XAI_API_KEY = "${XAI_API_KEY}"
-PERPLEXITY_API_KEY = "${PERPLEXITY_API_KEY}"
-FIRECRAWL_API_KEY = "${FIRECRAWL_API_KEY}"
-BRAVE_API_KEY = "${BRAVE_API_KEY}"
-"""
-        rendered = namespace["_remove_codex_mcp_env_placeholders"](
-            config,
-            "chrono-research-arsenal",
-            ("XAI_API_KEY", "PERPLEXITY_API_KEY", "FIRECRAWL_API_KEY"),
-        )
-
-        for name in ("XAI_API_KEY", "PERPLEXITY_API_KEY", "FIRECRAWL_API_KEY"):
-            self.assertNotIn(f'{name} = "${{{name}}}"', rendered)
-        self.assertIn('BRAVE_API_KEY = "${BRAVE_API_KEY}"', rendered)
-        self.assertNotIn("synthetic-", rendered)
-
-    def test_codex_gate_forwards_names_without_serializing_values(self) -> None:
-        start = self.supervisor_source.index(
-            'if execution_kind == "lane" and lane == "codex":'
-        )
-        end = self.supervisor_source.index(
-            '\nif execution_kind == "lane":', start
-        )
-        gate = self.supervisor_source[start:end]
-        self.assertIn("partition_absent_mcps(", gate)
-        self.assertIn("set(existing_env_vars).union(RESEARCH_API_KEY_NAMES)", gate)
-        self.assertIn('f"mcp_servers.{server_name}.env_vars="', gate)
-        self.assertNotIn("credential_snapshot", gate)
-        self.assertNotIn("synthetic-", gate)
+    def test_codex_gate_enables_authorized_servers_without_forwarding_research_keys(self) -> None:
+        start = self.supervisor_source.index("    for server_name in configured_mcps:")
+        end = self.supervisor_source.index("    # F6:", start)
+        import textwrap
+        namespace = {
+            "re": re,
+            "configured_mcps": ["chrono-research-arsenal", "github"],
+            "authorized_mcps": ["chrono-research-arsenal"],
+            "capability_lane_args": [],
+            "deny": self.fail,
+        }
+        exec(compile(textwrap.dedent(self.supervisor_source[start:end]), "board-supervisor.sh", "exec"), namespace)
+        self.assertEqual(namespace["capability_lane_args"], [
+            "-c", "mcp_servers.chrono-research-arsenal.enabled=true",
+            "-c", 'mcp_servers.github={enabled=false,command="/usr/bin/false"}',
+        ])
 
     def test_bounty_researcher_preferred_github_absence_degrades(self) -> None:
         classes = load_tool_classes(
@@ -651,55 +449,16 @@ BRAVE_API_KEY = "${BRAVE_API_KEY}"
                 self.assertEqual(blocking, ("github",))
                 self.assertEqual(degraded, ())
 
-    # ── KEY-03: the two confirmed causes of the Kimi research-key failure ────
-    #
-    # Cause 1 was an id-shape mismatch: the credential gate read only direct
-    # `mcps` while the Kimi plan authorized `brokered_mcps`. Cause 2 was that
-    # widening the parent environment never reaches Kimi's stdio child, which
-    # inherits a fixed name list plus the server record's own `env`. Fixing
-    # either alone leaves the tools dead, so both are pinned here.
-
-    def _kimi_host_artifacts(self) -> KimiLocalHostArtifacts:
-        directory = Path(tempfile.mkdtemp())
-        self.addCleanup(shutil.rmtree, directory, True)
-        paths = []
-        for name in ("python", "sequential-thinking"):
-            executable = directory / name
-            executable.write_text("fixture executable\n", encoding="utf-8")
-            executable.chmod(0o700)
-            paths.append(executable)
-        return KimiLocalHostArtifacts(
-            interpreter=paths[0],
-            sequential_thinking=paths[1],
-        )
-
-    @staticmethod
-    def _synthetic_research_environment() -> dict[str, str]:
-        return {name: f"synthetic-{name.lower()}" for name in RESEARCH_API_KEY_NAMES}
-
-    def _kimi_plan(self, research_environment: dict[str, str] | None):
-        return plan_lane(
-            lane="kimi",
-            projection={
-                "mcps": [],
-                "brokered_mcps": ["chrono-research-arsenal", "sequential-thinking"],
-                "tools": [],
-            },
-            configured_servers={},
-            repo_root=ROOT,
-            kimi_research_environment=research_environment,
-            kimi_host_artifacts=self._kimi_host_artifacts(),
-        )
-
-    def test_research_key_names_have_exactly_one_home(self) -> None:
-        # Hard rule 10: the loader, the missing-credential report, the Codex
-        # `env_vars` forward, and the Kimi `env` binding must read the SAME
-        # tuple. A restated copy here is how a fourth name silently stops
-        # being provisioned on one lane only.
-        self.assertIn(
-            "        RESEARCH_API_KEY_NAMES,\n", self.supervisor_source
-        )
-        self.assertNotIn("RESEARCH_API_KEY_NAMES = (", self.supervisor_source)
+    def test_supervisor_does_not_use_legacy_research_key_projection(self) -> None:
+        # No live supervisor path may revive the retired research-key loader
+        # or forwarding.
+        for retired in ("RESEARCH_API_KEY_NAMES", "load_research_api_keys",
+                        "kimi_research_environment", "PERPLEXITY_API_KEY", "FIRECRAWL_API_KEY"):
+            self.assertNotIn(retired, self.supervisor_source)
+        namespace = self._credential_functions()
+        self.assertEqual(set(namespace["MANAGED_CREDENTIAL_NAMES"]), {
+            "SOLODIT_API_KEY", "XAI_API_KEY", "GITHUB_PERSONAL_ACCESS_TOKEN",
+        })
 
     def test_worktree_pool_excludes_credential_configs_for_existing_and_new_attempts(
         self,
@@ -952,68 +711,6 @@ BRAVE_API_KEY = "${BRAVE_API_KEY}"
         namespace["capability_projection"] = {"mcps": ["guarded-solodit"], "brokered_mcps": []}
         exec(compile(snippet, "board-supervisor.sh", "exec"), namespace)
         self.assertEqual(captured["authorized"], ("guarded-solodit",))
-
-    def test_kimi_binds_research_keys_into_the_stdio_child_record(self) -> None:
-        # Cause 2: the values must land on the server record, because the Kimi
-        # MCP client does not pass the parent environment through.
-        expected = self._synthetic_research_environment()
-        servers = json.loads(self._kimi_plan(expected).role_config_json)["mcpServers"]
-
-        self.assertEqual(servers["chrono-research-arsenal"]["env"], expected)
-        # Least privilege: no other selected server receives them.
-        self.assertNotIn("env", servers["sequential-thinking"])
-
-    def test_kimi_omits_research_env_when_the_store_supplied_nothing(self) -> None:
-        # Best-effort, exactly like `load_research_api_keys`: an absent key is
-        # reported under `credential_missing` and the tool returns its own
-        # "<KEY> missing" error. Writing an empty `env` instead would look
-        # identical in the config and hide which state we are in.
-        for absent in (None, {}):
-            with self.subTest(absent=absent):
-                servers = json.loads(
-                    self._kimi_plan(absent).role_config_json
-                )["mcpServers"]
-                self.assertNotIn("env", servers["chrono-research-arsenal"])
-
-        # Positive control for the assertion above: the same call path DOES
-        # produce an `env` when the store supplies keys, so "absent" here is a
-        # real degrade and not a silently broken binding.
-        partial = {"XAI_API_KEY": "synthetic-xai"}
-        servers = json.loads(self._kimi_plan(partial).role_config_json)["mcpServers"]
-        self.assertEqual(servers["chrono-research-arsenal"]["env"], partial)
-
-    def test_kimi_rejects_an_unmanaged_or_unsafe_research_environment(self) -> None:
-        for hostile in (
-            {"AWS_SECRET_ACCESS_KEY": "synthetic"},
-            {**self._synthetic_research_environment(), "PATH": "/tmp"},
-        ):
-            with self.subTest(hostile=hostile):
-                with self.assertRaises(CapabilityDenied):
-                    self._kimi_plan(hostile)
-
-        for invalid in (
-            {"XAI_API_KEY": ""},
-            {"XAI_API_KEY": "synthetic\ninjected=1"},
-            {"XAI_API_KEY": "synthetic\x00"},
-        ):
-            with self.subTest(invalid=invalid):
-                with self.assertRaises(CapabilityDenied):
-                    self._kimi_plan(invalid)
-
-    def test_kimi_refuses_credentials_for_an_unauthorized_arsenal(self) -> None:
-        with self.assertRaises(CapabilityDenied):
-            plan_lane(
-                lane="kimi",
-                projection={
-                    "mcps": [],
-                    "brokered_mcps": ["sequential-thinking"],
-                    "tools": [],
-                },
-                configured_servers={},
-                repo_root=ROOT,
-                kimi_research_environment=self._synthetic_research_environment(),
-                kimi_host_artifacts=self._kimi_host_artifacts(),
-            )
 
     def test_capability_source_contains_only_typed_mcp_requirements(self) -> None:
         payload = json.loads(CAPABILITY_SOURCE.read_text(encoding="utf-8"))

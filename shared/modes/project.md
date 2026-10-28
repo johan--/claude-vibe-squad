@@ -60,12 +60,12 @@ operator-gated.
 | [Search / discoverability](../capabilities/public/project/search-discoverability.md) | on-page SEO / schema / growth — authoring live, measured impact `needs_tool` |
 | [Image asset generation](../capabilities/public/project/image.md) | stills / graphics — governed `generate_image` wrapper (raw `higgsfield__*` forbidden) |
 | [Video / motion asset generation](../capabilities/public/project/video.md) | video / motion — governed `generate_video` wrapper |
-| [Audio assets (music · SFX · voice · interactive)](../capabilities/public/project/audio-assets.md) | music/SFX/voice/interactive — `generate_audio` wrapper; ElevenLabs is Claude-lane-only |
+| [Audio assets (music · SFX · voice · interactive)](../capabilities/public/project/audio-assets.md) | music/SFX/voice/interactive — `generate_audio` wrapper; ElevenLabs requires verifying the role-scoped MCP server, credentials, budget, and semantic receipt (else TBASF/`needs_tool`) |
 
 ### Research (`profile_family`: research — source-first, citation-heavy)
 
 Load-bearing web claims route through the Rule-8 grounding path — `Google Search grounding`
-(gemini · yes · subscription, verified cited results); the metered `perplexity_search` is unverifiable ⇒
+(gemini · yes · subscription, verified cited results); ungrounded or unverifiable claims ⇒
 `needs_tool`, not PASS. Review overlay on high-impact claims.
 
 | Capability | When |
@@ -138,8 +138,8 @@ a license by default; an unanswered license choice remains an explicitly reporte
   inline into Chrono.
 - **Research:** use primary sources; label weak sources and unresolved contradictions; citation-bearing
   output must carry enough source metadata for Chrono to verify. Fan grounded/bulk work off the Claude+Codex
-  default — grounded web claims to the Gemini grounding path; bulk summarization downshifts to Kimi
-  throughput (`summarizer`).
+  default — grounded web claims to the Gemini grounding path; bulk summarization uses the gated
+  throughput slot (`summarizer`).
 - **Outreach:** every candidate carries provenance; drafts stay draft-only until the operator approves exact
   recipients and exact wording; no automated live send by default.
 - **Operations / maintenance:** cleanup proposals are not cleanup approval; one writer owns each path during

@@ -25,7 +25,6 @@ _FRESH_LANE_COMMAND = {
     "claude": "-p",
     "gemini": "-p",
     "grok": "-p",
-    "kimi": "-p",
 }
 _RESUME_ARGUMENTS = frozenset({"resume", "--resume", "--continue", "continue"})
 PROJECTED_SKILL_CONTRACT_MAX_BYTES = 4096

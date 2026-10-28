@@ -29,7 +29,6 @@ REPRESENTATIVE_ADAPTERS = {
         "model-lanes/gpt-codex/.codex/agents/accessibility-engineer.toml"
     ),
     "grok": Path("model-lanes/grok/.grok/agents/smokey.yaml"),
-    "kimi": Path("model-lanes/kimi/.kimi/agents/experimental-attacker.yaml"),
 }
 
 

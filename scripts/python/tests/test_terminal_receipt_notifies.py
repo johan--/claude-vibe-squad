@@ -110,7 +110,7 @@ def _terminal_lifecycles(
                 encoding="utf-8",
             )
 
-        captured: list[tuple[str, str, str, str]] = []
+        captured: list[tuple[str, str, str, str, int]] = []
         with _patch_runtime(root, state, registry_path):
             with mock.patch.object(
                 rr,
@@ -154,7 +154,7 @@ def _promoted_responses(
             )
             responses[task_id] = response
 
-        captured: list[tuple[str, str, str, str]] = []
+        captured: list[tuple[str, str, str, str, int]] = []
         with _patch_runtime(root, state, registry_path):
             with mock.patch.object(
                 rr,
@@ -235,7 +235,8 @@ class TerminalReceiptNotifies(unittest.TestCase):
         self.assertEqual(
             len(captured), 1, "review-required terminal receipt emitted no event"
         )
-        status, task_ref, _summary, _nudge = captured[0]
+        status, task_ref, _summary, _nudge, generation = captured[0]
+        self.assertEqual(generation, 1)
         self.assertEqual(status, "REVIEW-REQUIRED")
         self.assertIn("/", task_ref)
 
@@ -265,7 +266,8 @@ class TerminalReceiptNotifies(unittest.TestCase):
         self.assertEqual(closed["status"], "closed")
         self.assertEqual(closed["closed_from_status"], "blocked")
         self.assertEqual(len(captured), 1, captured)
-        status, task_ref, summary, nudge = captured[0]
+        status, task_ref, summary, nudge, generation = captured[0]
+        self.assertEqual(generation, 1)
         self.assertEqual(status, "AUTO-CLOSED")
         self.assertTrue(task_ref.endswith(task_id), task_ref)
         self.assertIn("failed", summary)
@@ -282,7 +284,8 @@ class TerminalReceiptNotifies(unittest.TestCase):
             rr.reconcile(task_id, dry_run=False)
 
         self.assertEqual(len(captured), 1, captured)
-        status, _task_ref, summary, nudge = captured[0]
+        status, _task_ref, summary, nudge, generation = captured[0]
+        self.assertEqual(generation, 1)
         self.assertEqual(status, "complete")
         self.assertIn("needs_review", summary)
         self.assertIn("coordination requested", summary.lower())
@@ -352,6 +355,7 @@ class TerminalReceiptNotifies(unittest.TestCase):
 
         self.assertEqual(len(captured), 2, captured)
         self.assertEqual([event[0] for event in captured], ["AUTO-CLOSED", "cancelled"])
+        self.assertEqual([event[4] for event in captured], [1, 2])
 
 
 class PromotedResponseNotifies(unittest.TestCase):
@@ -371,7 +375,8 @@ class PromotedResponseNotifies(unittest.TestCase):
             entry["coordination_notification_state"], rr.COORDINATION_REQUESTED
         )
         self.assertEqual(len(captured), 1, captured)
-        status, task_ref, summary, nudge = captured[0]
+        status, task_ref, summary, nudge, generation = captured[0]
+        self.assertEqual(generation, 1)
         self.assertEqual(status, "complete")
         self.assertTrue(task_ref.endswith(task_id), task_ref)
         self.assertIn("Promoted work finished.", summary)

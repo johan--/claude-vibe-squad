@@ -47,7 +47,7 @@ class TaskRouteMetadataTests(unittest.TestCase):
     def test_malformed_yaml_returns_default_metadata_shape(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            task_file = root / "active" / "kimi" / "TASK-malformed.md"
+            task_file = root / "active" / "grok" / "TASK-malformed.md"
             task_file.parent.mkdir(parents=True)
             task_file.write_text("metadata: [unterminated\n", encoding="utf-8")
 

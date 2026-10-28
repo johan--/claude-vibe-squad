@@ -4,7 +4,7 @@
 `bin/dispatch-toolkit-verify.sh` probed the `gemini` binary while
 `seatbelt_profile.LANE_CLI_PATHS` routes the gemini lane to `agy`. So the
 verifier audited a CLI the squad stopped using: its six "gemini lists X but
-does not enumerate it" warnings -- including one for perplexity -- described
+does not enumerate it" warnings -- including one for a research server -- described
 the retired binary, while a live `agy mcp list` shows
 chrono-research-arsenal enabled.
 

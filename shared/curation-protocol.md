@@ -38,4 +38,4 @@ The operator has since made exactly that call, and it did not weaken this rule. 
 
 ## 6. Nothing here is a sweep
 
-Curation review happens at a session boundary because Chrono is present to exercise judgment, not on a timer. A cron job that auto-invalidates flagged notes reintroduces exactly the terminal-on-thin-evidence failure rule 2 exists to prevent — see `shared/lifecycle.md` rule "Event handlers, never sweeps."
+Curation review happens at a session boundary because Chrono is present to exercise judgment, not on a timer. A cron job that auto-invalidates flagged notes reintroduces exactly the terminal-on-thin-evidence failure rule 2 exists to prevent — see rules 1–3 above for session-boundary timing and reviewed invalidation, and `shared/memory-discipline.md` § Triggers for memory-curator action for the proposal-only / no-auto-deletion limits on scheduled hygiene sweeps.

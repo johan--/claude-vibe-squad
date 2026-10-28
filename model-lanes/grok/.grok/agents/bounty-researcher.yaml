@@ -5,13 +5,13 @@ description: "Thin Grok adapter for bounty-researcher; canonical brief is author
 prompt_mode: full
 permission_mode: default
 agents_md: true
-model: grok-4.6
+model: grok-4.7
 mcpInheritance:
   named:
     - chrono-vault
 # BEGIN SPECIALIST CAPABILITY PROJECTION
 capability_source: model-lanes/specialist-lane-capabilities.v1.json
-capability_source_sha256: c16dad3b4285660ca0e18b0b7ac0a60fca55c745f1656f2f300e65918b773f20
+capability_source_sha256: efea0007013e967a9c4ceadcc3c7573485671b1ad465f6602c386ead95a96b1f
 mcps: ["chrono-vault"]
 # END SPECIALIST CAPABILITY PROJECTION
 ---
@@ -25,5 +25,5 @@ agent:
   name: bounty-researcher
   extend: default
   system_prompt_path: ../prompts/bounty-researcher.md
-  model: grok-4.6
+  model: grok-4.7
 -->

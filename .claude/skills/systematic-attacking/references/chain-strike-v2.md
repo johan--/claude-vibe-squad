@@ -254,9 +254,10 @@ lowers the success rate or reaches out of scope, it makes the submission *weaker
 <a id="terminal-impact"></a>
 ## 7. Terminal impact — score once, from the terminus (depth discipline)
 
-*(This section folds in the `chain-impact-rescore` skill as content. Existing references may
-retarget the `#terminal-impact` anchor. The standalone `chain-impact-rescore.md` file is left
-untouched — its method is absorbed here.)*
+*(This section folds in the `chain-impact-rescore` method as content. Existing references may
+retarget the `#terminal-impact` anchor. That standalone skill is retired and no longer loadable —
+its file now sits at `shared/skills/_retired/chain-impact-rescore.md`, and its method was also
+merged into the live `chain-construct` skill. The method is absorbed here, not owned here.)*
 
 The depth axis of chaining: **every primitive is a link, never a terminus.** A defense that kills
 a primitive *in isolation* routinely falls when a separate primitive forces its precondition —
@@ -291,9 +292,10 @@ breaks and why. **Reachability, disclosure, "could-lead-to" are not termini.**
 <a id="coverage-map"></a>
 ## 8. Coverage map — breadth over the terminus set
 
-*(This section folds in the `attack-coverage-map` skill as content, re-anchored from detection
+*(This section folds in the `attack-coverage-map` method as content, re-anchored from detection
 coverage to **offensive** coverage. Existing references may retarget the `#coverage-map` anchor.
-The standalone `attack-coverage-map.md` file is left untouched — its method is absorbed here.)*
+That standalone skill is retired (2026-08-19) and no longer loadable — its file now sits at
+`shared/skills/_retired/attack-coverage-map.md`. The method is absorbed here.)*
 
 Depth (§7) chases one primitive down. **Breadth** asks: across the *whole* authorized
 HIGH/CRIT terminus set, which termini do we already have a path to, and where are the gaps worth

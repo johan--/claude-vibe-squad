@@ -63,7 +63,7 @@ Describe what was built and what was verified.
 named explicitly rather than folded into the summary. Where the task declared a write scope, no **out-of-scope change was delivered for integration** - a
 trusted worker may use scratch paths, but integrated residue stays in scope (write_scope is an
 integration contract, not an action-time filesystem boundary; `shared/protocol.md` §
-read_scope/write_scope). A task that genuinely needed a wider integrated scope should have surfaced
+Held-category authority and logical scopes). A task that genuinely needed a wider integrated scope should have surfaced
 that need rather than quietly widening. If **this** packet expressly imposes action-time confinement,
 apply that stricter rule instead.
 

@@ -99,8 +99,6 @@ def subscription_audit() -> dict:
                 "Reply 'ok' literally.",
             ],
         ),
-        ("kimi", "kimi", ["kimi", "--quiet", "--no-thinking", "-p", "Reply 'ok' literally.",
-                  "--max-steps-per-turn", "2"]),
     ]:
         if not (Path(executable).is_file() if Path(executable).is_absolute() else shutil.which(executable)):
             results[cli] = "not installed"

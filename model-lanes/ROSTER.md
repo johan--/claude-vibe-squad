@@ -10,6 +10,7 @@ Generated from `shared/specialist-runtime-map.tsv`. The TSV is the routing sourc
 - `code-reviewer` (source: `coding`, review: `claude`, safety: `high`)
 - `data-extraction-engineer` (source: `research`, review: `claude`, safety: `medium`)
 - `database-engineer` (source: `coding`, review: `claude`, safety: `high`)
+- `detection-engineer` (source: `security`, review: `claude`, safety: `high`)
 - `devops-engineer` (source: `coding`, review: `claude`, safety: `high`)
 - `exodia` (source: `shared`, review: `claude`, safety: `medium`)
 - `experimental-attacker` (source: `security`, review: `claude`, safety: `high`)
@@ -32,7 +33,6 @@ Generated from `shared/specialist-runtime-map.tsv`. The TSV is the routing sourc
 - `agentops` (source: `sysmgmt`, review: `gpt-codex`, safety: `high`)
 - `architect` (source: `coding`, review: `gpt-codex`, safety: `high`)
 - `brand-voice` (source: `content`, review: `gpt-codex`, safety: `medium`)
-- `detection-engineer` (source: `security`, review: `gpt-codex`, safety: `high`)
 - `editor` (source: `content`, review: `gpt-codex`, safety: `medium`)
 - `frontend-engineer` (source: `coding`, review: `gpt-codex`, safety: `medium`)
 - `game-designer` (source: `content`, review: `gpt-codex`, safety: `medium`)
@@ -40,6 +40,7 @@ Generated from `shared/specialist-runtime-map.tsv`. The TSV is the routing sourc
 - `ichigo` (source: `shared`, review: `gpt-codex`, safety: `medium`)
 - `impact-validator` (source: `security`, review: `gpt-codex`, safety: `high`)
 - `incident-responder` (source: `security`, review: `gpt-codex`, safety: `high`)
+- `kestrel` (source: `shared`, review: `gpt-codex`, safety: `medium`)
 - `knowledge-librarian` (source: `sysmgmt`, review: `gpt-codex`, safety: `medium`)
 - `large-context-analyst` (source: `research`, review: `gpt-codex`, safety: `medium`)
 - `level-narrative-designer` (source: `content`, review: `gpt-codex`, safety: `medium`)
@@ -55,7 +56,6 @@ Generated from `shared/specialist-runtime-map.tsv`. The TSV is the routing sourc
 - `skeptic` (source: `shared`, review: `gpt-codex`, safety: `medium`)
 - `software-supply-chain-engineer` (source: `coding`, review: `gpt-codex`, safety: `high`)
 - `synthesizer` (source: `research`, review: `gpt-codex`, safety: `medium`)
-- `technical-writer` (source: `content`, review: `gpt-codex`, safety: `medium`)
 - `threat-modeler` (source: `security`, review: `gpt-codex`, safety: `high`)
 - `triage` (source: `shared`, review: `gpt-codex`, safety: `medium`)
 - `ui-engineer` (source: `coding`, review: `gpt-codex`, safety: `medium`)
@@ -74,7 +74,9 @@ Generated from `shared/specialist-runtime-map.tsv`. The TSV is the routing sourc
 - `research` (source: `research`, review: `claude`, safety: `medium`)
 - `social-strategist` (source: `content`, review: `claude`, safety: `medium`)
 - `sound-designer` (source: `content`, review: `claude`, safety: `low`)
+- `summarizer` (source: `shared`, review: `gpt-codex`, safety: `low`)
 - `technical-artist` (source: `coding`, review: `gpt-codex`, safety: `medium`)
+- `technical-writer` (source: `content`, review: `gpt-codex`, safety: `medium`)
 - `vega` (source: `shared`, review: `gpt-codex`, safety: `medium`)
 - `video-director` (source: `content`, review: `claude`, safety: `medium`)
 - `video-editor` (source: `content`, review: `claude`, safety: `low`)
@@ -83,8 +85,3 @@ Generated from `shared/specialist-runtime-map.tsv`. The TSV is the routing sourc
 ## Grok
 
 - `smokey` (source: `shared`, review: `gpt-codex`, safety: `medium`)
-
-## Kimi
-
-- `kestrel` (source: `shared`, review: `gpt-codex`, safety: `medium`)
-- `summarizer` (source: `shared`, review: `gpt-codex`, safety: `low`)

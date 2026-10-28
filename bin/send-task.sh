@@ -7,16 +7,22 @@
 #
 # Required frontmatter in task file:
 #   id: TASK-YYYY-MM-DD-HHMM-<hash>
-#   to_model: gpt-codex | claude | gemini | grok | kimi
+#   to_model: gpt-codex | claude | gemini | grok
 #   specialist: <canonical specialist>
 #   source_namespace: coding | security | content | sysmgmt | research | shared
 #   return_artifact: <repo-relative path>  — internal expected_result_path
 #   reviews: none | TASK-YYYY-MM-DD-HHMM-<suffix>
+#   parallel_safe: true | false
+#   direct_lane_work_allowed: true | false
 #
 # Optional frontmatter:
+#   mode: project | bounty | modeless — absent means modeless; empty is invalid
 #   write_scope: [path1, path2]     — conflict-checked against active tasks
-#   review_triggers: [blast_radius, adversarial_claim, deciding_measurement, architecture]
-#                                    — explicit reasons this change needs review
+#   review_triggers: [blast_radius, adversarial_claim, deciding_measurement, architecture] — reasons for review
+#   mandatory_review: true | false — must agree with review_triggers (default: false)
+#   review_model: <lane> | none    — distinct provider family required for mandatory review
+#   model_override_reason: <explanation> — required when to_model differs from the specialist's primary lane
+#   authorized_delete_paths: [path1, path2] — exact paths for deletion/moves; requires operator_approved: true and project/bounty/modeless
 #   per_task_versioning: true       — rewrites return_artifact to include TASK-ID subdir
 #   memory_aperture: rich|focused|default|cold|pool_blind|none (default: default since 2026-08-17 — an omitted field is no longer blind; say cold/pool_blind/none for that)
 #   memory_focus: <exact note target> — required only for focused
@@ -702,11 +708,6 @@ validate_native_adapter() {
             [[ -f "$adapter" ]] || die "predispatch blocked: missing Grok adapter for specialist '${specialist}'"
             grep -q "^[[:space:]]*${specialist}:" "${VAULT_ROOT}/model-lanes/grok/main.yaml" || die "predispatch blocked: Grok main.yaml missing subagent '${specialist}'"
             ;;
-        kimi)
-            adapter="${VAULT_ROOT}/model-lanes/kimi/.kimi/agents/${specialist}.yaml"
-            [[ -f "$adapter" ]] || die "predispatch blocked: missing Kimi adapter for specialist '${specialist}'"
-            grep -q "^[[:space:]]*${specialist}:" "${VAULT_ROOT}/model-lanes/kimi/main.yaml" || die "predispatch blocked: Kimi main.yaml missing subagent '${specialist}'"
-            ;;
     esac
     python3 "${VAULT_ROOT}/scripts/python/lane_adapter_registry.py" \
         --repo-root "$VAULT_ROOT" --lane "$model" --validate-adapter "$adapter" >/dev/null \
@@ -815,10 +816,8 @@ if issues:
 PYEOF
 }
 
-# ── sub-command: reconcile task on response landing ──────────────────────────
-# Called by the response-landing hook when a lane writes TASK-*-response.md.
-# This is evidence-gated: it reconciles from a valid landed envelope (or the
-# guarded return-artifact safety net) and never force-promotes a task.
+# Manual/compat reconciliation; the outbox watcher calls registry-reconciler.sh --task-id directly.
+# Requires a valid landed envelope or guarded return artifact; never force-promotes a task.
 
 if [[ "${1:-}" == "--close-task" ]]; then
     CLOSE_ID="${2:-}"
@@ -898,22 +897,9 @@ RETURN_ARTIFACT=$(task_frontmatter_field "return_artifact")
 SWARM_SPEC_SHA256=$(task_frontmatter_field "swarm_spec_sha256")
 PLAN_ITEM_IDS_RAW=$(task_frontmatter_field "plan_item_ids") PHASE=$(task_frontmatter_field "phase")
 MODE=$(task_frontmatter_field "mode")
-# A hand-written prepared packet expresses a deliberate modeless engagement
-# through true field absence; an explicitly empty `mode:` remains empty and
-# follows the legacy rejection path below. The generating wrapper never reaches
-# this branch because it authors the exact explicit token its caller chose.
-#
-# Validation-only MIRROR of resolve_packet_mode() in
-# scripts/python/dispatch_context_builder.py, which is the rule's single home
-# because it is the layer that gates. This shell copy exists only so the
-# verification contract derived below carries the same mode the builder will
-# resolve. scripts/python/tests/test_dryrun_parity.py pins the two together.
-#
-# It is DELIBERATELY the one restatement that survives, not a fourth home: bash
-# cannot import the Python resolver for a single token, and the contract has to
-# be derived here, before the builder runs. dispatch_preflight.py used to carry
-# a third, avoidable Python copy and now calls the resolver directly; if you are
-# adding a mode decision anywhere, call resolve_packet_mode() -- do not copy this.
+# Absent mode means modeless; explicitly empty remains invalid; the wrapper sets it explicitly.
+# Mirror resolve_packet_mode in dispatch_context_builder.py so contract derivation agrees with its gate.
+# test_dryrun_parity.py pins parity; Python callers use the resolver directly rather than another copy.
 MODE_PRESENT=false
 task_frontmatter_has_field "mode" && MODE_PRESENT=true
 if ! $MODE_PRESENT; then
@@ -1056,12 +1042,12 @@ fi
 [[ -z "$SOURCE_NAMESPACE" ]] && die "Task file missing 'source_namespace' frontmatter: $TASK_FILE"
 
 case "$TO_MODEL" in
-    gpt-codex|claude|gemini|grok|kimi|none) ;;
-    *) die "invalid to_model '${TO_MODEL}'. Expected gpt-codex|claude|gemini|grok|kimi|none." ;;
+    gpt-codex|claude|gemini|grok|none) ;;
+    *) die "invalid to_model '${TO_MODEL}'. Expected gpt-codex|claude|gemini|grok|none." ;;
 esac
 case "$REVIEW_MODEL" in
-    gpt-codex|claude|gemini|grok|kimi|none) ;;
-    *) die "invalid review_model '${REVIEW_MODEL}'. Expected gpt-codex|claude|gemini|grok|kimi|none." ;;
+    gpt-codex|claude|gemini|grok|none) ;;
+    *) die "invalid review_model '${REVIEW_MODEL}'. Expected gpt-codex|claude|gemini|grok|none." ;;
 esac
 # Legacy modes remain warnings here; the contract/launch boundary decides.
 case "$MODE" in
@@ -1239,8 +1225,7 @@ if [[ "$SPECIALIST" != "none" ]]; then
     ROUTE_RANKING="$(ranked_route_selection "$SPECIALIST" "$TO_MODEL" || true)"
 
     if [[ "$TO_MODEL" != "$MAP_MODEL" ]]; then
-        # The parser already trims the raw scalar. Match preflight's unquoting
-        # so an empty/placeholder reason cannot become an explained override.
+        # Match preflight's unquoting of the trimmed scalar before rejecting placeholder reasons.
         override_reason="$MODEL_OVERRIDE_REASON"
         if [[ "$override_reason" == \"*\" || "$override_reason" == \'*\' ]]; then
             override_reason="${override_reason:1:${#override_reason}-2}"
@@ -1396,10 +1381,7 @@ if [[ "$MODE" == "project" || "$MODE" == "bounty" || "$MODE" == "modeless" ]]; t
         info "Deletion authorization pinned into the contract: ${AUTHORIZED_DELETE_PATHS_JSON}"
     fi
 elif [[ "$AUTHORIZED_DELETE_PATHS_JSON" != "[]" ]]; then
-    # No contract is derived on this path, so the authorization has nowhere to
-    # land. Dispatching anyway would deliver a packet that reads as authorized
-    # and carries no deletion authority at all -- refuse instead of silently
-    # dropping an operator approval.
+    # Without a derived contract deletion approval cannot bind; refuse rather than drop it.
     die "authorized_delete_paths requires a contract-bearing packet (mode: project, bounty, or modeless); got mode='${MODE}'"
 fi
 
@@ -1647,13 +1629,24 @@ if REGISTRY_ENTRY_JSON="$(
     CAPABILITY_SNAPSHOT_VALUE="$CAPABILITY_SNAPSHOT_JSON" \
     AUTHOR_FAMILY_VALUE="$AUTHOR_FAMILY" VERIFICATION_CONTRACT_VALUE="$VERIFICATION_CONTRACT_JSON" \
     VERIFICATION_CONTRACT_SHA256_VALUE="$VERIFICATION_CONTRACT_SHA256" \
+    TASK_FRONTMATTER_JSON_VALUE="$TASK_FRONTMATTER_JSON" \
+    SQUAD_CODE_ROOT_VALUE="$SQUAD_CODE_ROOT" VAULT_ROOT_VALUE="$VAULT_ROOT" \
     python3 - <<'PYEOF'
 import json
 import os
+import sys
 import uuid
 from datetime import datetime, timezone
+from pathlib import Path
 
 scope = json.loads(os.environ["WRITE_SCOPE_JSON_VALUE"])
+packet_fields = json.loads(os.environ["TASK_FRONTMATTER_JSON_VALUE"])["fields"]
+work_repo = None
+if "work_repo" in packet_fields:
+    sys.path.insert(0, str(Path(os.environ["SQUAD_CODE_ROOT_VALUE"]) / "scripts/python"))
+    from dispatch_context_builder import resolve_work_repo
+
+    work_repo = resolve_work_repo(Path(os.environ["VAULT_ROOT_VALUE"]), packet_fields)
 
 dispatched_at = datetime.now(timezone.utc).isoformat()
 delivery_attempt_id = f"d-{uuid.uuid4().hex}"
@@ -1669,6 +1662,8 @@ entry = {
     "direct_lane_work_allowed": os.environ["DIRECT_LANE_WORK_ALLOWED_VALUE"],
     "dispatched_at": dispatched_at,
     "return_artifact": os.environ.get("RETURN_ARTIFACT_VALUE", ""),
+    "work_repo_root": str(work_repo[0]) if work_repo else None,
+    "work_base_branch": work_repo[1] if work_repo else None,
     "write_scope": scope,
     "status": "in-flight",
     "delivery_state": "queued",

@@ -110,7 +110,10 @@ exit 1
 class DoctorFixtureRunner(unittest.TestCase):
     """Shared throwaway-tree runner. Subclasses add the state under test."""
 
-    def run_doctor(self, *, env: dict[str, str] | None = None, setup=None):
+    def run_doctor(
+        self, *, env: dict[str, str] | None = None, setup=None,
+        macos_build: str = "26A428", sandbox_canary_ok: bool = True,
+    ):
         with tempfile.TemporaryDirectory(prefix="doctor-runtime-liveness-") as temp:
             fixture = Path(temp)
             root = fixture / "root"
@@ -142,6 +145,9 @@ class DoctorFixtureRunner(unittest.TestCase):
             if setup is not None:
                 setup(root, local_bin, environment)
             environment.update(env or {})
+            self.sandbox_setup(macos_build, canary_ok=sandbox_canary_ok)(
+                root, local_bin, environment
+            )
 
             result = subprocess.run(
                 ["/bin/bash", str(root / "bin" / "doctor.sh")],
@@ -162,6 +168,113 @@ class DoctorFixtureRunner(unittest.TestCase):
             reports = sorted(log_dir.glob("[0-9]*.md"))
             self.assertEqual(len(reports), 1, "doctor did not emit one report")
             return result, summary, reports[0].read_text(encoding="utf-8")
+
+
+    def sandbox_setup(self, build: str, *, canary_ok: bool = True):
+        def setup(root: Path, _local_bin: Path, environment: dict[str, str]):
+            modules = root / "scripts" / "python"
+            modules.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(
+                ROOT / "scripts" / "python" / "seatbelt_profile.py",
+                modules / "_real_seatbelt_profile.py",
+            )
+            # Only the OS boundary is synthetic. The admitted-build set and
+            # verify_sandbox_compatibility decision logic are production code.
+            # Inject through its build_reader/runner seams; no live sandbox,
+            # sw_vers, tmux session, or host process is touched by these tests.
+            (modules / "seatbelt_profile.py").write_text(
+                """import os
+from pathlib import Path
+import subprocess
+from unittest.mock import patch
+import _real_seatbelt_profile as real
+from _real_seatbelt_profile import *
+
+def _read_macos_build():
+    return os.environ["DOCTOR_TEST_MACOS_BUILD"]
+
+def canary_runner(argv, **kwargs):
+    assert argv == [str(real.CANONICAL_SANDBOX_EXEC), "-p", real._COMPAT_CANARY, "/usr/bin/true"]
+    assert kwargs["timeout"] == 5 and kwargs["close_fds"] is True
+    ok = os.environ["DOCTOR_TEST_CANARY_OK"] == "1"
+    return subprocess.CompletedProcess(argv, 0 if ok else 1, "", "" if ok else "fixture canary denied")
+
+def verify_sandbox_compatibility(**kwargs):
+    # Capture a real stat before mocking the canonical macOS binary checks.
+    identity = Path(__file__).stat()
+    with patch.object(real.platform, "system", return_value="Darwin"), \\
+         patch.object(real.Path, "resolve", return_value=real.CANONICAL_SANDBOX_EXEC), \\
+         patch.object(real.Path, "is_file", return_value=True), \\
+         patch.object(real.os, "access", return_value=True), \\
+         patch.object(real.os, "stat", return_value=identity):
+        return real.verify_sandbox_compatibility(runner=canary_runner, **kwargs)
+""",
+                encoding="utf-8",
+            )
+            environment["DOCTOR_TEST_MACOS_BUILD"] = build
+            environment["DOCTOR_TEST_CANARY_OK"] = "1" if canary_ok else "0"
+
+        return setup
+
+
+class DoctorBoardSandboxCompatibilityTest(DoctorFixtureRunner):
+    """Exercise the real admission gate without depending on the host build."""
+
+    def assert_board_issue(self, result, summary, report, build):
+        self.assertEqual(summary["issue_count"], 1, result.stdout + result.stderr)
+        self.assertEqual(summary["non_gating_issues"], summary["issues"])
+        self.assertEqual(summary["non_gating_issue_count"], 1)
+        self.assertEqual(summary["gate_issue_count"], 0)
+        for output in (result.stdout, report, summary["issues"][0]):
+            self.assertIn("board dispatch is blocked on this host", output)
+            self.assertIn(build, output)
+            self.assertIn("scripts/python/qualify_macos_build.py --help", output)
+            self.assertIn("qualification procedure", output)
+        self.assertNotIn("VERDICT: healthy", result.stdout)
+        self.assertNotIn("board worker sandbox compatibility passed", report)
+        # launch-squad.sh blocks every nonzero doctor result. Chrono must be
+        # able to start to qualify the build; the dispatch gate stays closed.
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    def test_unadmitted_build_is_an_issue_without_blocking_chrono(self):
+        result, summary, report = self.run_doctor(
+            macos_build="UNADMITTED-DOCTOR-TEST"
+        )
+        self.assertEqual(summary["mode"], "fast")
+        self.assert_board_issue(result, summary, report, "UNADMITTED-DOCTOR-TEST")
+        self.assertIn("unrecognized macOS build", summary["issues"][0])
+
+    def test_admitted_build_and_canary_are_healthy(self):
+        result, summary, report = self.run_doctor(
+            macos_build="26A428"
+        )
+        self.assertEqual(summary["mode"], "fast")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(summary["issues"], [])
+        self.assertEqual(summary["non_gating_issues"], [])
+        for output in (result.stdout, report):
+            self.assertIn("board worker sandbox compatibility passed", output)
+            self.assertIn("macOS build 26A428", output)
+            self.assertIn("harmless sandbox-exec canary passed", output)
+
+    def test_admitted_build_with_failed_canary_is_an_issue(self):
+        result, summary, report = self.run_doctor(
+            macos_build="26A428", sandbox_canary_ok=False
+        )
+        self.assert_board_issue(result, summary, report, "26A428")
+        self.assertIn("fixture canary denied", summary["issues"][0])
+
+    def test_board_issue_does_not_suppress_other_launch_blockers(self):
+        result, summary, _report = self.run_doctor(
+            macos_build="UNADMITTED-DOCTOR-TEST",
+            env={
+                "DOCTOR_TEST_TMUX_SERVER": "1",
+                "DOCTOR_TEST_TMUX_WINDOWS": "chrono\nzsh\n",
+            },
+        )
+        self.assertEqual(summary["non_gating_issue_count"], 1)
+        self.assertGreater(summary["gate_issue_count"], 0)
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
 
 
 class DoctorTmuxWindowCompositionTest(DoctorFixtureRunner):

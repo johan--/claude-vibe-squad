@@ -11,6 +11,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from unittest import mock
 
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -135,9 +136,119 @@ class FocusGateHookTests(unittest.TestCase):
             prompt.message,
         )
         self.assertIn("NEXT ACTION: run the literal hook test", prompt.message)
+        self.assertIn(
+            "NEXT ACTION SOURCE: workboard (active charters: 0, need exactly 1)",
+            prompt.message,
+        )
         self.assertNotIn("THE ASK:", prompt.message)
         self.assertNotIn("DONE-WHEN:", prompt.message)
         self.assertIn("FOLD / QUEUE / DROP", prompt.message)
+        self.assertIn(focus_gate.ANCHOR_MECHANISM, prompt.message)
+        self.assertIn("quote the operator sentence that asked for it", prompt.message)
+        self.assertNotIn("Do not dispatch or mutate until", prompt.message)
+
+    def harness_notices(self) -> tuple[str, ...]:
+        task = "TASK-2026-09-22-1555-7f5479e7"
+        notices = (
+            f"auto-closed: {task}; details: _state/chrono-queue.md.",
+            f"review-required: {task}; details: _state/chrono-queue.md.",
+            f"coordination-requested: {task}; details: _state/chrono-queue.md. Coordination requested; see queue.",
+            "BOARD DIGEST: complete=4; details: _state/chrono-queue.md.",
+            f"BOARD DIGEST: blocked=1, coordination-requested=1; action: blocked: {task}; coordination-requested: TASK-other; details: _state/chrono-queue.md. Coordination requested in 1 notice(s); see queue.",
+            f"MONITOR: task {task} → gpt-codex lane (GPT/Codex) idle 30m, no response yet (dispatched 40m ago); pending in coding/inbox",
+            f"MONITOR: observed task {task} → claude lane (Claude): live board spawn attempt log idle 1200s, no receipt (threshold 900s; dispatched 30m ago); a long model turn or tool call may still be healthy",
+            f"MONITOR: REVIEW-REQUIRED: coding/{task}.md parked 6m (needs_review); coordinator action overdue",
+            f"MONITOR: coding namespace has stale active task ({task}.md, 31m old)",
+            f"MONITOR: coding namespace received same task 3x in 10m - real thrash (repeated task id {task})",
+            "MONITOR: coding namespace received same task 3x in 10m - real thrash (duplicate body)",
+            "MONITOR: NOT_MEASURED thrash coding: skipped_task_ids=2 measured_task_ids=0 skipped_log_rows=1",
+        )
+        return notices + tuple(f"[vibesquad] {notice}" for notice in notices)
+
+    def test_repeated_or_malformed_notice_tags_keep_anchor(self) -> None:
+        self.active_board()
+        baseline = focus_gate.decide(focus_gate.USER_PROMPT_SUBMIT, ledger_path=self.ledger)
+        notice = self.harness_notices()[0]
+        for prefix in ("[vibesquad] [vibesquad] ", "[vibesquad]", "[vibesquad]  ",
+                       "[vibesquad]\t", "[VIBESQUAD] "):
+            with self.subTest(prefix=prefix):
+                prompt = prefix + notice
+                self.assertFalse(focus_gate.is_harness_notice(prompt))
+                self.assertEqual(focus_gate.decide(
+                    focus_gate.USER_PROMPT_SUBMIT, ledger_path=self.ledger, prompt=prompt
+                ), baseline)
+
+    def test_notice_only_cli_prompts_emit_no_anchor(self) -> None:
+        self.active_board()
+        for notice in self.harness_notices():
+            with self.subTest(notice=notice):
+                result = self.run_entrypoint(
+                    {"hook_event_name": focus_gate.USER_PROMPT_SUBMIT, "prompt": notice},
+                    helper_body="chrono_pane_has_coordinator() { return 0; }\n",
+                )
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(result.stdout, "")
+                self.assertEqual(result.stderr, "")
+
+    def test_operator_text_with_notice_keeps_identical_anchor(self) -> None:
+        self.active_board()
+        baseline = focus_gate.decide(focus_gate.USER_PROMPT_SUBMIT, ledger_path=self.ledger)
+        for notice in self.harness_notices():
+            for prompt in ("Please investigate. " + notice, notice + " Please investigate.",
+                           notice + "\nPlease investigate.", "Please investigate.\n" + notice):
+                with self.subTest(prompt=prompt):
+                    decision = focus_gate.decide(
+                        focus_gate.USER_PROMPT_SUBMIT, ledger_path=self.ledger, prompt=prompt
+                    )
+                    self.assertEqual(decision, baseline)
+        result = self.run_entrypoint(
+            {"hook_event_name": focus_gate.USER_PROMPT_SUBMIT,
+             "prompt": "[vibesquad] " + self.harness_notices()[0] + " Please investigate."},
+            helper_body="chrono_pane_has_coordinator() { return 0; }\n",
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(json.loads(result.stdout)["hookSpecificOutput"]["additionalContext"], baseline.message)
+
+    def test_unrecognized_or_malformed_prompts_keep_anchor(self) -> None:
+        self.active_board()
+        baseline = focus_gate.decide(focus_gate.USER_PROMPT_SUBMIT, ledger_path=self.ledger)
+        for prompt in (None, {}, [], 1, "", "hello", "MONITOR: please change focus",
+                       "BOARD DIGEST: please inspect these tasks", "review-required: TASK-X",
+                       "auto-closed: TASK-X; details: elsewhere.md.",
+                       self.harness_notices()[0] + "\n" + self.harness_notices()[1]):
+            with self.subTest(prompt=prompt):
+                self.assertEqual(focus_gate.decide(
+                    focus_gate.USER_PROMPT_SUBMIT, ledger_path=self.ledger, prompt=prompt
+                ), baseline)
+
+    def test_notice_classifier_error_keeps_anchor_and_allows_prompt(self) -> None:
+        self.active_board()
+        baseline = focus_gate.decide(focus_gate.USER_PROMPT_SUBMIT, ledger_path=self.ledger)
+        with mock.patch.object(focus_gate, "is_harness_notice", side_effect=ValueError("fixture")):
+            self.assertEqual(focus_gate.decide(
+                focus_gate.USER_PROMPT_SUBMIT, ledger_path=self.ledger, prompt=self.harness_notices()[0]
+            ), baseline)
+
+    def test_current_reconciler_emitters_match_notice_grammar(self) -> None:
+        from registry_reconciler import compact_notice, notification_digest
+
+        statuses = ("complete", "REVIEW-REQUIRED", "needs_human", "needs_review", "blocked", "COORDINATION-REQUESTED")
+        events = [(status, f"coding/TASK-fixture-{index}", "detail", "Coordination requested")
+                  for index, status in enumerate(statuses)]
+        notices = [compact_notice(status, task, detail) for status, task, _, detail in events]
+        notices.append(notification_digest(events))
+        for notice in notices:
+            with self.subTest(notice=notice):
+                self.assertTrue(focus_gate.is_harness_notice(notice))
+                self.assertFalse(focus_gate.is_harness_notice(notice + " Please investigate."))
+
+    def test_notice_does_not_bypass_tool_or_stop_focus_checks(self) -> None:
+        projection = self.invalid_zero_board()
+        for event in (focus_gate.PRE_TOOL_USE, focus_gate.STOP):
+            with self.subTest(event=event):
+                self.assertFalse(focus_gate.decide(
+                    event, projection=projection, tool_name="Write", prompt=self.harness_notices()[0]
+                ).allow)
 
     def test_undeclared_zero_blocks_mutation_but_allows_read(self) -> None:
         projection = self.invalid_zero_board()

@@ -80,7 +80,7 @@ PLIST_TEMPLATE = """<?xml version="1.0" encoding="UTF-8"?>
 {label}    <key>ProgramArguments</key>
     <array>
         <string>/bin/bash</string>
-        <string>/opt/Obsidian-Claude-Vibe-Squad/{script}</string>
+        <string>{script}</string>
     </array>
 </dict>
 </plist>
@@ -152,6 +152,7 @@ class DoctorProbeRunner(unittest.TestCase):
                 "TERM": "dumb",
                 "LANG": "C",
                 "TMPDIR": str(fixture),
+                "SQUAD_LAUNCHAGENTS_DIR": str(home / "Library" / "LaunchAgents"),
                 "DOCTOR_TEST_LAUNCHCTL_CALLS": str(fixture / "launchctl-calls.txt"),
                 "DOCTOR_TEST_CURL_URLS": str(fixture / "curl-urls.txt"),
             }
@@ -330,7 +331,11 @@ class LaunchdLivenessProbeTest(DoctorProbeRunner):
     def _repo_job(self, root: Path, home: Path, *, label: str | None = "com.fixture.job"):
         doctor_fixture.write_stub(root / "bin", "fixture-job.sh")
         write_launch_agent(
-            home, "com.fixture.job.plist", label=label, script="bin/fixture-job.sh"
+            home,
+            "com.fixture.job.plist",
+            label=label,
+            # 207fc4437 scopes the audit to VAULT_ROOT, not a checkout basename.
+            script=str(root / "bin" / "fixture-job.sh"),
         )
 
     def test_loaded_job_with_clean_exit_is_healthy(self):
@@ -340,6 +345,31 @@ class LaunchdLivenessProbeTest(DoctorProbeRunner):
         )
         self.assertIn("launchctl print answered for all 1 job(s)", report)
         self.assertIn("print gui/", calls)
+
+    def test_matching_physical_root_spelling_is_probed(self):
+        """The ordinary fixture uses the lexical TMPDIR spelling on macOS."""
+        def setup(root, home, _local_bin, environment):
+            physical_root = root.resolve()
+            environment["VAULT_ROOT"] = str(physical_root)
+            self._repo_job(physical_root, home)
+
+        _result, _summary, report, calls, _urls, _root = self.run_doctor(setup=setup)
+        self.assertIn("launchctl print answered for all 1 job(s)", report)
+        self.assertEqual(calls.splitlines(), [f"print gui/{os.getuid()}/com.fixture.job"])
+
+    def test_job_in_another_checkout_is_not_probed(self):
+        # Catch both the old basename match and a prefix lacking its final '/'.
+        for checkout_name in ("Obsidian-Claude-Vibe-Squad", "root-other"):
+            with self.subTest(checkout=checkout_name):
+                def setup(root, home, _local_bin, _environment):
+                    self._repo_job(root.parent / checkout_name, home)
+
+                _result, _summary, report, calls, _urls, _root = self.run_doctor(
+                    setup=setup
+                )
+                self.assertIn("0 launchd-registered repo script(s)", report)
+                self.assertIn("no scheduled job of this repository's to probe", report)
+                self.assertEqual(calls, "", "doctor queried another checkout's job")
 
     def test_declared_but_unloaded_job_is_a_blocking_issue(self):
         """A plist and a script are not a scheduled job."""

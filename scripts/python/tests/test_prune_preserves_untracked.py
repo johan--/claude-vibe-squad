@@ -16,9 +16,8 @@ Two further defects compound it:
   - a failed `git worktree remove` falls through to `shutil.rmtree(...,
     ignore_errors=True)`, converting a refusal to delete into a deletion.
 
-These tests drive the script in `--preserve` mode, which stops before any
-removal, so they can assert the preservation contract without destroying
-anything.
+Preservation tests use `--preserve`; cleanup tests use `--apply` only inside
+their own repository and private scratch root.
 """
 
 from __future__ import annotations
@@ -28,7 +27,9 @@ import os
 import shutil
 import subprocess
 import tempfile
+import time
 import unittest
+from unittest import mock
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -93,7 +94,8 @@ class PrunePreservesUntrackedTests(unittest.TestCase):
         )
 
     def _run_preserve(self) -> subprocess.CompletedProcess:
-        env = dict(os.environ, VAULT_ROOT=str(self.root))
+        env = dict(os.environ, VAULT_ROOT=str(self.root), SQUAD_TEST_ISOLATION="1",
+                   BOARD_SCRATCH_ROOT=str(self.root / "_scratch"))
         return subprocess.run(
             ["bash", str(SCRIPT), "--preserve"],
             cwd=self.root,
@@ -114,11 +116,39 @@ class PrunePreservesUntrackedTests(unittest.TestCase):
         return hit[0].read_bytes() if hit else None
 
     def _run_apply(self) -> subprocess.CompletedProcess:
-        env = dict(os.environ, VAULT_ROOT=str(self.root))
+        env = dict(os.environ, VAULT_ROOT=str(self.root), SQUAD_TEST_ISOLATION="1",
+                   BOARD_SCRATCH_ROOT=str(self.root / "_scratch"))
         return subprocess.run(
             ["bash", str(SCRIPT), "--apply"],
             cwd=self.root, env=env, capture_output=True, text=True, check=False,
         )
+
+    def test_bulk_is_omitted_and_manifest_records_sizes(self):
+        (self.worktree / "notes.md").write_bytes(b"keep document")
+        for relative, data in (("dist/bundle.js", b"1234"),
+                               ("nested/node_modules/pkg/code.js", b"1234567")):
+            path = self.worktree / relative
+            path.parent.mkdir(parents=True)
+            path.write_bytes(data)
+        # Same-named regular files are work product, not bulk directories.
+        (self.worktree / "nested/dist").write_bytes(b"keep regular file")
+        result = self._run_preserve()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        saved = self.rescue_dir / TASK / ATTEMPT
+        self.assertEqual((saved / "notes.md").read_bytes(), b"keep document")
+        self.assertEqual((saved / "nested/dist").read_bytes(), b"keep regular file")
+        self.assertFalse((saved / "dist").exists())
+        self.assertFalse((saved / "nested/node_modules").exists())
+        manifest = self.rescue_dir / TASK / f"{ATTEMPT}.rescue-manifest.json"
+        self.assertEqual(json.loads(manifest.read_text())["skipped_bulk"], [
+            {"path": "dist", "size_bytes": 4},
+            {"path": "nested/node_modules", "size_bytes": 7},
+        ])
+        result = self._run_apply()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertFalse(self.worktree.exists())
+        self.assertTrue(manifest.exists())
+        self.assertEqual((saved / "notes.md").read_bytes(), b"keep document")
 
     def test_untracked_non_markdown_poc_is_preserved(self) -> None:
         """The failure that costs real work: a PoC in a promoted worktree."""
@@ -131,6 +161,62 @@ class PrunePreservesUntrackedTests(unittest.TestCase):
             "an untracked non-markdown file in a PRUNABLE worktree was not "
             f"preserved; the worktree is force-removed next.\n{result.stdout}",
         )
+
+    def test_scratch_sweep_preserves_foreign_and_live_roots_but_removes_owned_orphan(self):
+        from test_disk_hygiene_local_config import provision_config
+
+        provision_config(self.root)
+        scratch = self.root / "_scratch"
+        names = ("d-foreign", "d-11111111111111111111111111111111", "d-22222222222222222222222222222222")
+        for name in names:
+            (scratch / name).mkdir(parents=True)
+            (scratch / name / "sentinel").write_text(name)
+        old = time.time() - 25 * 3600
+        for entry in scratch.rglob("*"):
+            os.utime(entry, (old, old))
+        registry_path = self.state / "active-tasks.json"
+        registry = json.loads(registry_path.read_text())
+        for name, status in zip(names[1:], ("in-flight", "complete")):
+            task = f"TASK-scratch-{name}"
+            registry[task] = {"status": status}
+            (self.state / "board-dispatch" / f"{task}.{name}.dispatch.json").write_text(json.dumps({"task_id": task}))
+        registry_path.write_text(json.dumps(registry))
+        # The sandbox cannot census host processes; keep this fixture's census idle.
+        fakebin = self.root / "fixturebin"
+        fakebin.mkdir()
+        (fakebin / "ps").write_text("#!/bin/sh\necho fixture-idle-process\n")
+        (fakebin / "ps").chmod(0o755)
+        with mock.patch.dict(os.environ, PATH=str(fakebin) + os.pathsep + os.environ["PATH"]):
+            result = self._run_apply()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertTrue((scratch / names[0] / "sentinel").is_file())
+        self.assertTrue((scratch / names[1] / "sentinel").is_file())
+        self.assertFalse((scratch / names[2]).exists())
+        self.assertIn("scratch: swept 1 orphaned attempt root(s)", result.stdout)
+
+    def test_fixture_cannot_sweep_an_external_scratch_root(self):
+        with tempfile.TemporaryDirectory(prefix="sibling-live-scratch-") as sibling:
+            root = Path(sibling)
+            attempt = root / ATTEMPT
+            attempt.mkdir()
+            sentinel = attempt / "live-sibling"
+            sentinel.write_text("must survive")
+            # This name IS owned and terminal in our fixture, so ownership-only
+            # would delete it after pruning. Root confinement must stop that.
+            env = dict(os.environ, VAULT_ROOT=str(self.root), SQUAD_TEST_ISOLATION="1",
+                       BOARD_SCRATCH_ROOT=str(root))
+            result = subprocess.run(["bash", str(SCRIPT), "--apply"], cwd=self.root,
+                                    env=env, capture_output=True, text=True)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(sentinel.read_text(), "must survive")
+
+    def test_fixture_default_scratch_root_is_disabled(self):
+        env = dict(os.environ, VAULT_ROOT=str(self.root), SQUAD_TEST_ISOLATION="1")
+        env.pop("BOARD_SCRATCH_ROOT", None)
+        result = subprocess.run(["bash", str(SCRIPT), "--apply"], cwd=self.root,
+                                env=env, capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertNotIn("scratch: swept", result.stdout)
 
     def test_in_tree_markdown_outside_state_is_preserved(self) -> None:
         """The rescue filter skips any path without an `_state` part."""
@@ -207,7 +293,7 @@ class PrunePreservesUntrackedTests(unittest.TestCase):
         planted.parent.mkdir(parents=True)
         planted.write_bytes(b"TRUNCATED")
         result = self._run_apply()
-        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.returncode, 1, result.stderr)
         self.assertTrue(
             self.worktree.exists(),
             f"worktree was removed despite unpreservable residue.\n{result.stdout}",
@@ -218,8 +304,8 @@ class PrunePreservesUntrackedTests(unittest.TestCase):
     def test_removal_never_falls_back_to_rmtree(self) -> None:
         """A refused `git worktree remove` must retain, never path-delete."""
         source = SCRIPT.read_text(encoding="utf-8")
-        start = source.index("for wt, _, _ in prunable:")
-        end = source.index("git\", \"worktree\", \"prune\"", start)
+        start = source.index("for wt, task, _ in prunable:")
+        end = source.index("# Sweep orphaned per-attempt build scratch", start)
         # Strip comments before scanning. The removal block deliberately NAMES
         # the old fallback in a comment explaining why it was removed, and a
         # substring check would match that explanation -- the same trap as
@@ -273,7 +359,7 @@ class BlindCensusIsNotAnEmptyCensusTests(PrunePreservesUntrackedTests):
         os.chmod(locked, 0o000)
         self.addCleanup(os.chmod, locked, 0o755)
         result = self._run_apply()
-        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.returncode, 1, result.stderr)
         # Assert on WHY it was retained, not merely THAT it was. A mode-000
         # directory also blocks `git worktree remove`, so the worktree survives
         # either way and an existence check passes against the unfixed code --
@@ -396,21 +482,18 @@ class BlindCensusIsNotAnEmptyCensusTests(PrunePreservesUntrackedTests):
     def test_preservation_still_copies_system_residue_when_rescuing(self) -> None:
         """The exclusion is CLASSIFICATION only.
 
-        Once a worktree is being rescued, preservation copies everything --
-        so a wrong entry in the exclusion list costs a retained worktree,
-        never a lost file.
+        Non-bulk system files still copy. The explicit bulk policy is tested
+        separately; classification alone must not exclude other files.
         """
         self._unpromote()
-        cache = self.worktree / "scripts" / "python" / "__pycache__"
-        cache.mkdir(parents=True)
-        (cache / "mod.cpython-313.pyc").write_bytes(b"\x00bytecode")
+        (self.worktree / ".trusted-task-overlay.md").write_bytes(b"launch context")
         (self.worktree / "poc.bin").write_bytes(b"ONLY-COPY")
         result = self._run_preserve()
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(self._preserved_bytes("poc.bin"), b"ONLY-COPY")
         self.assertEqual(
-            self._preserved_bytes("mod.cpython-313.pyc"), b"\x00bytecode",
-            "preservation must copy system residue too; the exclusion only "
+            self._preserved_bytes(".trusted-task-overlay.md"), b"launch context",
+            "preservation must copy non-bulk system residue too; classification only "
             "decides WHETHER to rescue, never WHAT to copy",
         )
 

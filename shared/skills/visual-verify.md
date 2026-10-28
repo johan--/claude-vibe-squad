@@ -84,7 +84,7 @@ When a baseline exists, step 4 below hands off to `visual-regression-baseline` r
 This skill names tools it needs; it does **not** assert they are live for you.
 
 - `playwright` and `chrome-devtools` carry registry rows `yes · subscription` with lanes
-  `claude|codex|gemini`. **Kimi is absent from that lane list** — this gate cannot be run unaided on
+  `claude|codex|gemini`. **Grok is absent from that lane list** — this gate cannot be run unaided on
   every lane, and a lane without browser tools must report a capability gap rather than approximate the
   pass.
 - **Browser contract — the governing rule is maintainer-private and withheld from this public

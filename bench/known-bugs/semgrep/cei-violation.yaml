@@ -1,0 +1,28 @@
+# Local rule, deliberately not a registry rule: the bench must measure a fixed
+# expectation, and p/solidity can move under us between runs.
+#
+# Matches a state-variable write that happens AFTER a value-bearing low-level call
+# in the same function body -- the ordering `...` enforces, and the reason the
+# repaired contract in negative-control/ does not match.
+rules:
+  - id: state-write-after-external-call
+    languages: [solidity]
+    severity: ERROR
+    message: >-
+      Checks-Effects-Interactions violation: a state variable is written after a
+      value-bearing external call, so the callee can re-enter and observe stale state.
+    metadata:
+      category: security
+      cwe: "CWE-841: Improper Enforcement of Behavioral Workflow"
+      references:
+        - https://swcregistry.io/docs/SWC-107
+    patterns:
+      - pattern-either:
+          - pattern: |
+              (bool $OK, ) = $DST.call{value: $V}($DATA);
+              ...
+              $STATE[$K] = $E;
+          - pattern: |
+              $X = $DST.call{value: $V}($DATA);
+              ...
+              $STATE[$K] = $E;

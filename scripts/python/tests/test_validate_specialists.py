@@ -58,8 +58,10 @@ class Fixture:
             line(["gemini.review", "gemini", "gemini", "high", "none", "review"]),
         ]))
         self.write("shared/registries/policies.tsv", line(POLICY_HEADER) + "".join([
+            line(["escalation.safety_floor.v1", "escalation", "safety floor"]),
             line(["escalation.signal.v1", "escalation", "signal"]),
             line(["failover.conservative.v1", "failover", "conservative"]),
+            line(["throughput.downshift_gated.v1", "throughput", "per-task gate"]),
             line(["throughput.never.v1", "throughput", "never"]),
         ]))
         self.write("shared/api-catalog.md", "# fixture\n")
@@ -143,9 +145,133 @@ class SpecialistValidatorTests(unittest.TestCase):
         _findings, _summary, code = self.fixture.result()
         self.assertEqual(code, 0)
 
+    def budget_slot(self, lane="codex", profile="codex.primary") -> None:
+        self.fixture.row[16:19] = [lane, profile, "throughput.downshift_gated.v1"]
+
+    def test_budget_slots_accept_all_active_lanes(self) -> None:
+        for lane, profile in (("codex", "codex.primary"),
+                              ("claude", "claude.backup"),
+                              ("gemini", "gemini.review")):
+            with self.subTest(lane=lane):
+                self.budget_slot(lane, profile)
+                self.assertEqual(self.fixture.result()[2], 0)
+
+    def test_budget_slot_does_not_lower_role_safety_metadata(self) -> None:
+        for safety in ("low", "medium", "high"):
+            for tags in ("[]", "[live_target]"):
+                with self.subTest(safety=safety, tags=tags):
+                    self.budget_slot()
+                    self.fixture.row[3:5] = [safety, tags]
+                    self.fixture.row[12] = ("escalation.safety_floor.v1" if safety == "high"
+                                            else "escalation.signal.v1")
+                    self.assertEqual(self.fixture.result()[2], 0)
+                    self.assertEqual(self.fixture.row[3:5], [safety, tags])
+        # This is a static slot check; task permission still comes from the gate.
+        self.fixture.row[12] = "escalation.signal.v1"
+        self.assertIn("risk-requires-safety-floor", self.issues())
+
+    def test_sensitive_tags_still_cannot_have_budget_slots(self) -> None:
+        for tag in ("privacy", "financial", "dual_use"):
+            with self.subTest(tag=tag):
+                self.budget_slot()
+                self.fixture.row[4] = f"[{tag}]"
+                self.assertIn(f"sensitive-tag-forbids-throughput:{tag}", self.issues())
+
+    def test_named_sensitive_exception_is_same_lane_and_tag_specific(self) -> None:
+        policy = (REPO_ROOT / "shared/lane-policy.tsv").read_text(encoding="utf-8")
+        self.fixture.write("shared/lane-policy.tsv", policy + line(
+            ["throughput_exception", "privacy", "allow", "sample", "fixture"]))
+        self.fixture.row[4] = "[privacy]"
+        self.budget_slot("codex", "codex.primary")
+        self.assertEqual(self.fixture.result()[2], 0)
+        self.budget_slot("claude", "claude.backup")
+        self.assertIn("sensitive-throughput-leaves-primary-lane:claude", self.issues())
+        self.budget_slot("codex", "codex.primary")
+        self.fixture.row[4] = "[financial, privacy]"
+        self.assertIn("sensitive-tag-forbids-throughput:financial", self.issues())
+
+    def test_heightened_roles_still_cannot_have_budget_slots(self) -> None:
+        self.budget_slot()
+        self.fixture.row[21] = "true"
+        self.fixture.row[12] = "escalation.safety_floor.v1"
+        self.assertIn("heightened-risk-forbids-throughput", self.issues())
+
+    def test_budget_slot_profile_must_resolve_on_its_lane(self) -> None:
+        self.budget_slot(profile="missing.profile")
+        self.assertIn("unknown-profile:missing.profile", self.issues())
+        self.budget_slot("gemini", "codex.primary")
+        self.assertIn("profile-lane-mismatch:gemini:codex.primary", self.issues())
+        self.budget_slot("grok", "codex.primary")
+        self.assertIn("invalid-throughput-lane:grok", self.issues())
+
+    def test_budget_slot_sentinels_and_policy_must_agree(self) -> None:
+        for lane, profile in (("none", "none"), ("none", "codex.primary"),
+                              ("codex", "none")):
+            with self.subTest(lane=lane, profile=profile):
+                self.budget_slot(lane, profile)
+                self.assertIn("gated-throughput-requires-profile", self.issues())
+        self.budget_slot()
+        self.fixture.row[18] = "throughput.never.v1"
+        self.assertIn("never-throughput-requires-none", self.issues())
+        self.fixture.row[18] = "escalation.signal.v1"
+        self.assertIn("invalid-throughput-policy:escalation.signal.v1", self.issues())
+
+    def test_retired_lane_has_no_policy_or_adapter_requirement(self) -> None:
+        validator = Validator(REPO_ROOT)
+        for specialist in ("summarizer", "kestrel", "sample"):
+            self.assertFalse(validator.primary_allowed("kimi", specialist))
+        self.assertEqual(validator.vocabulary("route_lane"),
+                         {"codex", "claude", "gemini", "grok"})
+        self.assertFalse(validator.policy_rows("adapter_template", "kimi"))
+        self.assertNotIn("kimi", validator.vocabulary("throughput_lane"))
+        self.fixture.row[6] = "kimi"
+        self.assertIn("primary-lane-forbidden:kimi:sample", self.issues())
+        self.assertIn("invalid-routing-lane:kimi", self.issues())
+
+    def test_current_map_has_no_kimi_routes_and_independent_reviews(self) -> None:
+        validator = Validator(REPO_ROOT)
+        rows = [dict(zip(RUNTIME_HEADER, row))
+                for row in validator.normalized_runtime_rows()]
+        for row in rows:
+            with self.subTest(specialist=row["specialist"]):
+                for slot in ("primary", "backup", "throughput", "escalate", "review"):
+                    self.assertNotEqual(row[slot + "_lane"], "kimi")
+                    self.assertFalse(row[slot + "_profile"].startswith("kimi."))
+                self.assertNotEqual(row["primary_lane"], row["review_lane"])
+                if row["throughput_profile"] == "none":
+                    self.assertEqual(row["throughput_lane"], "none")
+                    self.assertEqual(row["throughput_policy"], "throughput.never.v1")
+
     def test_missing_tool_is_fatal(self) -> None:
         self.fixture.row[23] = "[missing-tool]"
         self.assertIn("unresolved-tool-reference:required:missing-tool", self.issues())
+
+    def test_retirement_accepts_absent_tools_but_rejects_dormant_profiles(self) -> None:
+        # This fixture has no retired lane adapters or retired arsenal tools.
+        self.fixture.add_tool("arxiv_search", lanes="all")
+        self.fixture.row[23] = "[arxiv_search]"
+        self.assertEqual(self.fixture.result()[2], 0)
+        profile = self.fixture.root / "shared/registries/profiles.tsv"
+        profile.write_text(profile.read_text() + line(
+            ["kimi.dormant", "kimi", "legacy", "high", "none", "dormant"]))
+        self.assertEqual(self.fixture.result()[2], 1)
+        self.assertIn("invalid-registry-value:kimi.dormant:kimi", self.issues())
+        for name in ("xai_search", "perplexity_search", "firecrawl_scrape",
+                     "firecrawl_crawl", "firecrawl_parse"):
+            with self.subTest(tool=name):
+                self.fixture.row[23] = f"[{name}]"
+                self.assertIn(f"unresolved-tool-reference:required:{name}", self.issues())
+        self.fixture.row[23] = "[arxiv_search]"
+        self.fixture.row[8:10] = ["kimi", "kimi.dormant"]
+        self.assertIn("invalid-routing-lane:kimi", self.issues())
+
+    def test_firecrawl_plugin_operation_validation_is_not_arsenal_requirement(self) -> None:
+        self.fixture.add_tool("firecrawl", lanes="claude")
+        self.fixture.row[24] = "[firecrawl]"
+        self.fixture.row[25] = "operations[firecrawl]=scrape; plugin family."
+        self.assertEqual(self.fixture.result()[2], 0)
+        self.fixture.row[25] = "operations[firecrawl]=invented; plugin family."
+        self.assertIn("unknown-operation:firecrawl:invented", self.issues())
 
     def test_required_no_stale_and_retired_tools_are_fatal(self) -> None:
         cases = (("no", "mcp-tool"), ("stale", "mcp-tool"), ("yes", "retired-mcp"))

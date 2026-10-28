@@ -36,8 +36,10 @@ import json
 import os
 from pathlib import Path
 import shutil
+import runpy
 import subprocess
 import tempfile
+import sys
 import unittest
 
 from scripts.python.tests import doctor_fixture
@@ -158,10 +160,21 @@ class DoctorHonestyTest(unittest.TestCase):
             guard = root / "scripts" / "hooks" / "pre-commit"
             guard.parent.mkdir(parents=True)
             shutil.copy2(REPO / "scripts" / "hooks" / "pre-commit", guard)
+            # The installed guard now seals its full reviewed dependency closure.
+            inputs = runpy.run_path(str(guard))["SNAPSHOT_INPUTS"]
+            for relative in (*inputs, "scripts/python/validate_release_version.py"):
+                target = root / relative
+                target.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(REPO / relative, target)
+            environment["PRE_COMMIT_PYTHON"] = sys.executable
             subprocess.run(
                 ["bash", str(REPO / "docs/install/install-pre-commit-hook.sh")],
                 cwd=root, env=environment, check=True, capture_output=True,
             )
+            # Keep doctor's optional checker absent; the installed guard uses
+            # the sealed copy, not this installation input.
+            checker = root / "bin/validate-specialists.sh"
+            checker.rename(checker.with_suffix(".snapshot-source"))
         return root, environment
 
     def _run(
@@ -388,17 +401,17 @@ class DoctorHonestyTest(unittest.TestCase):
             "the planted claude was not reported as this HOME's install",
         )
 
-        # Positive control: the ordinary install has a reachable kimi stub.
+        # Positive control: the ordinary install has a reachable grok stub.
         _, installed_report, _ = self._run("empty")
-        self.assertTrue(any("kimi: " in line for line in _healthy_lines(installed_report)))
+        self.assertTrue(any("grok: " in line for line in _healthy_lines(installed_report)))
         # Missing a required lane is incomplete setup and must fail the launch
         # dependency gate, as well as naming the lane in its warning section.
-        bare_status, bare_report, bare_summary = self._run("empty", missing_lane="kimi")
+        bare_status, bare_report, bare_summary = self._run("empty", missing_lane="grok")
         self.assertEqual(bare_status, 1)
-        self.assertTrue(any("missing launch dependencies: kimi" in issue
+        self.assertTrue(any("missing launch dependencies: grok" in issue
                             for issue in bare_summary["issues"]))
         self.assertIn(
-            "kimi CLI not installed for this HOME",
+            "grok CLI not installed for this HOME",
             " | ".join(bare_summary["warnings"]),
         )
         self.assertNotIn("stub-claude", bare_report)
@@ -407,7 +420,7 @@ class DoctorHonestyTest(unittest.TestCase):
         """The 2026-08-11 defect, stated as an invariant.
 
         Under a temporary HOME, doctor reported the maintainer's
-        ~/.local/bin/claude and ~/.local/bin/kimi as this installation's, because
+        ~/.local/bin/claude and ~/.local/bin/grok as this installation's, because
         lane presence came from the effective-UID passwd home. The PATH-resolved
         section may name no path under that account home once $HOME has moved.
         The dispatch-rail section below it may -- those are explicitly labelled

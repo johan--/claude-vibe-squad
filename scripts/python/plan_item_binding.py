@@ -77,7 +77,6 @@ LANE_AUTHOR_FAMILY = {
     "claude": "anthropic",
     "gemini": "google",
     "grok": "xai",
-    "kimi": "moonshot",
 }
 
 EVIDENCE_PREFIX = "      Evidence:"

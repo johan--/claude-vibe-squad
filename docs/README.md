@@ -13,7 +13,7 @@ launch.
 - [Architecture](architecture.md) — the coordinator, isolated workers, review,
   and settlement flow.
 - [Model runtime map](model-runtime-map.md) — how a specialist is routed to
-  Codex, Claude, Gemini, Grok, or Kimi.
+  Codex, Claude, Gemini, or Grok.
 - [Project](../shared/modes/project.md) — the build and delivery workflow.
 - [Bounty](../shared/modes/bounty.md) — the authorized security workflow.
 
@@ -27,8 +27,8 @@ Project capability, not another mode.
   limits.
 - [Git hooks](git-hooks.md) — local leak and consistency checks.
 - [Add a specialist](adding-a-specialist.md) — extend the Markdown roster.
-- [Security tooling](tooling/security-arsenal-guide.md) — optional, guarded
-  security capabilities.
+- [Security tooling](tooling/security-arsenal-guide.md) — optional security
+  CLIs and pilots, with starting commands.
 
 ## Where the truth lives
 

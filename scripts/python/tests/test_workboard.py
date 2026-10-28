@@ -213,5 +213,138 @@ class RestateTests(unittest.TestCase):
         self.append("restate", **identity, **self.CORRECTION)
 
 
+class AppendCliTests(unittest.TestCase):
+    """``workboard append`` is what bin/workboard-append.sh execs."""
+
+    def setUp(self):
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        self.ledger = Path(temporary.name) / "OPEN-WORK.md"
+
+    def run_cli(self, *argv):
+        import contextlib
+        import io
+        import json
+
+        out, err = io.StringIO(), io.StringIO()
+        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+            code = workboard.main(["append", *argv, "--path", str(self.ledger)])
+        payload = json.loads(out.getvalue()) if out.getvalue().strip() else {}
+        return code, payload, err.getvalue()
+
+    def test_every_kind_round_trips_through_the_cli(self):
+        code, start, err = self.run_cli(
+            "start", "--alias", "A", "--summary", "first", "--why", "w-a", "--next", "do a"
+        )
+        self.assertEqual(code, 0, err)
+        self.assertEqual(start["kind"], "start")
+        self.assertRegex(start["work_id"], r"^W-[0-9a-f]{32}$")
+        self.assertRegex(start["event_id"], r"^EV-[0-9a-f]{12}$")
+        self.assertTrue(start["line"].startswith("- workboard-event/v1 event_id="))
+        code, queue, _ = self.run_cli(
+            "queue", "--alias", "B", "--summary", "second", "--why", "w-b", "--resume", "do b"
+        )
+        self.assertEqual(code, 0)
+        code, *_ = self.run_cli(
+            "restate", "--alias", "B", "--summary", "second!", "--why", "w-b2", "--next", "do b2"
+        )
+        self.assertEqual(code, 0)
+        code, *_ = self.run_cli("advance", "--work-id", start["work_id"], "--next", "do a2")
+        self.assertEqual(code, 0)
+        code, *_ = self.run_cli(
+            "fold", "--request-id", "R-1", "--target", "A", "--summary", "folded",
+            "--why", "same ask", "--next", "do a3",
+        )
+        self.assertEqual(code, 0)
+        code, *_ = self.run_cli("block", "--alias", "B", "--resume", "await x")
+        self.assertEqual(code, 0)
+        code, *_ = self.run_cli("switch", "--alias", "B", "--next", "unblock b")
+        self.assertEqual(code, 0)
+        code, *_ = self.run_cli(
+            "drop", "--alias", "R-noise", "--summary", "a request", "--why", "noise"
+        )
+        self.assertEqual(code, 0)
+        code, *_ = self.run_cli(
+            "complete", "--work-id", queue["work_id"], "--successor", start["work_id"],
+            "--next", "back to a",
+        )
+        self.assertEqual(code, 0)
+        view = workboard.load_workboard(self.ledger, strict=True)
+        self.assertEqual(view.active_item_id, "A")
+        self.assertEqual(view.next_action, "back to a")
+        self.assertEqual([item.alias for item in view.items], ["A"])
+        code, *_ = self.run_cli("complete", "--alias", "A", "--idle")
+        self.assertEqual(code, 0)
+        self.assertTrue(workboard.load_workboard(self.ledger, strict=True).idle)
+        code, *_ = self.run_cli("idle")
+        self.assertEqual(code, 0)
+        code, *_ = self.run_cli(
+            "queue", "--alias", "C", "--summary", "third", "--why", "w-c", "--resume", "do c"
+        )
+        self.assertEqual(code, 0)
+        code, *_ = self.run_cli("switch", "--alias", "C", "--next", "do c now")
+        self.assertEqual(code, 0)
+        code, *_ = self.run_cli(
+            "queue", "--alias", "D", "--summary", "fourth", "--why", "w-d", "--resume", "do d"
+        )
+        self.assertEqual(code, 0)
+        code, *_ = self.run_cli("archive", "--alias", "C", "--waiting", "D", "--resume", "wait d")
+        self.assertEqual(code, 0)
+        view = workboard.load_workboard(self.ledger, strict=True)
+        self.assertEqual(view.items[0].alias, "D")
+        self.assertEqual(view.waiting_work_id, view.items[0].work_id)
+
+    def test_missing_flags_are_a_usage_error_before_any_write(self):
+        cases = {
+            "queue": (("queue", "--alias", "A", "--summary", "s"), "missing --why --resume"),
+            "start": (("start", "--summary", "s", "--why", "w", "--next", "n"), "missing --alias"),
+            "advance": (("advance", "--next", "n"), "missing --alias|--work-id"),
+            "fold": (("fold", "--request-id", "R", "--summary", "s", "--why", "w", "--next", "n"), "missing --target"),
+        }
+        for label, (argv, expected) in cases.items():
+            with self.subTest(kind=label):
+                code, payload, err = self.run_cli(*argv)
+                self.assertEqual(code, 3)
+                self.assertEqual(payload, {})
+                self.assertIn(expected, err)
+        self.assertFalse(self.ledger.exists())
+        code, _, err = self.run_cli(
+            "switch", "--alias", "A", "--work-id", "W-" + "a" * 32, "--next", "n"
+        )
+        self.assertEqual(code, 3)
+        self.assertIn("either --alias or --work-id", err)
+        self.assertFalse(self.ledger.exists())
+
+    def test_library_refusals_surface_as_exit_three(self):
+        code, _, err = self.run_cli(
+            "queue", "--alias", "A", "--summary", "s", "--why", "w", "--resume", "r"
+        )
+        self.assertEqual(code, 3)
+        self.assertIn("append rejected", err)
+        self.assertFalse(self.ledger.exists())
+
+    def test_flag_mapping_picks_schema_keys_by_identity_shape(self):
+        opaque = "W-" + "b" * 32
+        facts = workboard.append_facts_from_flags(
+            "complete", {"alias": "A", "successor": opaque, "next": "n"}
+        )
+        self.assertEqual(facts, {"item_id": "A", "next_action": "n", "successor_work_id": opaque})
+        facts = workboard.append_facts_from_flags(
+            "drop", {"alias": "R", "summary": "s", "why": "w", "waiting": "B", "resume": "r"}
+        )
+        self.assertEqual(
+            facts,
+            {"request_id": "R", "summary": "s", "why": "w", "waiting_id": "B", "resume_action": "r"},
+        )
+        facts = workboard.append_facts_from_flags(
+            "fold", {"request_id": "R", "target": opaque, "summary": "s", "why": "w", "next": "n"}
+        )
+        self.assertEqual(facts["target_work_id"], opaque)
+        facts = workboard.append_facts_from_flags("block", {"work_id": opaque, "resume": "r", "idle": True})
+        self.assertEqual(facts, {"work_id": opaque, "resume_action": "r", "focus_state": "idle"})
+        with self.assertRaisesRegex(workboard.WorkboardConsistencyError, "one of"):
+            workboard.append_facts_from_flags("adopt", {})
+
+
 if __name__ == "__main__":
     unittest.main()

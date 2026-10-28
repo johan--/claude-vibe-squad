@@ -3,7 +3,7 @@
 Chrono is the only controller and the only operator-facing voice.
 
 ```text
-Operator -> Chrono -> gpt-codex | claude | gemini | kimi | grok -> specialists
+Operator -> Chrono -> gpt-codex | claude | gemini | grok -> specialists
 ```
 
 Markdown is the interface. Chrono writes task packets; model leads execute them; specialists are markdown role files. This document is the **narrative source of truth** for how routing works. The **machine source of truth** is `shared/specialist-runtime-map.tsv` (per-specialist rows) plus the profile/policy registries; where a specific value is in question, the TSV and registries win.
@@ -31,7 +31,7 @@ Every specialist row carries a full chain, resolved from the profile registry:
 - `throughput_lane` + `throughput_profile` + `throughput_policy` — the bulk/downshift route, gated (see §5).
 - `failover_policy`, `escalation_policy` — versioned policy IDs (see §5–§6), not per-row prose.
 
-`*_profile` values resolve through the **profile registry** to an exact model + effort + flags — e.g. `codex.astra.high`, `codex.astra.max`, `codex.sol.high`, `codex.sol.ultra`, `claude.opus5.xhigh`, `claude.fable.max`, `gemini.flash.high`, `kimi.k2.7.bulk`. Claude also keeps `claude.opus.default` / `claude.sonnet.default` as **native in-lane fallback only** (`--fallback-model`), not standing lanes.
+`*_profile` values resolve through the **profile registry** to an exact model + effort + flags — e.g. `codex.astra.high`, `codex.astra.max`, `codex.sol.high`, `codex.sol.ultra`, `claude.opus5.xhigh`, `claude.fable.max`, `gemini.flash.high`, `codex.terra.default`. Claude also keeps `claude.opus.default` / `claude.sonnet.default` as **native in-lane fallback only** (`--fallback-model`), not standing lanes.
 
 ## 3. Lanes, models, and capability fit
 
@@ -66,30 +66,25 @@ PY
 | codex | implementation · tests · PoC · experimental probing · code review mechanics · graphics/runtime |
 | claude | judgment · planning · safety/security reasoning · security defense · research/synthesis/long-context · developmental content · game/level/audio design |
 | gemini | content/text · design · media/multimodal · large-context analysis · Google Search grounding; see `model-lanes/lane-capabilities.tsv` for grounding and authentication declarations |
-| kimi | allowlisted primaries and gated throughput; primary eligibility is defined in `shared/lane-policy.tsv` |
 | grok | advisory work and mapped research escalation; board launch constraints are described below. `read_file` ceiling ~25k tokens — use shell or paged ingest for large documents |
 
 **Grok board launch constraints.** `scripts/python/dispatch_context_builder.py` builds Grok arguments with
 `--disable-web-search` and requires `xai-api-key` authority; `model-lanes/lane-capabilities.tsv` declares
-`xai-api-key-only`. The mapped research escalation therefore does not supply native X/Twitter search through
-the board launch, and it must not be described as subscription-backed. Any separate search tool requires its
-own role-scoped availability and authorization check.
+`xai-api-key-only`. That flag removes only general web search/fetch; native X search via
+`x_keyword_search` and `x_thread_fetch` remain available under the launcher contract;
+a current authorized probe must confirm their availability. The launch must not be described as
+subscription-backed. Any separate search tool requires its own role-scoped availability and authorization check.
 
 **Live-launcher model binding.** For every lane, the board attests the resolved
 `shared/registries/profiles.tsv` row and passes that row's `model_id` as the native CLI's exact `--model`
 argument. There is no lane-specific alternate model pin: selected profile, attested model, and launched model
-remain aligned for Codex, Claude, Gemini, Kimi, and Grok.
+remain aligned for Codex, Claude, Gemini, and Grok.
 
-**Kimi is deny-default as a primary, with a narrow allowlisted primary set.** Read the `primary_default`
-and `primary_exception` rows in `shared/lane-policy.tsv` for eligibility and exception conditions, then resolve
-each permitted specialist's profile and reviewer from the runtime map. Blank-advisor behavior is defined in
-`shared/specialists/exodia.md`; advisor membership and model families follow the runtime-map rows.
+**Research default.** Decision-grade research fans the same question out in parallel to `research` across its three ranked routes (Gemini Argon primary, Codex backup, Grok escalate as an independent third family, launched with general web retrieval disabled and native X search available) → `synthesizer` merges and flags disagreements → `content-verifier` checks key claims against sources. Quick lookups use one worker. `arxiv_search` is available in any lane. This cross-lane fan-out replaces in-run Perplexity/xAI second opinions. Advisor membership and model families follow the runtime-map rows; blank-advisor behavior is defined in `shared/specialists/exodia.md`.
 
-For allowlisted roles Kimi is a real primary. Bulk work uses the **gated throughput lane** only where the
-specialist's `throughput_*` fields permit it, under the §5 downshift conjunction gate. Read `backup_*` separately
-for the operational backup; a bulk capability does not create a backup binding.
-Kimi has no native dollar/effort ceiling, so every metered Kimi-mediated child call — on a primary row as much
-as a throughput one — requires an external numeric budget ceiling; never route unbounded metered work to Kimi.
+Bulk work uses the **gated throughput slot** only where the specialist's `throughput_*` fields permit it,
+under the §5 downshift conjunction gate. Read `backup_*` separately for the operational backup;
+a budget slot does not create a backup binding. Metered child calls require an external numeric budget ceiling.
 
 **Gemini owns grounded bounty research.** `bounty-researcher` performs cited prior-audit, historical-exploit, incident, and taxonomy recon. Its outputs feed attack lanes but remain leads until heavy-hitter validation.
 
@@ -107,19 +102,22 @@ When a backup lane cannot invoke the required tools, it runs **specification-onl
 
 ## 5. Safety model
 
-- **`safety_level`** (`low | medium | high`) is a **quality floor, not a change-level review detector.** `high` forces the strongest profile + `throughput.never`; packet review is derived separately from `review_triggers`. Complexity escalation is separate and signal-based.
+- **`safety_level`** (`low | medium | high`) is a **quality floor, not a change-level review detector.** `high` forces the strongest profile for the high-safety work; a budget slot never authorizes downshifting that work; packet review is derived separately from `review_triggers`. Complexity escalation is separate and signal-based.
 - **`heightened_risk`** (boolean) marks defense-in-depth roles. The complete machine-readable role set lives in `shared/lane-policy.tsv`; it includes the security, exploit, incident, privacy, provenance, reconnaissance, supply-chain, and experimental-attacker roles that require the high-safety floor.
-- **GLOBAL safety-refusal invariant.** A genuine safety refusal on **any** lane surfaces to the operator; the same request is **never cross-family re-dispatched in either direction** (Fable-refuses → do not shop to Sol; Sol-refuses → do not shop to Fable/Gemini/Kimi). An operational block (overload/down/timeout) may inform a later, manually authored operator/Chrono board packet to the backup lane; no automatic redispatch exists. Refusals are classified by (1) structured provider/wrapper policy event, (2) typed terminal status, then (3) content heuristic **only to downgrade certainty** to `possible_refusal` + surface. A schema-valid 200-style response is terminal; short output is never treated as an operational failure.
+- **GLOBAL safety-refusal invariant.** A genuine safety refusal on **any** lane surfaces to the operator; the same request is **never cross-family re-dispatched in either direction** (Fable-refuses → do not shop to Sol; Sol-refuses → do not shop to Fable/Gemini). An operational block (overload/down/timeout) may inform a later, manually authored operator/Chrono board packet to the backup lane; no automatic redispatch exists. Refusals are classified by (1) structured provider/wrapper policy event, (2) typed terminal status, then (3) content heuristic **only to downgrade certainty** to `possible_refusal` + surface. A schema-valid 200-style response is terminal; short output is never treated as an operational failure.
 - **`operator_gate`** — closed policy enum whose machine vocabulary lives in `shared/lane-policy.tsv`; Hard Rule 6 in `CLAUDE.md` states the corresponding policy set, and `scripts/python/tests/test_held_action_gate.py` requires both to equal the admission-time controller set. `production_mutation` (mutating a live production system that is not itself a public release) is **operator-ratified (2026-07-13)**. `requires_approval` in a brief is **harness tool names only** (`Write`, `Bash`, `WebFetch`, …) — domain gates live in `operator_gate`, never in `requires_approval`. Ordinary worker admission keeps all controller-held category tokens out of `action_scope`; this is not a per-tool-call approval mechanism. See `shared/protocol.md` § Held-category authority and logical scopes.
-- **Downshift conjunction gate.** `throughput.downshift_gated.v1` permits the kimi bulk tier ONLY when `safety_level == low` AND no security/privacy/financial content AND a per-task Chrono bulk flag. Never a per-specialist default; `throughput.never.v1` is mandatory when `safety_level != low`, `heightened_risk`, or any `dual_use|privacy|financial` tag applies.
+- **Downshift conjunction gate.** `throughput.downshift_gated.v1` permits a mapped cheap tier ONLY for sub-work whose task `safety_level == low` AND which contains no security/privacy/financial content AND carries the explicit per-task Chrono bulk flag `route_tier: throughput` (set via `ROUTE_TIER`). Slot availability is not per-task eligibility and never creates a per-specialist default. Preserve every row's safety level, safety tags, and heightened-risk metadata: sensitive or higher-safety work remains on its normal quality route. Chrono must isolate and classify eligible sub-work before downshifting; neither a filled slot nor the bulk flag lowers the parent work's safety floor. `throughput.never.v1` pairs with `none` lane/profile slots and forbids downshifting. Heightened-risk specialists retain no budget slot. Rows tagged `privacy`, `financial` or `dual_use` carry no budget slot unless `shared/lane-policy.tsv` names a `throughput_exception` for that tag and specialist; an excepted slot must stay on the row's primary lane. On `live_target` rows, budget sub-work is read-only.
 
 Policy IDs (versioned): `failover.conservative.v1` · `escalation.signal.v1` · `escalation.safety_floor.v1` (mandatory for high/heightened) · `throughput.never.v1` · `throughput.downshift_gated.v1`.
 
-Deterministic assignment rule:
+Deterministic assignment and use rules:
 ```
-if safety_level==high OR heightened_risk:  escalation.safety_floor.v1 ; throughput.never.v1
-elif safety_level==medium:                 escalation.signal.v1        ; throughput.never.v1
-else (low):                                escalation.signal.v1        ; throughput.downshift_gated.v1 (only if no security/privacy/financial tag)
+if row.safety_level==high OR row.heightened_risk: escalation.safety_floor.v1
+else:                                           escalation.signal.v1
+if no budget slot:                              none / none / throughput.never.v1
+else:                                           mapped lane / profile / throughput.downshift_gated.v1
+if row.heightened_risk:                          no budget slot
+use budget slot ONLY if task.safety_level==low AND no security/privacy/financial content AND Chrono bulk flag
 failover_policy = failover.conservative.v1   (all rows)
 ```
 
@@ -136,12 +134,13 @@ failover_policy = failover.conservative.v1   (all rows)
 
 Every non-trivial task packet names:
 
-- `to_model`: `gpt-codex | claude | gemini | kimi | grok`
+- `to_model`: `gpt-codex | claude | gemini | grok`
 - `specialist`: canonical specialist name
 - `source_namespace`: `coding | security | content | sysmgmt | research | shared`
 - `compatibility_namespace`: legacy label; the packet is always stored in the canonical `departments/coding` mailbox (see § 1)
 - `write_scope`: exact writable paths, or `[]`
 - `review_model`: read-only reviewer lane, or `none`
+- `reviews`: `none` for ordinary work, or the canonical `TASK-YYYY-MM-DD-HHMM-<suffix>` ID this packet reviews (`shared/protocol.md` § Task Packet Frontmatter)
 - `mandatory_review`: `true | false`
 - `review_triggers`: explicit subset of `blast_radius | adversarial_claim | deciding_measurement | architecture` (the gate that defines these is `shared/protocol.md` § Mandatory Review Behavior — its one home)
 - `parallel_safe`: `true | false`

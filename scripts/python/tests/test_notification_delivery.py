@@ -5,8 +5,10 @@ from __future__ import annotations
 
 from contextlib import ExitStack
 from datetime import timedelta
+import hashlib
 import json
 from pathlib import Path
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -19,6 +21,7 @@ if str(PYTHON_DIR) not in sys.path:
     sys.path.insert(0, str(PYTHON_DIR))
 
 import registry_reconciler as rr  # noqa: E402
+import test_outbox_watcher_pane_target as watcher_fixtures  # noqa: E402
 
 
 class SimulatedCrash(RuntimeError):
@@ -85,6 +88,73 @@ class NotificationDeliveryRetryTest(unittest.TestCase):
             self.task_id
         ]
 
+    def test_completion_enqueue_is_independent_of_transport_and_exact_ack(self):
+        from chrono_state.notifications import NotificationStore
+        with mock.patch.object(rr, "nudge_chrono", return_value=True):
+            rr.reconcile(self.task_id, False)
+            store = NotificationStore(self.root)
+            pending = store.list_pending()
+            self.assertEqual(len(pending), 1)
+            self.assertEqual(pending[0]["state"], "pending")
+            rr.reconcile(self.task_id, False)
+            self.assertEqual(store.list_pending(), pending)
+            store.acknowledge([pending[0]["id"]])
+            rr.reconcile(self.task_id, False)
+            self.assertEqual(store.list_pending(), [])
+
+    def test_store_failure_retains_intent_after_legacy_transport_success(self):
+        from chrono_state.notifications import NotificationStore
+        with mock.patch.object(rr, "nudge_chrono", return_value=True):
+            with mock.patch.object(NotificationStore, "enqueue_task", side_effect=OSError("store full")):
+                rr.reconcile(self.task_id, False)
+            self.assertIn("notice_pending_events", self.entry())
+            self.assertEqual(self.entry()["notification_key"], self.event_key)
+            rr.reconcile(self.task_id, False)
+            self.assertNotIn("notice_pending_events", self.entry())
+            self.assertEqual(len(NotificationStore(self.root).list_pending()), 1)
+
+    def test_clean_auto_close_and_coordination_each_enqueue_without_ack(self):
+        from chrono_state.notifications import NotificationStore
+        from test_reconciler_close_replay_and_queue_dedup import auto_closed_entry
+        entry = auto_closed_entry()
+        events = []
+        now = rr.datetime.now(rr.timezone.utc)
+        rr.append_terminal_event(events, entry, self.task_id, "coding", now,
+                                 "AUTO-CLOSED", "clean", "clean")
+        registry = {self.task_id: entry}
+        rr._prepare_notification_deliveries(registry, events, None)
+        self.registry_path.write_text(json.dumps(registry))
+        with mock.patch.object(rr, "nudge_chrono", return_value=True) as nudge:
+            rr.reconcile(self.task_id, False)
+            nudge.assert_called_once()
+        store = NotificationStore(self.root)
+        self.assertEqual(store.list_pending()[0]["identity"], ['task', self.task_id, 1, 'auto-closed'])
+        self.assertEqual(store.list_pending()[0]["state"], 'pending')
+        self.assertEqual(self.entry()["notification_key"], f"{self.task_id}|AUTO-CLOSED|1")
+        entry = {"status": "in-flight", "delivery_generation": 2}
+        self.registry_path.write_text(json.dumps({self.task_id: entry}))
+        (self.outbox / f"{self.task_id}-response.md").write_text("---\nstatus: complete\n---\nDone.\n\n## COORDINATION REQUESTED\nRoute follow-up.\n")
+        with mock.patch.object(rr, "nudge_chrono", return_value=True):
+            rr.reconcile(self.task_id, False)
+        self.assertEqual({n['identity'][3] for n in store.list_pending()},
+                         {'auto-closed', 'complete', 'coordination-requested'})
+
+    def test_explicit_close_is_audit_only_and_never_enqueued(self):
+        from chrono_state.notifications import NotificationStore
+        store = NotificationStore(self.root)
+        store.initialize()
+        rr.close_task(self.task_id, 'operator superseded work', 'superseded')
+        with mock.patch.object(rr, "nudge_chrono", return_value=True):
+            rr.reconcile(self.task_id, False)
+        self.assertEqual(store.list_pending(), [])
+        self.assertIn('operator superseded work', self.queue_path.read_text())
+        # Positive control: a newly completed generation is a real obligation.
+        self.registry_path.write_text(json.dumps({self.task_id: {
+            'status': 'in-flight', 'delivery_generation': 2}}))
+        with mock.patch.object(rr, "nudge_chrono", return_value=True):
+            rr.reconcile(self.task_id, False)
+        self.assertEqual(len(store.list_pending()), 1)
+
     def test_failed_nudge_is_retried_by_next_reconcile(self) -> None:
         nudge = self.stack.enter_context(
             mock.patch.object(rr, "nudge_chrono", side_effect=(False, True))
@@ -109,7 +179,7 @@ class NotificationDeliveryRetryTest(unittest.TestCase):
         self.assertNotIn("notification_pending_events", delivered)
         self.assertIn(f"chrono-nudge sent coding/{self.task_id}", second_messages)
         queue = self.queue_path.read_text(encoding="utf-8")
-        self.assertEqual(queue.count(self.task_id), 1, queue)
+        self.assertEqual(queue.count(f" | coding/{self.task_id} | "), 1, queue)
 
     def test_successful_delivery_is_not_resent(self) -> None:
         nudge = self.stack.enter_context(
@@ -124,7 +194,7 @@ class NotificationDeliveryRetryTest(unittest.TestCase):
         self.assertEqual(delivered["notification_key"], self.event_key)
         self.assertNotIn("notification_pending_events", delivered)
         queue = self.queue_path.read_text(encoding="utf-8")
-        self.assertEqual(queue.count(self.task_id), 1, queue)
+        self.assertEqual(queue.count(f" | coding/{self.task_id} | "), 1, queue)
 
     def test_repeated_failure_retries_without_registry_churn(self) -> None:
         nudge = self.stack.enter_context(
@@ -138,7 +208,7 @@ class NotificationDeliveryRetryTest(unittest.TestCase):
         self.assertEqual(nudge.call_count, 2)
         self.assertEqual(self.registry_path.read_bytes(), after_first_failure)
         queue = self.queue_path.read_text(encoding="utf-8")
-        self.assertEqual(queue.count(self.task_id), 1, queue)
+        self.assertEqual(queue.count(f" | coding/{self.task_id} | "), 1, queue)
 
     def test_crash_after_send_before_key_write_stays_retryable(self) -> None:
         receipts: set[str] = set()
@@ -196,6 +266,36 @@ class NotificationDeliveryRetryTest(unittest.TestCase):
 
         self.assertTrue(delivered)
         run.assert_not_called()
+
+
+class WatcherNoticeTagTests(unittest.TestCase):
+    def test_shell_notices_enqueue_once_and_require_exact_ack(self):
+        fixture = watcher_fixtures.WatcherPaneTargetTests()
+        self.addCleanup(fixture.doCleanups)
+        fixture.setUp()
+        from chrono_state.notifications import NotificationStore
+        store = NotificationStore(fixture.root)
+        for index, message in enumerate((
+            "ok: TASK-fixture", "blocked: TASK-fixture", "REVIEW-REQUIRED: TASK-fixture",
+            "needs_human: TASK-fixture", "BOARD DIGEST: complete=4",
+            "RESP from model lane codex", "[vibesquad] already tagged",
+        )):
+            with self.subTest(message=message):
+                event = f"tagged-{index}"
+                expected = message if message.startswith("[vibesquad] ") else f"[vibesquad] {message}"
+                before = fixture.log.read_text() if fixture.log.exists() else ""
+                result = fixture.notify(event, message)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                pending = store.list_pending()
+                self.assertEqual(len(pending), index + 1)
+                self.assertEqual({notice["state"] for notice in pending}, {"pending"})
+                self.assertIn("message_sha256=" + hashlib.sha256(expected.encode()).hexdigest(),
+                              fixture.receipt(event).read_text())
+                sent = fixture.log.read_text()
+                self.assertEqual(fixture.notify(event, message).returncode, 0)
+                self.assertEqual(fixture.log.read_text(), sent)
+        store.acknowledge([notice["id"] for notice in store.list_pending()])
+        self.assertEqual(store.list_pending(), [])
 
 
 if __name__ == "__main__":

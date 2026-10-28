@@ -1,14 +1,14 @@
 # Provider CLIs
 
-`bin/squad up` checks for `claude`, `codex`, `agy`, `grok`, and `kimi` and exits
+`bin/squad up` checks for `claude`, `codex`, `agy`, and `grok` and exits
 1 if any is missing:
 
 ```text
-ERROR: missing required command(s): claude kimi
-Fix: install/login the missing CLIs, and install core tools with: brew install jq tmux fswatch
+ERROR: missing required command(s): claude grok
+Fix: install/login the missing CLIs, and install core tools with: brew install jq tmux fswatch uv
 ```
 
-All five are required. `shared/launch-dependencies.sh` is the executable
+All four are required. `shared/launch-dependencies.sh` is the executable
 authority for the complete required-command set.
 
 Model inference always runs through these native CLIs. Vibe Squad never
@@ -22,10 +22,9 @@ substitutes an MCP relay or a direct model API for a model lane.
 | `codex` | npm (global) | `@openai/codex` | `codex login` |
 | `agy` (the `gemini` lane) | Standalone binary — no package manager | Antigravity (Google): <https://antigravity.google> | personal OAuth |
 | `grok` | Vendor install — no package manager | xAI Grok CLI | `XAI_API_KEY` policy in `model-lanes/lane-capabilities.tsv` |
-| `kimi` | `uv tool` | `kimi-cli` (PyPI) | `kimi` → follow its login prompt |
 
-The `codex` (npm) and `kimi` (PyPI) package identities were confirmed against the
-live registries on 2026-08-13; `claude` installs from Anthropic's script and
+The `codex` (npm) package identity was confirmed against the
+live registry on 2026-08-13; `claude` installs from Anthropic's script and
 `agy`/`grok` are vendor-distributed, so none of those three is a package-manager
 entry. Version numbers move; the package/vendor names are the stable part.
 
@@ -81,21 +80,6 @@ Check:
 command -v agy && agy --version
 ```
 
-## kimi
-
-```bash
-uv tool install kimi-cli
-```
-
-This links `~/.local/bin/kimi`, so `~/.local/bin` must be on your `PATH`.
-Authenticate by starting `kimi` and following its login prompt.
-
-Check:
-
-```bash
-command -v kimi && kimi --version
-```
-
 ## grok
 
 `grok` is xAI's Grok CLI. There is no confirmed one-line public package command
@@ -111,7 +95,7 @@ Check:
 command -v grok && grok --version
 ```
 
-## Verify all five at once
+## Verify all four at once
 
 This is the same list `bin/launch-squad.sh` checks:
 
@@ -135,8 +119,8 @@ does not prompt you to log in.
 
 ## PATH note
 
-Two of the five install outside Homebrew, into `~/.local/bin`. If `claude` or
-`kimi` are reported missing right after a successful install, that directory is
+`claude` installs outside Homebrew, into `~/.local/bin`. If `claude`
+is reported missing right after a successful install, that directory is
 almost certainly not on your `PATH`:
 
 ```bash

@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """What `bin/launch-squad.sh` would tell tmux, without a tmux server.
 
-`apply_squad_globals()` is pure emission: every line in it is a `tmux` call and
-nothing else. So the function can be extracted, run with a STUB `tmux` on an
+`apply_squad_globals()` uses shell builtins to assemble its `tmux` calls. So the
+function can be extracted, run with a STUB `tmux` on an
 otherwise-empty PATH, and its argv stream asserted -- which is the only way to
 regression-test the status bar without launching a session on top of whatever
 the operator is running. A real `tmux` is unreachable from these tests by
@@ -14,6 +14,7 @@ from __future__ import annotations
 import os
 from pathlib import Path
 import re
+import shlex
 import subprocess
 import tempfile
 import unittest
@@ -21,6 +22,7 @@ import unittest
 
 ROOT = Path(__file__).resolve().parents[3]
 LAUNCHER = ROOT / "bin" / "launch-squad.sh"
+STUB_VAULT_ROOT = "/stub/vault with spaces"
 
 STUB_TMUX = """#!/bin/bash
 printf 'tmux'
@@ -63,6 +65,7 @@ def emitted_tmux_calls() -> list[list[str]]:
             env={
                 "PATH": str(stub_dir),
                 "SESSION": "stub-session",
+                "VAULT_ROOT": STUB_VAULT_ROOT,
                 "CHRONO_DOCTOR_LOG_DIR_SHELL": "/stub/doctor-logs",
                 "HOME": str(base),
             },
@@ -146,22 +149,44 @@ class StatusBarEmissionTests(unittest.TestCase):
         self.assertNotIn("C-b <n>: lanes", blob)
         self.assertNotRegex(blob, r"C-b <n>")
 
-    def test_every_command_substitution_is_a_bare_cat(self) -> None:
-        """tmux forks a shell per `#()` per render. The cost was never network
-        work, it was process creation, so nothing heavier than `cat` may sit on
-        the render path."""
+    def test_only_questions_use_a_direct_reader(self) -> None:
+        """Health stays cached; only the small question list is read directly."""
         rendered = [
             option_value(self.calls, option)
             for option in ("status-left", "status-right", "pane-border-format")
         ]
+        direct_readers = []
+        cached_readers = []
         for value in rendered:
             self.assertIsNotNone(value)
             for body in re.findall(r"#\((.*?)\)", value):
+                if shlex.split(body) == ["/bin/bash", f"{STUB_VAULT_ROOT}/bin/vs-needs-you-segment.sh"]:
+                    direct_readers.append(body)
+                    continue
+                cached_readers.append(body)
                 self.assertRegex(
                     body,
                     r"^cat [^|;&`$]*$",
-                    f"only a plain `cat` belongs on the render path, got: {body}",
+                    f"health renderers must stay plain `cat`s, got: {body}",
                 )
+        self.assertEqual(len(direct_readers), 1)
+        # Positive control: the exception must not swallow the health readers.
+        self.assertEqual(len(cached_readers), 4)
+
+    def test_questions_are_first_and_survive_narrow_clients(self) -> None:
+        right = option_value(self.calls, "status-right")
+        command = re.match(r"^#\((.*?)\)", right)
+        self.assertIsNotNone(command)
+        self.assertEqual(
+            shlex.split(command[1]),
+            ["/bin/bash", f"{STUB_VAULT_ROOT}/bin/vs-needs-you-segment.sh"],
+        )
+        self.assertTrue(right[command.end():].startswith("#{?"))
+        # Control: the existing wide-only swarm and always-visible doctor stay.
+        wide, narrow = conditional_branches(right)[0][1:]
+        self.assertIn("vs-swarm.status", wide)
+        self.assertNotIn("vs-swarm.status", narrow)
+        self.assertIn("#(cat /tmp/vs-doctor.status 2>/dev/null)", right)
 
     def test_status_interval_is_not_once_a_second(self) -> None:
         interval = option_value(self.calls, "status-interval")
@@ -224,7 +249,7 @@ class StatusBarEmissionTests(unittest.TestCase):
         self.assertEqual(len(popup), 1, f"expected exactly one popup bind, got {popup}")
         self.assertEqual(popup[0][1], "g", "`g` is not a default tmux prefix binding")
         text = popup[0][-1]
-        self.assertIn("PANES in the chrono window", text)
+        self.assertIn("chrono window: Chrono pane + swarm sidebar pane", text)
         self.assertIn("C-b 0", text)
         self.assertIn("C-b 5", text)
         # `?` is tmux's own list-keys and must keep working; the popup points at

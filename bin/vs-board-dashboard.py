@@ -5,12 +5,19 @@ Consumes the vs-board-snapshot.py stream (@SPAWN/@SUMMARY/@DONE/@DEFECT) and ren
   * one card per LIVE spawn (0..N) — crew avatar motif + character + specialist +
     model badge + one-line task summary + elapsed timer; a card exists ONLY while
     its spawn is live (no idle/persistent boxes),
+  * a rainbow border that sweeps one step per refresh on cards dispatched at the
+    top effort tier (registry effort `max`, or an `ultra` flag),
+  * the dispatched effort beside the model, and a warning row when the spawn's log
+    shows the CLI silently fell back to another model or hit safety-classifier stops,
   * a compact capacity meter when nothing is running (not empty boxes),
   * a bounded completed-CLI history rail underneath for debugging/audit.
 
 Adaptive: card columns scale with the pane width. Reads the snapshot from stdin if
 piped, else runs vs-board-snapshot.py. Pure stdlib; rendered each frame by the loop.
 """
+import csv
+import hashlib
+import json
 import math
 import os
 import random
@@ -33,16 +40,25 @@ NOW = int(time.time())
 
 LANE_BADGE = {
     "gpt-codex": "codex", "codex": "codex", "claude": "claude",
-    "gemini": "gemini", "kimi": "kimi",
+    "gemini": "gemini", "grok": "grok",
 }
 # A recognizable emoji beside the model name, and a lane accent colour (256-colour).
-MODEL_EMOJI = {"codex": "🤖", "claude": "✴️", "gemini": "♊", "kimi": "🌙"}
-LANE_COLOR = {"codex": 78, "claude": 170, "gemini": 39, "kimi": 147}
+MODEL_EMOJI = {"codex": "🤖", "claude": "✴️", "gemini": "♊", "grok": "⚡"}
+LANE_COLOR = {"codex": 78, "claude": 170, "gemini": 39, "grok": 208}
 CARD_W = 27  # inner width of a card (avatar 13 + gap 1 + info 13); 2 cols in a 61w pane
 
 # --- ANSI colour (kept out of width math via _dwidth's stripper) --------------
 _ANSI_RE = re.compile(r"\033\[[0-9;]*m")
-_NO_COLOR = bool(os.environ.get("NO_COLOR")) or os.environ.get("VS_DASH_COLOR") == "0"
+# A terminal that cannot show colour, or a destination that is not a terminal at
+# all, gets plain text. VS_DASH_COLOR=1 forces colour back on for a deliberate
+# capture (rendering frames to a file to look at them); VS_DASH_COLOR=0 and
+# NO_COLOR force it off.
+_NO_COLOR = os.environ.get("VS_DASH_COLOR") != "1" and (
+    bool(os.environ.get("NO_COLOR"))
+    or os.environ.get("VS_DASH_COLOR") == "0"
+    or os.environ.get("TERM") == "dumb"
+    or not sys.stdout.isatty()
+)
 
 
 def _sgr(text, *codes):
@@ -53,6 +69,44 @@ def _sgr(text, *codes):
 
 def _fg(text, color256, *extra):
     return _sgr(text, 38, 5, color256, *extra)
+
+
+# --- top-tier rainbow border --------------------------------------------------
+# A hue wheel walked one cell at a time. The 256-colour ramp is the floor (every
+# terminal the squad runs in has it); truecolor is used only when COLORTERM
+# advertises it, where the same wheel comes out smooth instead of stepped.
+_RAINBOW_256 = (196, 202, 208, 214, 220, 226, 190, 154, 118, 82, 46, 47, 48, 49,
+                50, 51, 45, 39, 33, 27, 57, 93, 129, 165, 201, 199, 198, 197)
+RAINBOW_STEPS = len(_RAINBOW_256)
+RAINBOW_SPEED = 2  # hue cells advanced per refresh — frames are 1s, so this crawls
+
+_TRUECOLOR = (
+    os.environ.get("VS_DASH_TRUECOLOR") == "1"
+    or (os.environ.get("VS_DASH_TRUECOLOR") != "0"
+        and os.environ.get("COLORTERM", "").lower() in ("truecolor", "24bit"))
+)
+
+
+def _hue(step):
+    """(r, g, b) at `step`/RAINBOW_STEPS of one turn around the hue wheel."""
+    sector = (step % RAINBOW_STEPS) * 6.0 / RAINBOW_STEPS
+    ramp = int(255 * (1 - abs(sector % 2 - 1)))
+    return ((255, ramp, 0), (ramp, 255, 0), (0, 255, ramp),
+            (0, ramp, 255), (ramp, 0, 255), (255, 0, ramp))[int(sector)]
+
+
+def _rainbow(text, start, stride=1):
+    """Colour each cell of `text` one hue step further round the wheel.
+
+    `start` is the first cell's position on the wheel and `stride` its direction,
+    so a caller can lay one continuous sweep along a path that runs backwards on
+    screen (the bottom rule, drawn left-to-right but travelling right-to-left)."""
+    out = []
+    for i, ch in enumerate(text):
+        step = start + i * stride
+        out.append(_sgr(ch, 38, 2, *_hue(step)) if _TRUECOLOR
+                   else _fg(ch, _RAINBOW_256[step % RAINBOW_STEPS]))
+    return "".join(out)
 
 
 SNAPSHOT_TIMEOUT = float(os.environ.get("VS_DASH_SNAPSHOT_TIMEOUT", "10") or "10")
@@ -117,9 +171,9 @@ def _card_meta(specialist):
                     tagline = line.split(":", 1)[1].strip()
     except OSError:
         pass
-    # Normalise to a fixed 6 x AVATAR_W block. Pad/truncate RAW (ljust) — never via
-    # _fit, which collapses whitespace and would mangle the art's internal spacing.
-    frame = [row[:AVATAR_W].ljust(AVATAR_W) for row in frame[:6]]
+    # Normalise to a fixed 6 x AVATAR_W block — never via _fit, which collapses
+    # whitespace and would mangle the art's internal spacing.
+    frame = [_fit_art(row, AVATAR_W) for row in frame[:6]]
     while len(frame) < 6:
         frame.append(" " * AVATAR_W)
     return name, motif, tagline, frame
@@ -158,6 +212,21 @@ def _dwidth(text):
     return width
 
 
+def _fit_art(row, width):
+    """Exactly `width` display cells of avatar art, whitespace intact.
+
+    Cut and padded by CELLS, not characters: 53 of 73 crew cards have an emoji in
+    a 13-character row, which made that row 14 or 15 cells, so whenever the info
+    beside it filled its column the card's right edge stepped out by one. Cutting
+    from the right drops trailing blanks before any art."""
+    out = ""
+    for ch in row:
+        if _dwidth(out + ch) > width:
+            break
+        out += ch
+    return out + " " * (width - _dwidth(out))
+
+
 def _pad(text, width):
     """Left-justify text to a display width of `width` cells."""
     gap = width - _dwidth(text)
@@ -177,7 +246,7 @@ def _fit(text, width):
 
 
 def _short_model(model):
-    """Compact model name for the card: first path segment (kimi-code/… -> kimi-code)."""
+    """Compact model name for the card: first path segment before a slash."""
     return str(model).split("/")[0]
 
 
@@ -200,10 +269,415 @@ def _wrap2(text, width):
     return line1, (_fit(rest, width) if rest else "")
 
 
-def _render_card(spawn, cw):
+QUIET_AFTER_S = 120  # log silence past this is worth a word on the card
+# The warning sign WITH its emoji selector. A bare U+26A0 is the trap TOP_TIER_LABEL
+# documents: _dwidth counts it as two cells, but tmux 3.6a draws it in one
+# (measured 2026-09-23), so a card row carrying it came out a column short. With
+# U+FE0F both _dwidth and tmux agree on two.
+WARN = "⚠️"
+
+
+def _process_alive(pid):
+    """True / False when the pid can be probed, None when there is nothing to probe.
+
+    Signal 0 asks the kernel whether the process exists without touching it.
+    Board spawns run as this user, so EPERM is not expected -- but a process we
+    are not allowed to signal is still a process, so it counts as alive."""
+    try:
+        pid = int(pid)
+    except (TypeError, ValueError):
+        return None
+    if pid <= 0:
+        return None
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    except OSError:
+        return None
+    return True
+
+
+def _first_fitting(candidates, width):
+    """Longest candidate that fits `width` display cells; the shortest otherwise."""
+    for text in candidates:
+        if _dwidth(text) <= width:
+            return text
+    return candidates[-1]
+
+
+def _activity_line(idle_s, alive, width):
+    """What a card may truthfully say about its spawn. `idle_s` is seconds since the
+    log was last written, or -1 when it could not be read.
+
+    The log is only half the signal. Claude streams to its log, so silence there
+    means something; agy writes nothing until it finishes and codex writes only
+    between steps, so on those lanes a quiet log is ordinary work. Ask the kernel
+    about the pid before saying anything, and NEVER call a live process idle --
+    the operator asked about three such cards in one day, every one of them alive.
+
+    A card exists only because the snapshot found no terminal receipt, so a pid
+    that is gone means the CLI died without writing one."""
+    if 0 <= idle_s <= QUIET_AFTER_S:
+        return _fg(_fit("● live", width), 78)
+    quiet = "" if idle_s < 0 else f" {idle_s // 60}m{idle_s % 60:02d}"
+    if alive is True:
+        return _fg(_first_fitting(
+            [f"● working (quiet{quiet})", "● working (quiet)", "● working"], width), 220)
+    if alive is False:
+        return _fg(_fit(f"{WARN} stopped", width), 203)
+    # No probeable pid. Log silence is all that was measured, so it is all the
+    # card claims -- no verdict about the process either way.
+    if idle_s < 0:
+        return ""
+    return _fg(_fit(f"{WARN} quiet{quiet}, pid unknown", width), 203)
+
+
+BOARD = VAULT / "_state" / "board-dispatch"
+PROFILES = VAULT / "shared" / "registries" / "profiles.tsv"
+TOP_TIER_EFFORTS = frozenset({"max"})
+TOP_TIER_FLAGS = frozenset({"ultra"})
+# ◆ and not ✦: _dwidth counts everything in 0x2600-0x27BF as two cells, but a real
+# monospace terminal draws ✦ (U+2726) in one -- measured 2026-09-23 -- which left the
+# top rule a column short of the bottom one. U+25C6 is one cell in both.
+TOP_TIER_LABEL = "◆ MAX"
+# The digest sits in the context's `authority` block, well before the task prompt
+# that makes these files ~30 KB; the bound keeps a pathological file cheap.
+_SELECTED_MODEL_RE = re.compile(r'"selected_model_sha256"\s*:\s*"([0-9a-f]{64})"')
+CONTEXT_READ_BYTES = 262144
+
+
+def _is_top_tier(profile):
+    """Is this profile row the lane's top effort tier?
+
+    Keyed on the registry's `effort` and `flags` columns, NEVER on profile names:
+    a later claude.opus55.max or codex.sol6.ultra has to light up without an edit
+    here, and a name match would quietly miss it."""
+    if not profile:
+        return False
+    if str(profile.get("effort", "")).strip().lower() in TOP_TIER_EFFORTS:
+        return True
+    flags = re.split(r"[,\s]+", str(profile.get("flags", "")).strip().lower())
+    return not TOP_TIER_FLAGS.isdisjoint(flags)
+
+
+def _profile_by_bundle():
+    """{selected_model_sha256: profile row} over the whole profile registry.
+
+    A dispatch context records the SHA-256 of the selected profile BUNDLE, not
+    the profile id (checked 2026-09-23: no context.json in _state/board-dispatch
+    carries a `profile_id`). So the only exact way back to the row is to re-hash
+    every registry row the way dispatch_context_builder.selected_model_sha256_for
+    does and match the digest. ~27 rows, so it costs microseconds. If that hashing
+    ever drifts, nothing matches and every card simply renders as normal."""
+    table = {}
+    try:
+        with PROFILES.open(encoding="utf-8", newline="") as handle:
+            for row in csv.DictReader(handle, delimiter="\t"):
+                profile_id = row.get("profile_id")
+                if not profile_id:
+                    continue
+                bundle = json.dumps(
+                    {"profile_id": profile_id, "profile": dict(row)},
+                    sort_keys=True, separators=(",", ":"), ensure_ascii=True,
+                ).encode("ascii")
+                table[hashlib.sha256(bundle).hexdigest()] = row
+    except (OSError, TypeError, ValueError, csv.Error):
+        return {}
+    return table
+
+
+def _selected_model_digests(task_ids):
+    """{task_id: selected_model_sha256} from each task's newest dispatch context.
+
+    One directory scan per frame — the board keeps thousands of descriptors, so
+    globbing per card would re-walk that listing once per card — then a stat and a
+    bounded read only for the handful of files belonging to live cards."""
+    wanted = set(task_ids)
+    if not wanted:
+        return {}
+    newest = {}
+    try:
+        with os.scandir(BOARD) as entries:
+            for entry in entries:
+                if not entry.name.endswith(".context.json"):
+                    continue
+                task_id = entry.name.split(".", 1)[0]
+                if task_id not in wanted:
+                    continue
+                try:
+                    stamp = entry.stat().st_mtime
+                except OSError:
+                    continue
+                if stamp >= newest.get(task_id, (0.0, ""))[0]:
+                    newest[task_id] = (stamp, entry.path)
+    except OSError:
+        return {}
+    digests = {}
+    for task_id, (_stamp, path) in newest.items():
+        try:
+            with open(path, encoding="utf-8", errors="replace") as handle:
+                head = handle.read(CONTEXT_READ_BYTES)
+        except OSError:
+            continue
+        match = _SELECTED_MODEL_RE.search(head)
+        if match:
+            digests[task_id] = match.group(1)
+    return digests
+
+
+def _attach_profiles(active):
+    """Give every live spawn its dispatched profile row (None when unresolved) and
+    that row's effort, which the card prints beside the model."""
+    if not active:
+        return
+    table = _profile_by_bundle()
+    digests = _selected_model_digests([s["task_id"] for s in active]) if table else {}
+    for spawn in active:
+        spawn["profile"] = table.get(digests.get(spawn["task_id"], ""))
+        spawn["effort"] = str((spawn["profile"] or {}).get("effort", "")).strip()
+
+
+# --- model truth: did the spawn actually run on the model it was given? --------
+# Measured 2026-09-23: a canary dispatched on claude.opus55.max ran one message on
+# claude-opus-5-5 and 25 on claude-opus-4-8. A safety classifier stopped a reply
+# and Claude Code fell back without a word, while this card said opus-5-5 the whole
+# time. The stream-json log is the only witness, so the card reads it.
+MODEL_STATE = Path(os.environ.get("VS_DASH_MODELSTATE", "/tmp/vs-dash-model-truth.json"))
+# The renderer is a fresh process every frame, so "incremental" means a byte offset
+# per log kept in MODEL_STATE. A frame reads at most this much of each log: a big
+# backlog drains over a few frames instead of stalling one.
+LOG_CHUNK_BYTES = 2 * 1024 * 1024
+MODEL_STATE_TTL_S = 3600  # forget a log this long after its card was last drawn
+# Claude Code's own notice, as the first text of a user-role message. Matched as a
+# prefix: a packet or tool result that merely QUOTES it (this feature's packet did)
+# must not count as a stop.
+CLASSIFIER_STOP = "Your response above was stopped by a safety classifier"
+_TRUTH_MARKERS = (b'"assistant"', b"safety classifier", b"model_refusal_fallback")
+_TRUTH_START = {"fell_back": False, "fb_to": "", "stops": 0, "model": ""}
+
+
+def _scan_event(event, entry):
+    """Fold one stream-json event into `entry`. Structure decides, never substrings:
+    other lanes' logs say "fallback" in plain text, and a spawn working on this very
+    dashboard quotes the classifier notice in its tool output."""
+    kind = event.get("type")
+    message = event.get("message") if isinstance(event.get("message"), dict) else {}
+    if kind == "assistant":
+        for block in message.get("content") or []:
+            if isinstance(block, dict) and block.get("type") == "fallback":
+                entry["fell_back"] = True
+                target = (block.get("to") or {}).get("model")
+                entry["fb_to"] = str(target or entry["fb_to"])
+        model = message.get("model")
+        # Only the main thread speaks for the task: a subagent may be pinned to
+        # another model on purpose. "<synthetic>" marks harness-made messages.
+        if (event.get("parent_tool_use_id") is None and isinstance(model, str)
+                and model and not model.startswith("<")):
+            entry["model"] = model
+    elif kind == "system" and event.get("subtype") == "model_refusal_fallback":
+        entry["fell_back"] = True
+        entry["fb_to"] = str(event.get("fallback_model") or entry["fb_to"])
+    elif kind == "user":
+        content = message.get("content")
+        blocks = [content] if isinstance(content, str) else content if isinstance(content, list) else []
+        for block in blocks:
+            if isinstance(block, dict) and block.get("type") == "text":
+                block = block.get("text")
+            if isinstance(block, str) and block.lstrip().startswith(CLASSIFIER_STOP):
+                entry["stops"] += 1
+
+
+def _scan_log(path, entry):
+    """Advance one log's scan from where the last frame stopped. Returns the updated
+    entry, or None when the log cannot be read. Only whole lines are consumed; a
+    single line longer than a whole chunk is skipped rather than stalling the scan."""
+    try:
+        info = os.stat(path)
+    except (OSError, TypeError, ValueError):
+        return None
+    # A new inode or a shorter file is a different log; a malformed entry is no
+    # entry. Either way, start over from byte zero.
+    if not (isinstance(entry, dict) and entry.get("ino") == info.st_ino
+            and isinstance(entry.get("offset"), int) and isinstance(entry.get("skip"), bool)
+            and all(isinstance(entry.get(k), type(v)) for k, v in _TRUTH_START.items())
+            and entry["offset"] <= info.st_size):
+        entry = {"ino": info.st_ino, "offset": 0, "skip": False, **_TRUTH_START}
+    if info.st_size <= entry["offset"]:
+        return entry
+    try:
+        with open(path, "rb") as handle:
+            handle.seek(entry["offset"])
+            data = handle.read(LOG_CHUNK_BYTES)
+    except OSError:
+        return entry
+    end = data.rfind(b"\n")
+    if end < 0:
+        if len(data) >= LOG_CHUNK_BYTES:
+            entry["offset"] += len(data)
+            entry["skip"] = True
+        return entry  # otherwise a line still being written; wait for its newline
+    start = data.find(b"\n") + 1 if entry["skip"] else 0
+    for raw in data[start:end].split(b"\n"):
+        if not any(marker in raw for marker in _TRUTH_MARKERS):
+            continue
+        try:
+            event = json.loads(raw)
+        except ValueError:
+            continue
+        if isinstance(event, dict):
+            _scan_event(event, entry)
+    entry["offset"] += end + 1
+    entry["skip"] = False
+    return entry
+
+
+def _load_model_state():
+    try:
+        state = json.loads(MODEL_STATE.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    return state if isinstance(state, dict) else {}
+
+
+def _save_model_state(state):
+    """Temp + fsync + rename, so a frame killed mid-write leaves the old file."""
+    tmp = MODEL_STATE.with_name(f".{MODEL_STATE.name}.{os.getpid()}.tmp")
+    try:
+        with open(tmp, "w", encoding="utf-8") as handle:
+            json.dump(state, handle, sort_keys=True)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(tmp, MODEL_STATE)
+    except OSError:
+        try:
+            tmp.unlink()
+        except OSError:
+            pass
+
+
+def _attach_model_truth(active):
+    """Give every live spawn a `truth` dict from its attempt log: did it fall back,
+    to what, how many classifier stops, and which model spoke last. The state file
+    is written only when a scan moved, so an idle board never touches it."""
+    if not active:
+        return
+    seen = lambda entry: entry.get("seen") if isinstance(entry.get("seen"), int) else 0
+    state = _load_model_state()
+    changed = False
+    for spawn in active:
+        path = str(spawn.get("log") or "")
+        before = state.get(path)
+        entry = _scan_log(path, dict(before) if isinstance(before, dict) else None)
+        if entry is None:
+            continue
+        # Re-stamp a quiet log now and then, so a long-lived card is never pruned.
+        if entry != before or NOW - seen(entry) > MODEL_STATE_TTL_S // 4:
+            entry["seen"] = NOW
+            state[path] = entry
+            changed = True
+        spawn["truth"] = entry
+    if changed:
+        _save_model_state({path: entry for path, entry in state.items()
+                           if isinstance(entry, dict) and NOW - seen(entry) <= MODEL_STATE_TTL_S})
+
+
+def _model_key(model):
+    """claude-opus-5-5[1m], claude-opus-5-5-20260901 and claude-opus-5-5 are one model."""
+    key = str(model or "").strip().lower().rsplit("/", 1)[-1]
+    return re.sub(r"-\d{8}$", "", re.sub(r"\[[^\]]*\]$", "", key))
+
+
+def _nick(model):
+    """claude-opus-4-8 -> opus-4-8: the family name is the lane badge's job."""
+    model = str(model)
+    return model[len("claude-"):] if model.startswith("claude-") else model
+
+
+def _selected_model(spawn):
+    """The model the spawn was dispatched on: the resolved profile's, else the
+    CLI's --model. The snapshot reports the bare lane name when there was no
+    --model, and that names no model to compare against."""
+    model = (spawn.get("profile") or {}).get("model_id") or spawn.get("model") or ""
+    return "" if model == spawn.get("lane") else str(model)
+
+
+def _model_label(model, effort, width):
+    """`claude-opus-5-5 · max`, shortened until it fits. The effort is the new fact
+    on this row, so the model name gives way first."""
+    if not effort:
+        return _fit(model, width)
+    tail = f" · {effort}"
+    for text in (f"{model}{tail}", f"{_nick(model)}{tail}"):
+        if _dwidth(text) <= width:
+            return text
+    room = width - _dwidth(tail)
+    return _fit(_nick(model), room) + tail if room >= 4 else _fit(model, width)
+
+
+def _truth_line(truth, selected, width):
+    """The warning row, or "" when the log shows nothing wrong.
+
+    Two independent signals, either one enough: an explicit fallback record in the
+    log, or a main-thread model that is not the one dispatched. The second catches
+    a fallback whose record this code does not know how to read."""
+    if not truth:
+        return ""
+    actual = truth.get("model") or ""
+    drifted = bool(actual and selected and _model_key(actual) != _model_key(selected))
+    stops = int(truth.get("stops") or 0)
+    plural = "s" if stops != 1 else ""
+    stop_long, stop_short = f"{stops} safety stop{plural}", f"{stops} stop{plural}"
+    tail_long = f" · {stop_long}" if stops else ""
+    tail_short = f" · {stop_short}" if stops else ""
+    if drifted or truth.get("fell_back"):
+        # Back on the dispatched model after a fallback is still worth a word.
+        target, note = (actual, "") if drifted else (truth.get("fb_to") or "?", ", now back")
+        nick = _nick(target)
+        candidates = [
+            f"{WARN} fell back → {nick}{note}{tail_long}",
+            f"{WARN} fell back → {nick}{note}{tail_short}",
+            f"{WARN} fell back → {nick}{tail_short}",
+            f"{WARN} fell → {nick}{tail_short}",
+            f"{WARN} fell back → {nick}{note}",
+            f"{WARN} fell back → {nick}",
+            f"{WARN} → {nick}",
+        ]
+        last_resort = f"! {nick}"
+    elif stops:
+        candidates = [f"{WARN} {stop_long}", f"{WARN} {stop_short}"]
+        last_resort = f"! {stops}"
+    else:
+        return ""
+    for text in candidates:
+        if _dwidth(text) <= width:
+            return text
+    # ASCII only: _fit could otherwise cut between U+26A0 and its selector.
+    return _fit(last_resort, width)
+
+
+def _top_rule(cw, label):
+    """A card's horizontal rule, `cw` display cells wide, optionally carrying a
+    label. The label replaces rule cells rather than adding any, so the box width
+    never moves -- and it is the whole cue when colour is off."""
+    if not label:
+        return "─" * cw
+    tag = f"─ {label} "
+    fill = cw - _dwidth(tag)
+    return tag + "─" * fill if fill >= 0 else "─" * cw
+
+
+def _render_card(spawn, cw, phase=0):
     """Avatar-forward card scaled to inner width `cw`: 6-row crew bust on the left with
-    short info beside it (name, lane, model, elapsed, dispatched-at, live/idle), then
-    full-width specialist / tagline / 2-line summary rows."""
+    short info beside it (name, lane, model, elapsed, dispatched-at, activity), then
+    full-width specialist / tagline / 2-line summary rows.
+
+    A top-tier spawn (see _is_top_tier) gets a ✦ MAX label in its top rule and, when
+    colour is available, a rainbow sweep around the border whose `phase` advances
+    every frame. Only the border glyphs change: the body, and every other card, is
+    byte-identical to what it renders without the cue."""
     name, motif, tagline, avatar = _card_meta(spawn["specialist"])
     lane = spawn["lane"]
     badge = LANE_BADGE.get(lane, lane)
@@ -213,37 +687,53 @@ def _render_card(spawn, cw):
     timer = _elapsed(spawn["started"])
     disp = time.strftime("%H:%MZ", time.gmtime(int(spawn["started"])))
     iw = cw - AVATAR_W - 1
-    # Live/idle signal from the streaming log's last write — growing = producing output;
-    # a long silence = maybe stuck, Chrono should check in. NOT a timeout, just a cue.
+    # Liveness from two independent signals: the streaming log's last write, and
+    # whether the spawn's process is still there. See _activity_line. NOT a
+    # timeout, just a cue for whether Chrono should check in.
     try:
         idle_s = max(0, int(NOW - os.path.getmtime(spawn["log"])))
     except OSError:
         idle_s = -1
-    if idle_s < 0:
-        activity = ""
-    elif idle_s > 120:
-        activity = _fg(_fit(f"⚠ idle {idle_s // 60}m{idle_s % 60:02d}", iw), 203)
-    else:
-        activity = _fg(_fit("● live", iw), 78)
+    activity = _activity_line(idle_s, _process_alive(spawn.get("pid")), iw)
     info = [
         _sgr(_fit(f"{motif} {name}", iw), 1),                 # character
         _fg(_fit(f"{memoji} {badge}", iw), color, 1),         # lane
-        _sgr(_fit(model, iw), 2),                             # the actual model
+        _sgr(_model_label(model, spawn.get("effort"), iw), 2),  # dispatched model · effort
         _fg(_fit(f"⏱ {timer}", iw), 227),                    # elapsed
         _sgr(_fit(f"start {disp}", iw), 2),                   # dispatched-at (UTC)
         activity,
     ]
     edge = lambda s: _fg(s, color)
-    frow = lambda s: edge("│") + _pad(s, cw) + edge("│")
-    rows = [edge("╭" + "─" * cw + "╮")]
-    for i in range(6):
-        rows.append(edge("│") + _pad(edge(avatar[i]) + " " + info[i], cw) + edge("│"))
-    rows.append(frow(_fg(_fit(spawn["specialist"], cw), 45)))
-    rows.append(frow(_sgr(_fit(f"“{tagline}”", cw), 2, 3) if tagline else ""))
     s1, s2 = _wrap2("› " + (spawn.get("summary") or spawn["task_id"]), cw)
-    rows.append(frow(_fg(s1, 252)))
-    rows.append(frow(_fg(s2, 252)))
-    rows.append(edge("╰" + "─" * cw + "╯"))
+    body = [_pad(edge(avatar[i]) + " " + info[i], cw) for i in range(6)]
+    body.append(_pad(_fg(_fit(spawn["specialist"], cw), 45), cw))
+    # What the log says the model really did outranks the character's tagline, so
+    # the warning takes that row and the card keeps its height.
+    warning = _truth_line(spawn.get("truth"), _selected_model(spawn), cw)
+    if warning:
+        body.append(_pad(_fg(warning, 203, 1), cw))
+    else:
+        body.append(_pad(_sgr(_fit(f"“{tagline}”", cw), 2, 3) if tagline else "", cw))
+    body.append(_pad(_fg(s1, 252), cw))
+    body.append(_pad(_fg(s2, 252), cw))
+
+    top = _is_top_tier(spawn.get("profile"))
+    animate = top and not _NO_COLOR
+    head, foot = _top_rule(cw, TOP_TIER_LABEL if top else ""), "─" * cw
+    # One continuous hue sweep around the perimeter: across the top rule, down the
+    # right pipes, back along the bottom rule, up the left pipes. Advancing `phase`
+    # by RAINBOW_SPEED each frame walks the whole pattern around the box.
+    boxw, inner = cw + 2, CARD_H - 2
+    if animate:
+        rows = [_rainbow("╭" + head + "╮", phase)]
+        left = lambda r: _rainbow("│", phase + 2 * boxw + 2 * inner - 1 - r)
+        right = lambda r: _rainbow("│", phase + boxw + r)
+    else:
+        rows = [edge("╭" + head + "╮")]
+        left = right = lambda r: edge("│")
+    rows.extend(left(r) + body[r] + right(r) for r in range(inner))
+    rows.append(_rainbow("╰" + foot + "╯", phase + 2 * boxw + inner - 1, -1)
+                if animate else edge("╰" + foot + "╯"))
     return rows  # CARD_H rows
 
 
@@ -534,6 +1024,8 @@ def main():
         elif tag == "@DEFECT" and len(parts) >= 5:
             defects.append(f"{parts[1]}/{parts[2]}: {parts[4]}")
 
+    _attach_profiles(active)  # which cards were dispatched at the top effort tier
+    _attach_model_truth(active)  # which cards silently fell back to another model
     _write_swarm_status(active, snapshot_error)  # tmux status-bar specialist tag(s)
     lines = []
     n = len(active)
@@ -560,7 +1052,8 @@ def main():
         lines.extend(_failure_state(WIDTH, snapshot_error))
     elif active:
         cols, cw = _layout(WIDTH, len(active))
-        lines.extend(_grid([_render_card(s, cw) for s in active], cols))
+        phase = NOW * RAINBOW_SPEED  # one wheel step per frame; the loop paints 1/s
+        lines.extend(_grid([_render_card(s, cw, phase) for s in active], cols))
     else:
         cols, cw = 1, CARD_W
         lines.extend(_idle_state(WIDTH, cap))

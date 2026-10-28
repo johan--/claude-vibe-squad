@@ -1,6 +1,6 @@
 # chrono-recon MCP
 
-OSINT recon tools for Vibe Squad specialists (v1 keyless tools).
+OSINT recon tools for Vibe Squad specialists (four keyless tools; `github_leaked_secrets` needs `GH_TOKEN`).
 
 ## Tools
 
@@ -45,10 +45,11 @@ Direct tool test:
 PYTHONPATH=plugins/chrono-recon python -c "from tools.dns import dns_enumerate; print(dns_enumerate('example.com'))"
 ```
 
-MCP server test (via vibe-squad daemon):
+MCP server test (via vibe-squad daemon — requires a bearer token; only `/health` is unauthenticated):
 ```bash
 curl -s -X POST http://127.0.0.1:9876/mcp/chrono-recon/dns_enumerate_tool \
   -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $VIBESQUAD_DAEMON_TOKEN" \
   -d '{"domain": "example.com"}'
 ```
 

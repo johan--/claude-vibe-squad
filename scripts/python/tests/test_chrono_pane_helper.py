@@ -5,8 +5,8 @@ against `session:window-index.pane`. The focus gate passes the pane id it
 inherits (`TMUX_PANE=%N`) and outbox-watcher.sh passes `squad:chrono.0` (window
 NAME), so both got "no coordinator" and went silent for two days.
 
-The tmux binary is faked through TMUX_BIN; the coordinator process is a real
-child whose executable path ends in `claude`, because the helper reads `ps`.
+tmux and ps are controlled fixtures, including a coordinator startup record.
+No host process-table observations are claimed by these tests.
 """
 
 from __future__ import annotations
@@ -61,6 +61,7 @@ case "$1" in
         case "$5" in
             '#{pane_pid}') printf '%s\n' "$pid" ;;
             '#{pane_current_command}') printf 'fake-cmd\n' ;;
+            '#{session_name}') printf 'squad\n' ;;
             *) exit 1 ;;
         esac
         ;;
@@ -81,16 +82,24 @@ class ChronoPaneHelperTest(unittest.TestCase):
         fake_claude = self.tmp / "claude"
         fake_claude.symlink_to(shutil.which("sleep") or "/bin/sleep")
         self.coordinator = subprocess.Popen([str(fake_claude), "30"])
+        self.addCleanup(self.coordinator.wait)
         self.addCleanup(self.coordinator.kill)
         # %7 belongs to a process that is real but is not the coordinator.
         self.bystander = subprocess.Popen(["/bin/sleep", "30"])
+        self.addCleanup(self.bystander.wait)
         self.addCleanup(self.bystander.kill)
+        self.pidfile = self.tmp / "coordinator.pid"
+        self.pidfile.write_text(f"pid {self.coordinator.pid}\nshape pane\ntarget %0\nstart fixture-start\n")
+        ps = self.tmp / "ps"
+        ps.write_text(f'#!/bin/bash\nif [[ "$1" == -o ]]; then echo fixture-start; else echo "{self.coordinator.pid} 1 S+ /fixture/claude"; fi\n')
+        ps.chmod(0o755)
 
     def _run(self, func: str, target: str) -> tuple[int, str]:
         env = dict(os.environ)
         env["TMUX_BIN"] = str(self.fake_tmux)
         env["PANE_TABLE"] = "\n".join("|".join(p) for p in PANES)
         env["PANE_PIDS"] = f"%0={self.coordinator.pid},%7={self.bystander.pid}"
+        env.update(PATH=f"{self.tmp}:{env['PATH']}", CHRONO_COORDINATOR_PIDFILE=str(self.pidfile))
         result = subprocess.run(
             ["bash", "-c", f'source "$0"; {func} "$1"', str(HELPER), target],
             env=env,

@@ -141,8 +141,10 @@ class DispatchToolkitTriStateTest(unittest.TestCase):
             "claude": "bravo",
             "gemini": "charlie",
             "grok": "echo",
-            "kimi": "delta",
         }
+        # The shell consumer lands in wave 2. Seed any still-declared legacy
+        # lane without requiring it once the consumer uses the four-lane set.
+        blocks.update({lane: "delta" for lane in LANE_CLIS if lane not in blocks})
         branches = "".join(
             f"    {lane})\n"
             "        cat <<'EOF'\n"
@@ -169,9 +171,9 @@ class DispatchToolkitTriStateTest(unittest.TestCase):
                 "charlie                  stdio  enabled  /bin/charlie\n"
             ),
             "grok": "MCP Servers (1)\n└── echo (stdio)\n",
-            "kimi": "delta /bin/delta enabled\n",
         }
-        for lane, contents in fixture_by_lane.items():
+        for lane in LANE_CLIS:
+            contents = fixture_by_lane.get(lane, "delta /bin/delta enabled\n")
             (self.inventory / f"{LANE_CLIS[lane]}.txt").write_text(
                 contents, encoding="utf-8"
             )
@@ -204,8 +206,9 @@ class DispatchToolkitTriStateTest(unittest.TestCase):
                 "printf 'charlie                  stdio  enabled  /bin/charlie\\n'\n"
             ),
             "grok": "printf 'MCP Servers (1)\\n└── echo (stdio)\\n'\n",
-            "kimi": "printf 'delta /bin/delta enabled\\n'\n",
         }
+        outputs.update({cli: "printf 'delta /bin/delta enabled\\n'\n"
+                        for cli in LANE_CLIS.values() if cli not in outputs})
         for cli, body in outputs.items():
             path = stub_bin / cli
             path.write_text("#!/bin/bash\n" + body, encoding="utf-8")
@@ -247,7 +250,7 @@ class DispatchToolkitTriStateTest(unittest.TestCase):
 
     def test_inventory_that_cannot_run_is_indeterminate(self):
         self.write_clean_inventories()
-        (self.inventory / "kimi.txt").unlink()
+        (self.inventory / f"{LANE_CLIS['gemini']}.txt").unlink()
         result = self.run_verify(self.write_toolkit())
         self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
         self.assertIn("COULD NOT DETERMINE", result.stdout)
@@ -262,7 +265,7 @@ class DispatchToolkitTriStateTest(unittest.TestCase):
     def test_timeout_override_keeps_a_timeout_indeterminate(self):
         result = self.run_verify_with_cli_stubs(
             self.write_toolkit(),
-            claude_delay_seconds=2,
+            claude_delay_seconds=5,
             timeout_override_seconds=1,
         )
         self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
@@ -279,9 +282,11 @@ class DispatchToolkitTriStateTest(unittest.TestCase):
             json.dumps([{"name": "alpha"}, {"name": "chrono-kg"}]),
             encoding="utf-8",
         )
-        kimi_inventory = self.inventory / f"{LANE_CLIS['kimi']}.txt"
-        kimi_inventory.write_text(
-            "delta /bin/delta enabled\nchrono-kg /bin/chrono-kg enabled\n",
+        gemini_inventory = self.inventory / f"{LANE_CLIS['gemini']}.txt"
+        gemini_inventory.write_text(
+            "NAME TYPE STATUS COMMAND/URL\n"
+            "charlie stdio enabled /bin/charlie\n"
+            "chrono-kg stdio enabled /bin/chrono-kg\n",
             encoding="utf-8",
         )
 
@@ -289,10 +294,10 @@ class DispatchToolkitTriStateTest(unittest.TestCase):
 
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn("NOTE: codex lists 'chrono-kg'", result.stdout)
-        self.assertIn("NOTE: kimi lists 'chrono-kg'", result.stdout)
+        self.assertIn(f"NOTE: {LANE_CLIS['gemini']} lists 'chrono-kg'", result.stdout)
         self.assertIn("compatibility-only", result.stdout)
         self.assertNotIn("WARN: codex lists 'chrono-kg'", result.stdout)
-        self.assertNotIn("WARN: kimi lists 'chrono-kg'", result.stdout)
+        self.assertNotIn(f"WARN: {LANE_CLIS['gemini']} lists 'chrono-kg'", result.stdout)
 
     def test_future_registry_declared_compatibility_alias_needs_no_code_change(self):
         self.write_clean_inventories()
@@ -441,6 +446,32 @@ class WriteScopeGuardTriStateTest(unittest.TestCase):
 
 
 class DoctorTargetContractTest(unittest.TestCase):
+    def test_idless_dispatches_count_toward_volume(self):
+        now = dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        for named_count in (0, 200):
+            with self.subTest(named_count=named_count):
+                records = [{"ts": now, "task_id": f"TASK-{i}"}
+                           for i in range(named_count)]
+                records += [{"ts": now}] * (601 - named_count)
+                result, summary = self.run_doctor(
+                    dispatch_log="".join(json.dumps(row) + "\n" for row in records)
+                )
+                self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+                self.assertIn("dispatch volume 601 exceeds 600/24h ceiling", summary["issues"])
+                self.assertFalse(any("times in 24h" in issue for issue in summary["issues"]))
+
+    def test_only_nonempty_string_ids_form_retry_groups(self):
+        now = dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        records = [{"ts": now, "task_id": task_id}
+                   for task_id in (None, "", 7, False, [], {}) for _ in range(10)]
+        records += [{"ts": "2000-01-01T00:00:00Z", "task_id": "TASK-old"}] * 601
+        result, summary = self.run_doctor(
+            dispatch_log="".join(json.dumps(row) + "\n" for row in records)
+        )
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(summary["issue_count"], 0, summary["issues"])
+        self.assertEqual(summary["gate_unknown_count"], 0, summary["gate_unknowns"])
+
     def run_doctor(self, *, dispatch_log: str | None = None):
         with tempfile.TemporaryDirectory(prefix="doctor-target-contract-") as temp:
             fixture = Path(temp)
@@ -456,7 +487,7 @@ class DoctorTargetContractTest(unittest.TestCase):
             doctor_fixture.write_stub(local_bin, "ps", _EMPTY_PS)
             # Doctor now gates on the launcher's required-command list, so the
             # fixture supplies it rather than inheriting the maintainer host's
-            # answer to "is kimi installed".
+            # answer to whether a required CLI is installed.
             doctor_fixture.stub_launch_dependencies(local_bin, ROOT)
 
             environment = {
@@ -532,10 +563,31 @@ class DoctorTargetContractTest(unittest.TestCase):
         self.assertEqual(empty.returncode, 0, empty.stdout + empty.stderr)
         self.assertEqual(summary["issue_count"], 0)
         now = dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-        row = json.dumps({"ts": now, "model_lane": "codex"}) + "\n"
-        burst, summary = self.run_doctor(dispatch_log=row * 201)
-        self.assertEqual(burst.returncode, 1, burst.stdout + burst.stderr)
-        self.assertIn("dispatch volume 201 exceeds 200/24h baseline", summary["issues"])
+
+        def rows(task_ids):
+            return "".join(
+                json.dumps({"ts": now, "model_lane": "codex", "task_id": t}) + "\n"
+                for t in task_ids
+            )
+
+        # A busy day of distinct tasks warns but does not block a launch.
+        busy, summary = self.run_doctor(
+            dispatch_log=rows(f"TASK-{i}" for i in range(201))
+        )
+        self.assertEqual(summary["issue_count"], 0, summary["issues"])
+        self.assertIn("dispatch volume 201 above 200/24h baseline", summary["warnings"])
+
+        # The same task re-dispatched 10 times is a loop and blocks.
+        loop, summary = self.run_doctor(dispatch_log=rows(["TASK-loop"] * 10))
+        self.assertEqual(loop.returncode, 1, loop.stdout + loop.stderr)
+        self.assertIn("task TASK-loop dispatched 10 times in 24h", summary["issues"])
+
+        # Runaway task creation (distinct ids) past the ceiling also blocks.
+        flood, summary = self.run_doctor(
+            dispatch_log=rows(f"TASK-{i}" for i in range(601))
+        )
+        self.assertEqual(flood.returncode, 1, flood.stdout + flood.stderr)
+        self.assertIn("dispatch volume 601 exceeds 600/24h ceiling", summary["issues"])
 
 
 

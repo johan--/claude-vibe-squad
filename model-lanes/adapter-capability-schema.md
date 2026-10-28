@@ -99,18 +99,7 @@ mcps: ["chrono-vault"]
 ---
 ```
 
-Kimi YAML adapters use the same one-line JSON-compatible arrays as top-level
-keys. MCP identifiers must use `lead:<server>`; bare/direct role MCP entries
-are invalid. Projection strips `lead:` into an exact sorted `brokered_mcps`
-surface, requires every named local template dependency to exist, and
-materializes a per-task config containing only that allowlist for the main Kimi
-lead. The config uses four controller-owned local templates. `chrono-vault`,
-`chrono-dedup`, and `chrono-research-arsenal` use the authenticated repo root's
-`.venv/bin/python` plus their exact in-repo `plugins/<server>/mcp_server.py`;
-`sequential-thinking` uses the exact Homebrew executable. Missing or escaping
-dependencies deny the launch.
-
-These are supported transport templates, not an installation inventory. The private source
+Transport declarations are not an installation inventory. The private source
 assigns `chrono-dedup` as `available`; its `prior_art_check` tools are `mcp-operation` records
 with reciprocal `provided_by` links. Direct and brokered provider catalogues retain
 `provides: ["prior_art_check"]` so public operation promises remain detectable.
@@ -120,20 +109,6 @@ and adapters, lane surfaces, the index, and runtime summaries are regenerated. T
 and provider catalogue stay intact. Candidate source metadata records `public_projection` with
 the policy-derived `withheld_providers`; no private-source availability is changed for export.
 
-Kimi never reads or copies host MCP configuration, commands, arguments, URLs,
-headers, arbitrary environment, or auth values. FastMCP's default subprocess
-environment omits the vault root and signed aperture context, so the
-`chrono-vault` template carries exactly `CHRONO_VAULT_ROOT` and
-`CHRONO_VAULT_CONTEXT` from the already-validated worker environment. Every
-other template remains environment-free. Credential-bearing remote routes are
-unavailable and credential-requiring operations remain unproven.
-
-Kimi native `Agent(...)` subagents remain MCP-free. The child-argv-bound board
-prompt names the main-lead allowlist without exposing configuration fields or
-values.
-Receipts report that actual allowlist as `authorized_mcps` while the signed
-capability surface continues to record the same names as `brokered_mcps`.
-
 ## Validator contracts
 
 `base-boundary`
@@ -142,7 +117,8 @@ capability surface continues to record the same names as `brokered_mcps`.
 - Scans non-exempt frontmatter values; only the reviewed schema metadata keys
   and `requires_approval` are exempt. `required_tools` and `preferred_tools`
   remain scan-eligible.
-- Allows exactly one byte-exact generic adapter-pointer line from the policy.
+- Allows exactly one byte-exact generic adapter-pointer line from the policy
+  (`generic_pointer_line`), with no lane-specific exception.
 - Rejects reviewed identifiers plus extensible regex rules for command flags
   and source-schema references such as `tool.py:16-22`.
 - Emits deterministic JSON diagnostics containing check, path, line, kind, and
@@ -151,7 +127,10 @@ capability surface continues to record the same names as `brokered_mcps`.
 `migration-parity`
 
 - Uses exact git commit
-  `be0354823d51f93d47f4833b8bfafd2a6b204dcd` as the pre-strip baseline.
+  `073e9b75086ca08adb8179b4fa51dd6198864458` as the retirement baseline,
+  pinned by `baseline_ref` in the policy. This supersedes the pre-strip migration
+  baseline; parity now checks capabilities named at this newer reference. Existing
+  `migration_parity_retirements` remain the explicit historical retirement ledger.
 - Extracts reviewed skill identifiers and scans the full pinned body for the
   explicit reviewed tool lexicon. Tool sections use the same lexicon and never
   infer a bullet's first word, so prose labels such as `Process audit`, `Date`,

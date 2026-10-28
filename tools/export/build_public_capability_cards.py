@@ -53,7 +53,7 @@ TYPE_WORDS = r"authored|stub|untyped|needs_doc|SKILL\.md|pattern-doc[a-z-]*|invo
 ASSERTION_PAREN = re.compile(r"\s*\((?:[^()]*·[^()]*|(?:" + TYPE_WORDS + r"))\)")
 TASK_ID = re.compile(r"\bTASK-[0-9A-Za-z-]+")
 
-LANES = r"all|local|claude|codex|gemini|kimi"
+LANES = r"all|local|claude|codex|gemini"
 STATES = r"yes|no|partial|lane-live|needs-research|needs_tool|authored|stub"
 # The lane.state.cost triple also appears INLINE in prose, inside backticks --
 # "`godot` (`claude · yes · --`, Godot 4.7.1)". A table-cell rewrite never sees
@@ -103,11 +103,9 @@ PRIVATE_FENCE = re.compile(
 #   A private lifetime numerator/denominator parenthetical  -> redacted.
 #   "The moat is beyond commodity tools+chaining: <list>"   -> the list is method
 #   and stays; the "our moat" framing is positioning and goes.
-#   "kimi `primary_exception`"                              -> internal routing.
 REDACTIONS = [
     (re.compile(r"\s*\(~?\d+\s*/\s*\d+\s+lifetime\)"), ""),
     (re.compile(r"\bThe moat is\b"), "Go"),
-    (re.compile(r"\s*\(kimi\s+`primary_exception`(?:,[^)]*)?\)"), ""),
     (re.compile(r"\b49k-finding\s+"), ""),
 ]
 

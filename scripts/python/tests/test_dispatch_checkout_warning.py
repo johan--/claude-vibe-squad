@@ -176,7 +176,12 @@ class CheckoutWarningTests(unittest.TestCase):
 
     def test_checkout_critical_path_commands_are_bounded(self):
         def run(command, **kwargs):
-            self.assertEqual(kwargs.get("timeout"), 10, command)
+            # The fixture repo's git init/add/commit get 60 s with loose-object
+            # compression off; every other critical-path command stays at 10 s.
+            if command[:3] == ["git", "-c", "core.looseCompression=0"]:
+                self.assertEqual(kwargs.get("timeout"), 60, command)
+            else:
+                self.assertEqual(kwargs.get("timeout"), 10, command)
             value = "/repo/.git/worktrees/task" if "--git-dir" in command else "/repo/.git"
             return subprocess.CompletedProcess(command, 0, value)
 

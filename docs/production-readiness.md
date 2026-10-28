@@ -51,8 +51,8 @@ registry still fails closed.
 - Fresh clone setup test
 - Validate an external `CHRONO_VAULT_ROOT` and prove no note or credential is
   written into the checkout
-- Complete bounded native-CLI and required-tool probes for all five model lanes:
-  Codex, Claude, Gemini (agy), Grok, and Kimi
+- Complete bounded native-CLI and required-tool probes for all four model lanes:
+  Codex, Claude, Gemini (agy), and Grok
 - Confirm no runtime/private file patterns are staged
 
 ## Public Commands
@@ -81,6 +81,4 @@ Keep public entrypoints stable even when implementation moves:
 - V4 fresh-clone acceptance and complete fresh-worker tool parity are still
   release gates. A maintainer-local success is not treated as public proof.
 - MCP audit can verify stdio server usability, but CLI-specific MCP invocation quality still depends on each CLI's current implementation.
-- Kimi has no per-directory auto-load convention, so a board-spawned Kimi specialist is given an explicit role-read instruction in its task packet rather than inheriting one from its working directory.
-- Kimi subagents cannot hold MCP, so any MCP work on a Kimi-routed specialist must be brokered rather than performed in-subagent.
 - Public CI cannot validate private OAuth state or local Chrome CDP sessions.

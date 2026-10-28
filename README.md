@@ -2,18 +2,18 @@
 
 # Vibe Squad
 
-**One coordinator. Five model families. Seventy-one specialists, all written in Markdown you can read and edit.**
+**One coordinator. Four model families. Seventy-one specialists, all written in Markdown you can read and edit.**
 
-![models](https://img.shields.io/badge/models-Codex%20%C2%B7%20Claude%20%C2%B7%20Gemini%20%C2%B7%20Kimi%20%C2%B7%20Grok-informational)
+![models](https://img.shields.io/badge/models-Codex%20%C2%B7%20Claude%20%C2%B7%20Gemini%20%C2%B7%20Grok-informational)
 ![license](https://img.shields.io/badge/license-MIT-blue)
 ![orchestration](https://img.shields.io/badge/orchestration-native%20CLIs%20%C2%B7%20isolated%20worktrees-success)
-![version](https://img.shields.io/badge/version-v1.1.9-blue)
+![version](https://img.shields.io/badge/version-v2.0.0-blue)
 
 <br>
 
-![Vibe Squad — seven specialists running in parallel across two model families](assets/hero/vibe-squad-hero.svg)
+![Vibe Squad command center — Chrono coordinating four model leads](assets/hero/vibe-squad-hero.svg)
 
-*Seven specialists live at once across Claude and Codex — each card its own model, profile, elapsed clock and scoped surface — while the coordinator works in the pane beside them.*
+*One operator, one coordinator, and four model leads (Codex, Claude, Gemini, and Grok) carrying the routes for 71 Markdown specialists.*
 
 </div>
 
@@ -43,7 +43,7 @@ The product is the instruction layer, and it is Markdown all the way down. Modes
 
 ## Quickstart
 
-macOS, for now. You need `tmux`, `fswatch`, `jq`, `curl`, Python 3.13, `uv`, and authenticated native CLIs for Claude, Codex, Gemini (`agy`), Kimi, and Grok.
+macOS, for now. You need `tmux`, `fswatch`, `jq`, `curl`, Python 3.13, `uv`, and authenticated native CLIs for Claude, Codex, Gemini (`agy`), and Grok.
 
 Memory lives outside the public repository. Create a private vault once:
 
@@ -83,9 +83,10 @@ have not reviewed (a fork's pull request above all) in a clone where they are lo
 runs that branch's code as your user, within about two minutes for the fastest agent.
 The daemon and nightly agents source your shell secrets, and `com.vibesquad.chrome`
 owns your authenticated browser, so that execution carries real authority. The
-installer manages three of these agents, but two more — `com.chrono.squad-monitor` and
-`com.vibesquad.chrome` — are installed by no repository command and never appear in
-`bin/install-routines.sh --status`. Unload the agents before checking out an
+installer manages four of these agents (`com.vibesquad.daemon`, plus the optional
+`com.claudevibesquad.nightly`, `com.vibesquad.dream`, and `com.chrono.squad-monitor`);
+the fifth, `com.vibesquad.chrome`, is installed by no repository command, and
+`bin/install-routines.sh --status` only reports it as `operator-managed`. Unload the agents before checking out an
 unreviewed branch and reload afterwards; [the daemon guide](docs/install/daemon.md#security-every-listed-agent-runs-code-from-your-checkout)
 lists every label and its exact `launchctl` commands. A fix separating the installed
 code root from the live data root is planned.
@@ -126,8 +127,8 @@ may read, what it may change, and what counts as done:
 specialist:    security-analyst        # the role, chosen for the job
 to_model:      gpt-codex               # the model bound to that role
 mode:          project
-write_scope:   [src/auth/**]           # the only files it may change
-read_scope:    [src/**, docs/auth.md]
+write_scope:   [src/auth]              # the only files it may change
+read_scope:    [src, docs/auth.md]
 reviews:       none                    # or the task id this reviews
 review_triggers: [blast_radius]        # what forces a second opinion
 ---
@@ -183,21 +184,25 @@ they enter history. A brief is prose: what the role is for, how it should think,
 refuse. Adding one means writing Markdown, not registering a class.
 
 ```text
-71 specialists          claude  ███████████████████████████████  31
-                        codex   █████████████████████            21
-                        gemini  ████████████████                 16
-                        kimi    ██                                2
+71 specialists          claude  ██████████████████████████████   30
+                        codex   ██████████████████████           22
+                        gemini  ██████████████████               18
                         grok    █                                 1
 ```
 
 The `gemini` row is a lane name, not a binary. That lane runs on the **agy** CLI, which fronts Gemini and Google's other products; the standalone `gemini` CLI is retired.
 
-Around them sit **92 skills** (methodology documents a specialist reads when the work calls for
-it — unique documents, with the per-runtime mirror copies collapsed), **four catalogued plugins**, and **8
-MCP servers** covering memory, research, recon, and media tooling, with a staged security stack you wire yourself.
+Around them sit **94 skills** (methodology documents that Chrono or a specialist reads when the
+work calls for it), **four catalogued plugins**, and **8 MCP servers** covering memory, research,
+recon, and media tooling. The skill count is unique skill names: 91 under `.claude/skills/` (86
+for specialists, 5 for Chrono) plus 3 bundled with the `chrono-vault` plugin. The per-runtime
+mirror copies under `.agents/skills/` and `model-lanes/gemini/.agents/skills/` are collapsed.
 
-The public `plugins/` tree also includes `security-mcp-stack`, a configuration and validation
-bundle without a marketplace manifest: five directories, four catalogued plugins.
+The guarded security MCPs (`guarded-semgrep`, `guarded-slither`, `guarded-solodit`) were retired
+on 2026-10-27. Security audits run the Semgrep and Slither CLIs directly.
+
+The public `plugins/` tree has five directories: the four catalogued plugins, and
+`security-mcp-stack`, which has no marketplace manifest and now only records that retirement.
 
 `chrono-dedup` exists in the private source and is not distributed here because the
 [export path policy](tools/export/policy/path-policy.json) withholds its tree. Like the four
@@ -214,8 +219,8 @@ findings when it is absent. The shipped capability source records it as `needs-o
 and the generated adapters do not advertise it as available. Even a private checkout must
 explicitly configure and verify the service before changing that declaration locally.
 
-All five families run through their providers' **native CLIs** — never swapped for an MCP relay or a
-direct API fallback. Four authenticate on subscription or managed-login paths; the Grok board lane is
+All four families run through their providers' **native CLIs** — never swapped for an MCP relay or a
+direct API fallback. Three authenticate on subscription or managed-login paths; the Grok board lane is
 the exception and requires an xAI API key (`model-lanes/lane-capabilities.tsv` declares
 `xai-api-key-only`). Utility services are separate.
 
@@ -239,7 +244,7 @@ dated probes, each with the literal command and its literal result.
 
 ## Status
 
-**v1.1.9** is the current release; **v1.1.1** was the first public one. It runs as the maintainer's
+**v2.0.0** is the current release; **v1.1.1** was the first public one. It runs as the maintainer's
 daily driver rather than as a demo. [CHANGELOG.md](CHANGELOG.md) records what each release changed,
 including the parts that are still rough.
 

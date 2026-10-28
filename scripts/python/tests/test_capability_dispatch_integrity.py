@@ -70,15 +70,21 @@ def install_board_rail_fixture(root: Path) -> None:
         shutil.copy2(source, destination)
 
     # Capability dispatch is the subject here; process-table parsing has its own
-    # suite. Keep the real process-truth serialization contract, but replace its
-    # host probe because the Codex macOS sandbox denies /bin/ps. The spawned
+    # suite. Keep real identities wherever the host probe works so teardown can
+    # match the descriptor against the live process. Only fall back when the
+    # Codex macOS sandbox denies /bin/ps. The spawned
     # supervisor is a fresh session leader, so pid/pgid still fence the exact
     # fixture process that the production detach path launched.
     with (root / "scripts/python/board_process_truth.py").open(
         "a", encoding="utf-8"
     ) as process_truth:
         process_truth.write(
-            "\n\ndef observe_process(pid):\n"
+            "\n\n_real_observe_process = observe_process\n"
+            "def observe_process(pid):\n"
+            "    try:\n"
+            "        return _real_observe_process(pid)\n"
+            "    except OSError:\n"
+            "        pass\n"
             "    try:\n"
             "        pid, pgid = int(pid), os.getpgid(int(pid))\n"
             "    except (TypeError, ValueError, OSError):\n"

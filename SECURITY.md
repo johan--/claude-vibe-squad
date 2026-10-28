@@ -4,9 +4,11 @@
 
 Vibe Squad develops on a single `main` branch — there are no release or
 maintenance branches, so security fixes land on `main` and are not backported to
-tagged releases. The current release is **v1.1.9**; the full tag history is in
-`git tag` and every released version has a section in `CHANGELOG.md`, with work
-since the latest release tracked under the changelog's `Unreleased` section.
+tagged releases. The current release is **v2.0.0**; `git tag` lists the tags fetched in your
+local clone (inspect the published remote for full release-tag completeness, as
+`v1.1.7` onward are tagged on the published public commit rather than private
+`main`), and every released version has a section in `CHANGELOG.md`. Later work
+can be tracked under an `Unreleased` section until the next release is prepared.
 
 If you are running a tagged release, update to `main` to pick up a fix.
 
@@ -39,7 +41,7 @@ There is no paid bug bounty program for this repository.
 leak gates, the approval-gate logic, the memory plugins, and the launcher.
 
 **Out of scope:** vulnerabilities in the upstream model CLIs (Claude Code, Codex,
-Gemini, Grok, Kimi) or their providers — report those to the vendors directly. Also out
+Gemini, Grok) or their providers — report those to the vendors directly. Also out
 of scope: issues that require an attacker to already have local access to the
 machine running Vibe Squad, since the system runs with the operator's own
 privileges by design.

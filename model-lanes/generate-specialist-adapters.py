@@ -16,7 +16,6 @@ from lane_adapter_registry import (  # noqa: E402
     AdapterValidationError,
     render_grok_prompt,
     render_adapter as render_registry_adapter,
-    render_kimi_prompt,
     upsert_capability_projection,
     validate_adapter_file,
 )
@@ -89,7 +88,7 @@ def pin_routed_model(
 ) -> str:
     """Apply an exact model only where the native adapter overrides inheritance."""
 
-    if lane not in {"grok", "kimi"}:
+    if lane != "grok":
         return text
     _profile_id, model_id = routed_profile_model(lane, row, profiles)
     lines = text.splitlines(keepends=True)
@@ -138,7 +137,6 @@ def target_for(lane: str, specialist: str) -> Path:
         "gpt-codex": REPO / "model-lanes" / "gpt-codex" / ".codex" / "agents" / f"{specialist}.toml",
         "gemini": REPO / "model-lanes" / "gemini" / ".gemini" / "agents" / f"{specialist}.md",
         "grok": REPO / "model-lanes" / "grok" / ".grok" / "agents" / f"{specialist}.yaml",
-        "kimi": REPO / "model-lanes" / "kimi" / ".kimi" / "agents" / f"{specialist}.yaml",
     }
     return targets[lane]
 
@@ -181,7 +179,7 @@ def adapter_is_valid(
         validate_adapter_file(REPO, lane, target)
     except AdapterValidationError as exc:
         return False, [str(exc)]
-    if lane in {"grok", "kimi"}:
+    if lane == "grok":
         profile_id, expected_model = routed_profile_model(lane, row, profiles)
         actual_model = adapter_model_pin(target.read_text(encoding="utf-8"))
         if actual_model != expected_model:
@@ -207,7 +205,7 @@ def main() -> int:
     parser.add_argument("--write", action="store_true", help="create missing adapters")
     parser.add_argument(
         "--lane",
-        choices=("gpt-codex", "claude", "gemini", "grok", "kimi"),
+        choices=("gpt-codex", "claude", "gemini", "grok"),
         help="limit generation/checking to one ranked lane",
     )
     args = parser.parse_args()
@@ -241,13 +239,6 @@ def main() -> int:
                 updated = pin_routed_model(lane, row, profiles, updated)
                 if not target.is_file() or target.read_text(encoding="utf-8") != updated:
                     atomic_write_text(target, updated)
-                if lane == "kimi":
-                    prompt = REPO / "model-lanes" / "kimi" / ".kimi" / "prompts" / f"{specialist}.md"
-                    prompt.parent.mkdir(parents=True, exist_ok=True)
-                    rendered_prompt = render_kimi_prompt(REPO, specialist)
-                    if not prompt.is_file() or prompt.read_text(encoding="utf-8") != rendered_prompt:
-                        atomic_write_text(prompt, rendered_prompt)
-                    register_yaml_specialist(lane, specialist)
                 if lane == "grok":
                     prompt = REPO / "model-lanes" / "grok" / ".grok" / "prompts" / f"{specialist}.md"
                     prompt.parent.mkdir(parents=True, exist_ok=True)

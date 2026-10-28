@@ -57,8 +57,8 @@ rule8_truth_gate:
 ```
 
 ## When to invoke
-- The S4 Verify (Rule-8) step of `research/investigation-synthesis`, `content/editorial-longform`,
-  `content/marketing-campaign`, `content/audio-assets`, `content/video`.
+- The S4 Verify (Rule-8) step of `project/investigation-synthesis`, `project/editorial-longform`,
+  `project/marketing-campaign`, `project/audio-assets`, `project/video`.
 - Any deliverable asserting factual / product / efficacy claims before publish.
 
 ## When NOT to invoke

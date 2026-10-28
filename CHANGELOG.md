@@ -9,6 +9,151 @@ or " (YYYY-MM-DD)". Other release header text is rejected; a released header
 is required.
 -->
 
+## v2.0.0 - 2026-10-28
+
+This release refreshes model routing and replaces the old research-tool workflow
+with parallel research across three provider families, synthesis, and source
+verification. It is the first public release to include the privately prepared
+v1.1.10 changes below.
+
+Major version: Kimi and research-tool removals break existing routes and workflows.
+
+### Added
+
+- [Added] **Budget routes.** Eligible specialists now have throughput slots across
+  Claude, Codex, and Gemini. Selecting one requires explicit
+  `route_tier: throughput`; an omitted tier never selects a budget profile.
+- [Added] **Sensitive-tag budget guard.** The validator rejects throughput slots
+  on heightened-risk rows and on privacy, financial, or dual-use rows, except for
+  the named same-lane memory-curator exception. Chrono still classifies each task's
+  safety and content before permitting a downshift.
+- [Added] **Disk-cleanup pools.** Idle scratch-pool children expire after 48 h.
+  Explicit cleanup runs can prune old Codex daemon and Claude CLI versions,
+  keeping the active version and newest other version; in-use versions stay.
+- [Added] **History packing.** Archived dispatch history and rescued documents
+  older than 30 days go into monthly compressed packs. Member lists, sizes, and
+  content hashes are verified before originals are removed.
+- [Added] **Cleanup pause.** An operator pause file suspends periodic disk sweeps
+  while leaving manual surveys available.
+- [Added] **Workboard tools.** `bin/workboard-append.sh` provides one event writer;
+  `compact` archives history while preserving open items, their identities, and
+  current focus. The live ledger is no longer tracked in Git.
+- [Added] **Charter receipts.** `bin/charter-append.sh` stamps and validates
+  receipts. Its `DECISION` kind also records a confirmed decision in the journal.
+- [Added] **Follow-up settlement.** `scripts/send-task.sh --supersedes` closes a
+  replaced task after the new dispatch is admitted; dry runs and failed
+  admissions leave it open.
+
+### Changed
+
+- [Changed] **Model map.** Refreshed specialist primaries and review routes around
+  Opus 5.5 and Fable 5.1, with Haiku 5.5, Terra (`gpt-6.1-terra`), and Gemini Flash
+  budget profiles. Gemini primary routes use Gemini 4 Argon, except `summarizer`,
+  which uses Gemini Flash. Codex Sol profiles use `gpt-6.1-sol`.
+- [Changed] **Research workflow.** Decision-grade questions go to research workers
+  across three provider families in parallel, then to `synthesizer` to reconcile
+  disagreements and `content-verifier` to check key claims against sources. Quick
+  lookups use one worker; `arxiv_search` remains in the research arsenal.
+- [Changed] **Current guidance.** Specialist briefs, skills, capability cards, and
+  runtime docs now reflect the active lanes and tools, with stale routing
+  instructions and broken links repaired.
+- [Changed] **Disk hygiene.** Commit `5749c8f3` (2026-09-30) removed the
+  `DISK_HYGIENE_AUTODELETE=1` opt-in named in `v1.1.10` for guarded, eligible
+  regenerable-pool sweeps (browser clones, stale test temporary directories, and
+  test databases) during lock- and cadence-gated `--periodic` passes; rescued
+  artifacts remain alert-only with no automatic deletion.
+- [Changed] **Rescue copies.** Build output and caches are skipped with a manifest
+  of omitted paths and sizes. `.work` directories remain preserved work product.
+- [Changed] **Nightly maintenance.** Reaps orphaned MCP-spawned Chrome processes
+  without restarting the persistent browser, and runs `uv cache prune`.
+
+### Fixed
+
+- [Fixed] **Busy-path checks.** Match full paths and descendants at path boundaries
+  so sibling names do not block cleanup and live references retain their files.
+- [Fixed] **Test PostgreSQL maintenance.** The database census parses numeric OIDs
+  correctly and uses a configured cluster role. Log rotation now includes the
+  configured test cluster's stderr log.
+- [Fixed] **Focus anchor.** Takes the next action from the active charter's latest
+  receipt resume point, with a workboard fallback when unavailable.
+- [Fixed] **Resume capsule.** Excludes settled completion receipts, collapses older
+  decisions to a journal pointer, removes stale operator-instruction replay, and
+  reports the full archived-debt count when details are collapsed.
+- [Fixed] **Outbox retries.** Status-less responses retry every 5 seconds for at
+  most 10 minutes or 120 polls; responses older than 7 days are skipped.
+- [Fixed] **Board landing.** Worker results with an unknown, empty, or synthesized
+  status are preserved for review instead of merged. A job that finishes while
+  another is landing retries up to three times instead of being refused.
+  External work-repository hooks are never executed, and a broken hook there no
+  longer refuses clean work.
+- [Fixed] **Doctor dispatch volume.** The 24-hour count includes dispatch records
+  without a task ID, so the volume ceiling can no longer be bypassed by them.
+- [Fixed] **State archive.** Settled tasks that still owe a notice or
+  notification stay in the active registry until it is delivered.
+- [Fixed] **Completion notices.** A task that finished cleanly was filed to the
+  coordinator's queue but never announced in its pane, while its record showed
+  the notice as delivered. Every finished task now gets a pane notice; more than
+  three in one sweep still arrive as a single digest.
+- [Fixed] **Linux CI.** Hermetic tests no longer assume macOS tools, Homebrew
+  paths, or macOS file-timestamp behaviour.
+
+### Removed
+
+- [Removed] **Kimi lane.** Retired its launcher and runtime support, profiles,
+  adapters, validator requirements, capability declarations, and current docs.
+- [Removed] **Research integrations.** Dropped the xAI search, Perplexity, and
+  Firecrawl tools and their credential requirements from the research arsenal
+  and runtime setup.
+- [Removed] **Guarded security MCP wrappers.** Retired `guarded-semgrep`,
+  `guarded-slither`, and `guarded-solodit`. The audit skills now use installed
+  Semgrep and Slither CLIs directly; Solodit lookup uses a separately provisioned
+  prior-art service or manual searches.
+
+## v1.1.10 - 2026-09-26
+
+Runtime routing now reaches the model and effort level it selected, board workers start with a
+smaller capability surface, and host maintenance is safer by default. This release also adds the
+review workflow used to harden a site before launch.
+
+### Added
+
+- **Site pre-ship review.** The new `site-preship-review` skill coordinates focused design,
+  mobile, state, flow, launch-readiness, and security/infrastructure reviews, followed by bounded
+  fix passes. Its checks include rendered-page inspection, accessibility, links, client-bundle
+  secret scanning, redirect and security-header validation, and launch metadata.
+- **Safer disk hygiene.** Board disk-pressure monitoring now reports the largest campaign storage
+  users while the existing preservation-first worktree pruner remains scheduled. The new sweeps
+  for rescued artifacts, browser clones, and stale test temporary directories are opt-in with
+  `DISK_HYGIENE_AUTODELETE=1`, and their storage-pool records now expire.
+- **Operator and authoring tools.** Namespaced `/vs-*` commands, richer board-status and
+  needs-attention displays, external-task artifact locators, and the `x-reply-craft` skill make
+  routine operation and content handoff easier to inspect.
+
+### Changed
+
+- Grok routes now use Grok 4.7. Claude routes were refreshed for Opus 5.5, and heightened
+  offensive/code-security routes use the registered Daybreak profiles.
+- Codex route-tier model and reasoning effort are now written into each attempt's isolated
+  `CODEX_HOME`; generated adapters no longer override the selected effort.
+- Claude board workers start only the plugin MCP servers projected for their specialist instead
+  of launching every configured plugin server.
+- Browser-media admission now forecasts 1 GiB p95 use with a 2 GiB reserve, replacing the older
+  2/3 GiB estimate. Subscription-backed OpenAI image generation is also routed through the Codex
+  CLI while the paid-media gate remains unchanged.
+
+### Fixed
+
+- Receipt reconciliation preserves settled reviews and decision diagnostics, notification
+  delivery is generation-aware and pane-bound, and recovery reports the real artifact location
+  and terminal state instead of silently downgrading or duplicating events.
+- Board worktree pruning now handles owning repositories and external worktrees without treating
+  preserved untracked work as disposable.
+- Empty or malformed xAI search responses now remain typed `no_results` outcomes instead of
+  becoming ambiguous failures.
+- Public-export policy explicitly denies `media/launch-video/**` and `media/x-*/**`, so private
+  launch assets cannot become publishable through a future broad allow rule and do not appear as
+  unclassified release paths.
+
 ## v1.1.9 - 2026-09-20
 
 Work that is not the squad itself now runs in its own repository. Plus the export step the

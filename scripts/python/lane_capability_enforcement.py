@@ -32,6 +32,7 @@ CLAUDE_FIRST_PARTY_SERVERS = {
     # with denies EVERY claude-lane launch, not just one specialist — which is
     # what "Claude Docs" did on 2026-09-16 until it was added.
     "claude.ai Claude Docs": ("claude-ai-claude-docs", "claude_ai_Claude_Docs"),
+    "claude.ai ElevenLabs": ("claude-ai-elevenlabs", "claude_ai_ElevenLabs"),
     "claude.ai Gmail": ("claude-ai-gmail", "claude_ai_Gmail"),
     "claude.ai Google Calendar": (
         "claude-ai-google-calendar",
@@ -55,25 +56,9 @@ AGY_GLOBAL_CHRONO_MCPS = frozenset(
 )
 BROKER_TOKEN_ENV = "CHRONO_VAULT_BROKER_TOKEN"
 BROKER_TOKEN_RE = re.compile(r"^[0-9a-f]{64}$")
-RESEARCH_ARSENAL_SERVER = "chrono-research-arsenal"
-# The one home for the research-arsenal credential NAMES. `board-supervisor.sh`
-# imports this tuple instead of restating it: the same three names choose which
-# secrets are loaded, which are reported missing, which Codex forwards through
-# `env_vars`, and which are bound into Kimi's per-server `env`. Two lists would
-# drift, and the drift would look like a silent auth failure at call time.
-RESEARCH_API_KEY_NAMES = (
-    "XAI_API_KEY",
-    "PERPLEXITY_API_KEY",
-    "FIRECRAWL_API_KEY",
-)
-LANES = frozenset({"codex", "claude", "gemini", "grok", "kimi"})
-KIMI_LOCAL_SERVER_SCRIPTS = {
-    name: Path("plugins") / name / "mcp_server.py"
-    for name in ("chrono-vault", "chrono-dedup", "chrono-research-arsenal")
-}
-KIMI_SEQUENTIAL_COMMAND = Path(
-    "/opt/homebrew/bin/mcp-server-sequential-thinking"
-)
+# No runtime consumer remains; kept only until the tests importing it are retired.
+RESEARCH_API_KEY_NAMES: tuple[str, ...] = ()
+LANES = frozenset({"codex", "claude", "gemini", "grok"})
 CAPABILITY_SOURCE_RELATIVE = Path(
     "model-lanes/specialist-lane-capabilities.v1.json"
 )
@@ -128,7 +113,7 @@ PATH_RESOLVABLE_EVIDENCE = frozenset({"host-PATH"})
 # stated here rather than left implicit in where the probe happens to be
 # called: Claude's live inventory reports connection health. Agy's table
 # reports only persistent enabled/disabled configuration state, not a probe;
-# Codex and Kimi likewise enumerate configuration only. Their records carry no
+# Codex likewise enumerates configuration only. Its records carry no
 # health status, which means `unknown`, not healthy or unhealthy.
 MCP_HEALTH_INSPECTED_LANES = frozenset({"claude"})
 MCP_HEALTHY_STATUS_RE = re.compile(r"^[✔✓]?\s*Connected\b")
@@ -137,10 +122,6 @@ MCP_STATUS_MAX_LENGTH = 512
 
 class CapabilityDenied(RuntimeError):
     """Role capability projection cannot be enforced without widening it."""
-
-
-def _reject_non_finite_json(_value: str) -> None:
-    raise ValueError("non-finite JSON value")
 
 
 @dataclass(frozen=True)
@@ -167,14 +148,6 @@ class LaneCapabilityPlan:
     # (server name, degradation status) for every entry in `unhealthy_mcps`.
     # Probe statuses stay verbatim; an absent non-required server uses `absent`.
     unhealthy_mcp_status: tuple[tuple[str, str], ...] = ()
-
-
-@dataclass(frozen=True)
-class KimiLocalHostArtifacts:
-    """Executable host paths used by Kimi's controller-owned templates."""
-
-    interpreter: Path
-    sequential_thinking: Path
 
 
 def _sha256_file(path: Path) -> str:
@@ -252,11 +225,7 @@ def adapter_path_for(*, repo_root: Path, lane: str, specialist: str) -> Path:
             / f"{specialist}.yaml",
         )
     else:
-        root = repo_root / "model-lanes" / "kimi"
-        candidates = (
-            root / ".kimi" / "agents" / f"{specialist}.yaml",
-            root / "subagents" / f"{specialist}.yaml",
-        )
+        raise CapabilityDenied(f"unsupported capability lane: {lane!r}")
     for candidate in candidates:
         if candidate.is_file():
             return candidate
@@ -544,6 +513,147 @@ def parse_claude_project_plugin_dirs(output: str) -> dict[str, str]:
     return result
 
 
+PLUGIN_ID_RE = re.compile(r"^[A-Za-z0-9_-]+@[A-Za-z0-9_.-]+$")
+
+
+def parse_claude_plugin_components(output: str) -> dict[str, dict[str, object]]:
+    """Return per-plugin MCP-server names and install path for ENABLED plugins.
+
+    Keyed by the full ``name@marketplace`` id -- the exact identifier the
+    ``enabledPlugins`` setting toggles. ``mcp_servers`` is the sorted tuple of
+    server names the plugin contributes; ``install_path`` locates the plugin's
+    skills/commands/agents on disk. Disabled plugins are skipped: they already do
+    not spawn, so there is nothing to keep from spawning.
+
+    This is the input to :func:`claude_plugins_to_disable`. The two are split so a
+    caller can verify the parse without a live plugin cache, and so the disable
+    decision stays a pure function over already-resolved records.
+    """
+
+    try:
+        payload = json.loads(output)
+    except (TypeError, json.JSONDecodeError) as exc:
+        raise CapabilityDenied("Claude plugin inventory returned invalid JSON") from exc
+    if not isinstance(payload, list):
+        raise CapabilityDenied("Claude plugin inventory has the wrong schema")
+    result: dict[str, dict[str, object]] = {}
+    for item in payload:
+        if not isinstance(item, dict):
+            raise CapabilityDenied("Claude plugin inventory has the wrong schema")
+        if item.get("enabled") is not True:
+            continue
+        plugin_id = item.get("id")
+        if not isinstance(plugin_id, str) or not PLUGIN_ID_RE.fullmatch(plugin_id):
+            raise CapabilityDenied("Claude plugin inventory has an invalid id")
+        raw_servers = item.get("mcpServers")
+        servers: set[str] = set()
+        if isinstance(raw_servers, dict):
+            for server_name in raw_servers:
+                if not isinstance(server_name, str) or not SERVER_NAME_RE.fullmatch(
+                    server_name
+                ):
+                    raise CapabilityDenied(
+                        "Claude plugin inventory has an unsafe MCP server name"
+                    )
+                servers.add(server_name)
+        elif raw_servers not in (None, {}):
+            raise CapabilityDenied("Claude plugin inventory has an unsafe mcpServers record")
+        install_path = item.get("installPath")
+        if not isinstance(install_path, str) or not install_path.startswith("/") or (
+            "\x00" in install_path
+        ):
+            raise CapabilityDenied("Claude plugin inventory has an unsafe install path")
+        # A plugin enabled in more than one scope (user + project) appears once
+        # per scope; both records carry the same id and the same enabledPlugins
+        # toggle. Merge them into the safe superset of MCP servers rather than
+        # rejecting -- a hard failure here would fail the whole trim closed on
+        # every real host, which is exactly the waste this is meant to remove.
+        existing = result.get(plugin_id)
+        if existing is not None:
+            servers |= set(existing["mcp_servers"])
+        result[plugin_id] = {
+            "mcp_servers": tuple(sorted(servers)),
+            "install_path": existing["install_path"] if existing is not None else install_path,
+        }
+    return result
+
+
+def claude_plugins_to_disable(
+    *,
+    plugin_components: Mapping[str, Mapping[str, object]],
+    authorized_mcps: tuple[str, ...],
+) -> tuple[str, ...]:
+    """Return the sorted plugin ids whose MCP servers can be kept from spawning.
+
+    A claude board worker inherits every operator-enabled plugin, so an unused
+    plugin's MCP server (firebase's ``npx firebase-tools mcp``, playwright's
+    ``npx @playwright/mcp``, ...) still spawns and holds ~130-450 MB even though
+    ``--disallowedTools`` already blocks its tools. Disabling the plugin via
+    ``enabledPlugins`` stops the spawn.
+
+    This trims only the set it is SURE about: a plugin is disabled iff ALL hold,
+    so nothing the worker relies on is removed --
+
+    * it contributes at least one MCP server (otherwise there is nothing to
+      save); and
+    * none of its MCP servers is authorized for the specialist; and
+    * it ships NO skills, commands, or agents.
+
+    The last clause is deliberately conservative. Disabling a plugin also removes
+    its skills/commands/agents, which a worker can reach opportunistically even
+    when its adapter does not list them; so a plugin that ships any of those is
+    KEPT and reported as a trimming candidate for an operator decision, never
+    silently dropped. That leaves the clear, high-value pure-MCP offenders
+    (firebase, playwright, context7, ...) trimmed while the coupled plugins wait
+    for a deliberate skill-aware pass.
+
+    The caller resolves each record's ``skills`` / ``provides_commands`` /
+    ``provides_agents`` from the plugin's install path before calling; a probe
+    that fails must default to the conservative values (``provides_*`` True, or a
+    non-empty skills marker), so an unreadable plugin is kept, never silently
+    disabled.
+    """
+
+    authorized = set(authorized_mcps)
+    disable: list[str] = []
+    for plugin_id, record in plugin_components.items():
+        if not isinstance(plugin_id, str) or not PLUGIN_ID_RE.fullmatch(plugin_id):
+            raise CapabilityDenied(f"plugin id is unsafe: {plugin_id!r}")
+        if not isinstance(record, Mapping):
+            raise CapabilityDenied(f"plugin record is unsafe: {plugin_id}")
+        servers = set(record.get("mcp_servers") or ())
+        if not servers:
+            continue
+        if servers & authorized:
+            continue
+        if record.get("skills"):
+            continue
+        if bool(record.get("provides_commands")) or bool(record.get("provides_agents")):
+            continue
+        disable.append(plugin_id)
+    return tuple(sorted(disable))
+
+
+def render_disabled_plugins_settings(disable_ids: tuple[str, ...]) -> str:
+    """Render the canonical ``--settings`` JSON that disables the named plugins.
+
+    Merges with (does not replace) the operator's ``enabledPlugins``: every id
+    listed here is set false, every other plugin keeps its inherited state.
+    """
+
+    for plugin_id in disable_ids:
+        if not isinstance(plugin_id, str) or not PLUGIN_ID_RE.fullmatch(plugin_id):
+            raise CapabilityDenied(f"plugin id is unsafe for settings: {plugin_id!r}")
+    enabled = {plugin_id: False for plugin_id in sorted(set(disable_ids))}
+    return json.dumps(
+        {"enabledPlugins": enabled},
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=True,
+        allow_nan=False,
+    )
+
+
 def _claude_tool_pattern(server: Mapping[str, object]) -> str:
     """Map one validated live Claude server name to its native MCP wildcard."""
 
@@ -763,188 +873,6 @@ def codex_chrono_vault_relay_args(
     return ("-c", override)
 
 
-def _kimi_local_server_templates(
-    *,
-    repo_root: Path | None,
-    authorized: tuple[str, ...],
-    vault_environment: Mapping[str, str] | None = None,
-    research_environment: Mapping[str, str] | None = None,
-    host_artifacts: KimiLocalHostArtifacts | None = None,
-) -> dict[str, dict[str, object]]:
-    """Build selected Kimi MCP config from controller-owned local paths only."""
-
-    supported = set(KIMI_LOCAL_SERVER_SCRIPTS) | {"sequential-thinking"}
-    if set(authorized) - supported:
-        raise CapabilityDenied("Kimi lead MCP uses an unsupported local template")
-    if repo_root is None:
-        raise CapabilityDenied("Kimi local template repo root is unavailable")
-    try:
-        root = Path(repo_root).resolve(strict=True)
-    except (OSError, RuntimeError):
-        raise CapabilityDenied("Kimi local template repo root is unavailable") from None
-    if not root.is_dir():
-        raise CapabilityDenied("Kimi local template repo root is unavailable")
-
-    bound_vault_environment: dict[str, str] | None = None
-    if "chrono-vault" in authorized:
-        required = {"CHRONO_VAULT_ROOT", "CHRONO_VAULT_CONTEXT"}
-        if not isinstance(vault_environment, Mapping) or set(vault_environment) != required:
-            raise CapabilityDenied("Kimi chrono-vault environment is not exactly bound")
-        vault_root = vault_environment["CHRONO_VAULT_ROOT"]
-        vault_context = vault_environment["CHRONO_VAULT_CONTEXT"]
-        try:
-            decoded_context = json.loads(
-                vault_context,
-                parse_constant=_reject_non_finite_json,
-            )
-        except (TypeError, ValueError):
-            raise CapabilityDenied("Kimi chrono-vault context is invalid") from None
-        if (
-            not isinstance(vault_root, str)
-            or not Path(vault_root).is_absolute()
-            or not vault_root
-            or "\x00" in vault_root
-            or len(vault_root.encode("utf-8")) > 4096
-            or not isinstance(vault_context, str)
-            or "\x00" in vault_context
-            or len(vault_context.encode("utf-8")) > 16384
-            or not isinstance(decoded_context, dict)
-            or decoded_context.get("schema") != "chrono-vault-context/v1"
-            or json.dumps(
-                decoded_context,
-                sort_keys=True,
-                separators=(",", ":"),
-                allow_nan=False,
-            )
-            != vault_context
-        ):
-            raise CapabilityDenied("Kimi chrono-vault environment is invalid")
-        bound_vault_environment = {
-            name: vault_environment[name] for name in sorted(required)
-        }
-
-    # Kimi's installed MCP client hands a stdio child only HOME/LOGNAME/PATH/
-    # SHELL/TERM/USER plus whatever the server record's own `env` says. The
-    # research arsenal reads its three provider keys from ITS OWN environment,
-    # so widening the Kimi CLI's parent environment (what
-    # `project_worker_credentials` does) never reached the process making the
-    # HTTP call -- measured as three live `"<KEY> missing"` errors on
-    # `large-context-analyst@kimi`. Binding the already-loaded snapshot here is
-    # the only seam that delivers them, and it mirrors what the Codex path
-    # already does with `mcp_servers.<name>.env_vars`.
-    #
-    # BEST-EFFORT, like the loader: a key the secret store did not supply is
-    # simply absent, and the tool degrades to its own "key missing" error while
-    # the launch receipt names it under `credential_missing`. An empty mapping
-    # therefore writes no `env` at all rather than an empty one.
-    bound_research_environment: dict[str, str] = {}
-    if research_environment is not None:
-        if not isinstance(research_environment, Mapping) or set(
-            research_environment
-        ) - set(RESEARCH_API_KEY_NAMES):
-            raise CapabilityDenied("Kimi research environment is not exactly bound")
-        for name in RESEARCH_API_KEY_NAMES:
-            if name not in research_environment:
-                continue
-            value = research_environment[name]
-            if (
-                not isinstance(value, str)
-                or not value
-                or "\x00" in value
-                or "\n" in value
-                or len(value.encode("utf-8")) > 16384
-            ):
-                raise CapabilityDenied("Kimi research environment is invalid")
-            bound_research_environment[name] = value
-        if bound_research_environment and RESEARCH_ARSENAL_SERVER not in authorized:
-            raise CapabilityDenied(
-                "Kimi research credentials bound for an unauthorized server"
-            )
-
-    artifacts = host_artifacts or KimiLocalHostArtifacts(
-        interpreter=root / ".venv" / "bin" / "python",
-        sequential_thinking=KIMI_SEQUENTIAL_COMMAND,
-    )
-    interpreter = Path(artifacts.interpreter)
-    sequential_command = Path(artifacts.sequential_thinking)
-    selected: dict[str, dict[str, object]] = {}
-    script_names = set(authorized) & set(KIMI_LOCAL_SERVER_SCRIPTS)
-    if script_names and (
-        not interpreter.is_absolute()
-        or not interpreter.is_file()
-        or not os.access(interpreter, os.X_OK)
-    ):
-        raise CapabilityDenied("Kimi local template interpreter is unavailable")
-    for name in authorized:
-        if name == "sequential-thinking":
-            if (
-                not sequential_command.is_absolute()
-                or not sequential_command.is_file()
-                or not os.access(sequential_command, os.X_OK)
-            ):
-                raise CapabilityDenied(
-                    "Kimi sequential-thinking executable is unavailable"
-                )
-            selected[name] = {"command": str(sequential_command)}
-            continue
-        script = root / KIMI_LOCAL_SERVER_SCRIPTS[name]
-        try:
-            resolved_script = script.resolve(strict=True)
-        except (OSError, RuntimeError):
-            raise CapabilityDenied(
-                "Kimi local template server script is unavailable"
-            ) from None
-        if (
-            script.is_symlink()
-            or not resolved_script.is_file()
-            or not resolved_script.is_relative_to(root)
-        ):
-            raise CapabilityDenied("Kimi local template server script is unavailable")
-        selected[name] = {
-            "command": str(interpreter),
-            "args": [str(script)],
-        }
-        if name == "chrono-vault":
-            selected[name]["env"] = bound_vault_environment
-        elif name == RESEARCH_ARSENAL_SERVER and bound_research_environment:
-            selected[name]["env"] = bound_research_environment
-    return selected
-
-
-def _kimi_none_aperture_environment(
-    vault_environment: Mapping[str, str] | None,
-) -> bool:
-    """Recognize the controller projection that intentionally omits vault paths."""
-
-    if not isinstance(vault_environment, Mapping) or set(vault_environment) != {
-        "CHRONO_VAULT_CONTEXT"
-    }:
-        return False
-    vault_context = vault_environment["CHRONO_VAULT_CONTEXT"]
-    try:
-        decoded_context = json.loads(
-            vault_context,
-            parse_constant=_reject_non_finite_json,
-        )
-    except (TypeError, ValueError):
-        return False
-    return (
-        isinstance(vault_context, str)
-        and "\x00" not in vault_context
-        and len(vault_context.encode("utf-8")) <= 16384
-        and isinstance(decoded_context, dict)
-        and decoded_context.get("schema") == "chrono-vault-context/v1"
-        and decoded_context.get("aperture") == "none"
-        and json.dumps(
-            decoded_context,
-            sort_keys=True,
-            separators=(",", ":"),
-            allow_nan=False,
-        )
-        == vault_context
-    )
-
-
 def load_tool_classes(
     *,
     repo_root: Path,
@@ -1119,9 +1047,6 @@ def plan_lane(
     tool_classes: Mapping[str, Mapping[str, str]] | None = None,
     mcp_classes: Mapping[str, Mapping[str, object]] | None = None,
     repo_root: Path | None = None,
-    kimi_vault_environment: Mapping[str, str] | None = None,
-    kimi_research_environment: Mapping[str, str] | None = None,
-    kimi_host_artifacts: KimiLocalHostArtifacts | None = None,
     broker_chrono_vault: bool = False,
 ) -> LaneCapabilityPlan:
     """Build one fail-closed, deterministic native-CLI enforcement plan."""
@@ -1138,45 +1063,8 @@ def plan_lane(
         raise CapabilityDenied("role MCP declarations have the wrong shape")
     if any(not isinstance(name, str) for name in (*raw_authorized, *raw_brokered)):
         raise CapabilityDenied("role MCP declaration contains an unsafe name")
-    brokered = tuple(raw_brokered)
-    if lane == "kimi":
-        if raw_authorized:
-            raise CapabilityDenied(
-                "Kimi direct role MCP declarations are forbidden; use lead: declarations"
-            )
-        if any(name.startswith("lead:") for name in brokered):
-            raise CapabilityDenied("Kimi brokered MCP names must be stripped")
-        if brokered != tuple(sorted(set(brokered))):
-            raise CapabilityDenied("Kimi brokered MCP names must be sorted unique")
-        if (
-            not broker_chrono_vault
-            and "chrono-vault" in brokered
-            and _kimi_none_aperture_environment(kimi_vault_environment)
-        ):
-            brokered = tuple(name for name in brokered if name != "chrono-vault")
-        authorized = brokered
-        template_authorized = tuple(
-            name
-            for name in authorized
-            if not (broker_chrono_vault and name == CHRONO_VAULT_SERVER)
-        )
-        configured_servers = dict(_kimi_local_server_templates(
-            repo_root=repo_root,
-            authorized=template_authorized,
-            vault_environment=kimi_vault_environment,
-            research_environment=kimi_research_environment,
-            host_artifacts=kimi_host_artifacts,
-        ))
-        if broker_chrono_vault and CHRONO_VAULT_SERVER in authorized:
-            # A deliberately inert placeholder makes a forgotten supervisor
-            # rewrite fail closed. broker_chrono_vault_plan replaces it only
-            # after the retained listener and token exist.
-            configured_servers[CHRONO_VAULT_SERVER] = {
-                "command": "/usr/bin/false"
-            }
-    else:
-        authorized = tuple(sorted(set(raw_authorized)))
-        brokered = tuple(sorted(set(brokered)))
+    authorized = tuple(sorted(set(raw_authorized)))
+    brokered = tuple(sorted(set(raw_brokered)))
     tools = tuple(sorted(set(projection.get("tools", ()))))
     configured = tuple(sorted(configured_servers))
     if any(
@@ -1325,12 +1213,7 @@ def plan_lane(
         arguments = []
         tag = "grok-cli-global-mcp-exposure/v1"
     else:
-        role_config_json = _canonical_role_config(
-            authorized=authorized,
-            configured_servers=configured_servers,
-        )
-        arguments = ["--mcp-config-file", ROLE_CONFIG_MARKER]
-        tag = "kimi-cli-main-lead-config-scoped/v1"
+        raise CapabilityDenied(f"unsupported capability lane: {lane!r}")
     return LaneCapabilityPlan(
         lane=lane,
         authorized_mcps=authorized,
@@ -1401,6 +1284,57 @@ def special_name(value: str) -> str:
     return value[:96]
 
 
+def materialize_disabled_plugins_settings(
+    disable_ids: tuple[str, ...],
+    *,
+    worktree_root: Path,
+    task_id: str,
+    attempt_id: str,
+) -> Path:
+    """Atomically materialize a ``--settings`` file that disables named plugins.
+
+    Written into the same owned ``.role-capabilities`` directory as the role
+    config, so it dies with the attempt. Only ever emits ``enabledPlugins:false``
+    entries, so the worst a malformed call can do is disable nothing new.
+    """
+
+    if not disable_ids:
+        raise CapabilityDenied("no plugins to disable; skip the settings file")
+    if not SERVER_NAME_RE.fullmatch(task_id) or not SERVER_NAME_RE.fullmatch(attempt_id):
+        raise CapabilityDenied("task or attempt id is unsafe for plugin settings")
+    payload = render_disabled_plugins_settings(disable_ids)
+    worktree = Path(worktree_root).resolve(strict=True)
+    config_dir = worktree / ".role-capabilities"
+    config_dir.mkdir(mode=0o700, exist_ok=True)
+    output = config_dir / f"claude-plugins-{special_name(task_id)}-{attempt_id}.json"
+    if output.exists():
+        raise CapabilityDenied("plugin settings output already exists")
+    fd, temporary_name = tempfile.mkstemp(
+        prefix=f".{output.name}.", dir=str(config_dir)
+    )
+    try:
+        os.fchmod(fd, 0o600)
+        with os.fdopen(fd, "w", encoding="ascii") as stream:
+            stream.write(payload + "\n")
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.rename(temporary_name, output)
+        directory_fd = os.open(config_dir, os.O_RDONLY)
+        try:
+            os.fsync(directory_fd)
+        finally:
+            os.close(directory_fd)
+    except BaseException:
+        # The packet's no-delete rule applies even to failed runtime temps.
+        raise
+    if (
+        os.path.commonpath((str(output.resolve(strict=True)), str(worktree)))
+        != str(worktree)
+    ):
+        raise CapabilityDenied("materialized plugin settings escaped its worktree")
+    return output
+
+
 def cli_args_for_materialized(
     plan: LaneCapabilityPlan, path: Path | None
 ) -> tuple[str, ...]:
@@ -1424,17 +1358,20 @@ __all__ = [
     "broker_chrono_vault_plan",
     "codex_chrono_vault_relay_args",
     "chrono_vault_relay_server",
-    "KimiLocalHostArtifacts",
     "LaneCapabilityPlan",
     "adapter_path_for",
     "cli_args_for_materialized",
+    "claude_plugins_to_disable",
     "load_json_mcp_servers",
     "load_projection",
+    "materialize_disabled_plugins_settings",
     "materialize_role_config",
     "mcp_health",
     "parse_claude_enabled_plugins",
+    "parse_claude_plugin_components",
     "parse_claude_project_plugin_dirs",
     "parse_live_mcp_listing",
     "partition_absent_mcps",
     "plan_lane",
+    "render_disabled_plugins_settings",
 ]

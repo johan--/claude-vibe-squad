@@ -28,13 +28,8 @@ fi
 MCPS=(
     "chrono-vault|required|${CHRONO_PLUGINS}/chrono-vault/mcp_server.py|CHRONO_VAULT_ROOT OBSIDIAN_REST_API_KEY OBSIDIAN_VAULT_ROOT"
     "chrono-obsidian|required|${CHRONO_PLUGINS}/chrono-vault/mcp_server.py --namespace obsidian|CHRONO_VAULT_ROOT OBSIDIAN_REST_API_KEY OBSIDIAN_VAULT_ROOT"
-    # Exactly the credentials this server reads: FIRECRAWL_API_KEY (firecrawl_scrape
-    # /_crawl/_parse), PERPLEXITY_API_KEY (perplexity_search), XAI_API_KEY
-    # (xai_search); arxiv_search needs none. APIFY_TOKEN/BRAVE_API_KEY/
-    # SERPER_API_KEY were audited here with no reader in the server, so their
-    # absence could never explain an outage, while FIRECRAWL_API_KEY -- which
-    # three of the six tools require -- went unwatched.
-    "chrono-research-arsenal|optional|${CHRONO_PLUGINS}/chrono-research-arsenal/mcp_server.py|FIRECRAWL_API_KEY PERPLEXITY_API_KEY XAI_API_KEY"
+    # arxiv_search is credential-free.
+    "chrono-research-arsenal|optional|${CHRONO_PLUGINS}/chrono-research-arsenal/mcp_server.py|"
     "chrono-media-studio|optional|${CHRONO_PLUGINS}/chrono-media-studio/mcp_server.py|OPENAI_API_KEY XAI_API_KEY"
     "chrono-recon|optional|${CHRONO_PLUGINS}/chrono-recon/mcp_server.py|GH_TOKEN"
 )
@@ -45,7 +40,6 @@ command_list() {
         codex) codex mcp list 2>/dev/null || true ;;
         gemini) agy mcp list 2>&1 || true ;;
         grok) grok inspect 2>&1 || true ;;
-        kimi) kimi mcp list 2>&1 | grep -v 'AuthlibDeprecation\|authlib.jose\|It will be compatible\|from authlib' || true ;;
         claude)
             for file in "${HOME}/.claude/settings.json" "${VAULT_ROOT}/.claude/settings.json"; do
                 [[ -f "$file" ]] || continue
@@ -74,8 +68,7 @@ has_registration() {
 #
 # env_status computing "partial(2/3)" is worth nothing if only the human-read
 # log row carries it. doctor.sh keys on the `summary: issues=N warnings=N`
-# line, so an unset FIRECRAWL_API_KEY rendered as "MCP usability audit passed"
-# while three of six arsenal tools were dead at call time.
+# line, so credential shortfalls must contribute to the reported verdict.
 #
 # A shortfall is a WARNING, not an issue: the server is registered, reachable
 # and usable -- individual tools fail when called. That is degraded, not down.
@@ -156,7 +149,7 @@ for entry in "${MCPS[@]}"; do
     # works: a stale index leaves every recall dead while the server handshakes
     # and dispatches perfectly, which no sentinel call can see. Every other
     # server keeps the sentinel, because their tools write to the KG
-    # (record_finding) or spend metered credit (firecrawl_scrape).
+    # (record_finding) or spend metered credit (generate_image).
     # A branch and not a sixth MCPS field: exactly one server qualifies, and one
     # `[[ ]]` reads plainer than a table with one populated row. Add the field
     # when a second server earns a safe health tool.
@@ -166,7 +159,7 @@ for entry in "${MCPS[@]}"; do
 done
 wait
 
-for cli in claude codex gemini grok kimi; do
+for cli in claude codex gemini grok; do
     echo "## ${cli}" | tee -a "${LOG}"
     cli_binary="${cli}"
     [[ "${cli}" == gemini ]] && cli_binary=agy

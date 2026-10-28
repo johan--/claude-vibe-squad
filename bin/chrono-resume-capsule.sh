@@ -9,6 +9,12 @@
 # property; wiring this into the reconcile sweep is an optimization on top of it, and
 # safe to add because the write is atomic and idempotent.
 #
+# The capsule is derived purely from the journals and the registry. It carries no
+# operator line: without a live producer, `## Latest operator instruction` could
+# present stale instructions as current. The `--latest-turn` / `--session-id`
+# compaction-snapshot recovery is removed so a stored turn cannot reintroduce
+# that stale context.
+#
 # Pure stdlib — deliberately no `uv`, so session start never blocks on a toolchain.
 
 set -uo pipefail
@@ -18,22 +24,16 @@ source "$(cd -- "$(dirname -- "$(readlink -f -- "${BASH_SOURCE[0]}" 2>/dev/null 
 
 usage() {
     cat <<'EOF'
-Usage: bin/chrono-resume-capsule.sh [--session-id ID] [--latest-turn TEXT] [--stdout]
+Usage: bin/chrono-resume-capsule.sh [--stdout]
 
-  --session-id ID    Compaction snapshot to recover the operator turn from (default: current).
-  --latest-turn TEXT Operator instruction to record. Omitted: keep what the capsule already has.
-  --stdout           Render to stdout and write nothing.
+  --stdout   Render to stdout and write nothing.
 EOF
 }
 
-SESSION_ID="current"
-LATEST_TURN=""
 MODE="write"
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
-        --session-id) SESSION_ID="${2:-}"; shift 2 ;;
-        --latest-turn) LATEST_TURN="${2:-}"; shift 2 ;;
         --stdout) MODE="stdout"; shift ;;
         -h|--help) usage; exit 0 ;;
         *) usage >&2; exit 2 ;;
@@ -41,28 +41,16 @@ while [[ $# -gt 0 ]]; do
 done
 
 PYTHONPATH="${VAULT_ROOT}/scripts/python" VAULT_ROOT="${VAULT_ROOT}" \
-    python3 - "$SESSION_ID" "$LATEST_TURN" "$MODE" <<'PYEOF'
+    python3 - "$MODE" <<'PYEOF'
 import sys
 
-from chrono_state import compaction, resume
+from chrono_state import resume
 
-session_id, latest_turn, mode = sys.argv[1], sys.argv[2], sys.argv[3]
-
-# An explicit --latest-turn wins; otherwise a real line already in the capsule is
-# kept, and the compaction snapshot's turn only fills a vacuum (a missing capsule
-# or the placeholder). No timestamps: mtime is not a causality signal, and the
-# snapshot never competes with an existing line (resolve_operator_turn owns the
-# rule).
-turn = resume.resolve_operator_turn(
-    latest_turn or None,
-    compaction.recover(session_id).get("latest_turn"),
-)
+mode = sys.argv[1]
 
 if mode == "stdout":
-    sys.stdout.write(
-        resume.render_capsule(session_id, turn or "(none recorded)") + "\n"
-    )
+    sys.stdout.write(resume.render_capsule("current") + "\n")
 else:
-    dest = resume.write_capsule(session_id, turn)
+    dest = resume.write_capsule("current")
     print(f"resume capsule regenerated: {dest}")
 PYEOF

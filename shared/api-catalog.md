@@ -72,7 +72,7 @@ the matching §12 entry carries the literal command:
 
 ## 1. Anthropic / Claude
 
-Claude Code CLI flags — verified live via `claude --help` capture and targeted live-flag tests on 2026-05-02. Subscription auth (Max plan) used via env-drop pattern.
+Claude Code CLI flags — verified live via `claude --help` capture and targeted live-flag tests on 2026-05-02. Subscription (OAuth) auth via the env-drop pattern (`env -u ANTHROPIC_API_KEY`).
 
 ### claude --effort {low,medium,high,xhigh,max}
 - url: N/A (CLI flag)
@@ -243,7 +243,7 @@ Claude Code CLI flags — verified live via `claude --help` capture and targeted
 - verified: yes
 - last_checked: 2026-05-02
 - test_reference: claude.ai/design web access via Max plan
-- notes: Web-app surface for design generation. Operator has Max access.
+- notes: Web-app surface for design generation.
 
 ### Claude Computer Use API
 - url: https://docs.anthropic.com/en/docs/build-with-claude/computer-use
@@ -258,7 +258,7 @@ Claude Code CLI flags — verified live via `claude --help` capture and targeted
 
 ## 2. OpenAI / Codex
 
-Codex CLI flags — verified live via `codex --help` capture and targeted live-flag tests on 2026-05-02. Subscription auth (ChatGPT Plus) used via env-drop pattern.
+Codex CLI flags — verified live via `codex --help` capture and targeted live-flag tests on 2026-05-02. Subscription (ChatGPT login) auth via the env-drop pattern (`env -u OPENAI_API_KEY`).
 
 ### codex -c <key=value>
 - url: N/A (CLI flag)
@@ -399,20 +399,20 @@ Codex CLI flags — verified live via `codex --help` capture and targeted live-f
 - url: N/A (subcommand)
 - access: Subscription
 - specialists: async-task workflows (potential)
-- verified: yes for authenticated list/read access; no claim for task submission, apply, or mutation
+- verified: yes for CLI interface only; entitlement needs a local authorized check
 - last_checked: 2026-07-21
-- test_reference: `codex cloud list --limit 1` returned an authenticated existing task with `[READY]` state and no diff; `codex cloud --help` exposed `exec/status/list/apply/diff`
-- notes: Experimental async surface is reachable on this Codex lane. Only list/read was exercised; submitting tasks or applying cloud diffs remains separately scope- and mutation-gated.
+- test_reference: `codex cloud --help` exposed `exec/status/list/apply/diff`
+- notes: Experimental async CLI interface. Entitlement and list/read access require a local authorized check; task submission and applying cloud diffs remain separately scope- and mutation-gated.
 
 ### Codex Cloud Agents (async)
 - url: https://chat.openai.com/codex (web)
 - access: Subscription (ChatGPT Plus or higher)
 - specialists: long-running coding tasks (if available)
-- verified: partial
+- verified: needs-research — entitlement requires a local authorized check
 - last_checked: 2026-07-21
-- test_reference: authenticated `codex cloud list --limit 1` returned an existing cloud task and its Codex task URL
-- research_task: verify a separately authorized bounded task submission and result/apply path before claiming end-to-end execution
-- notes: Async task inventory is reachable through the CLI; the web UI and create/apply lifecycle were not exercised.
+- test_reference: `codex cloud --help` documents the CLI interface only
+- research_task: verify entitlement and read access locally under authorization, then separately authorize a bounded task submission and result/apply check before claiming end-to-end execution
+- notes: CLI help does not establish account access, web UI availability, or the create/apply lifecycle.
 
 ### Codex native macOS computer use
 - url: https://platform.openai.com/docs/guides/computer-use
@@ -421,14 +421,14 @@ Codex CLI flags — verified live via `codex --help` capture and targeted live-f
 - verified: needs-research
 - last_checked: 2026-05-02
 - research_task: verify access path from codex CLI; is computer use a CLI surface or API-only?
-- notes: Operator has computer-use MCP in claude session — codex equivalent unconfirmed.
+- notes: Whether the Codex CLI exposes computer use at all is unconfirmed.
 
 ### OpenAI direct API credential
 - access: Metered direct API; separate from Codex subscription authentication
 - specialists: ai-engineer only under an explicitly budgeted provider route
-- verified: partial — `OPENAI_API_KEY` is present in the 2026-07-21 Codex launch environment; no provider request was made
+- verified: partial — requires `OPENAI_API_KEY`; no provider request has been made
 - last_checked: 2026-07-21
-- test_reference: environment-variable name/presence probe only; value was never printed
+- test_reference: name-only credential check (2026-07-21); no value printed, no provider request
 - notes: Credential presence is not endpoint/model/spend authorization. Keep direct calls disabled until a task supplies an allowlist and numeric ceiling.
 
 ---
@@ -438,9 +438,9 @@ Codex CLI flags — verified live via `codex --help` capture and targeted live-f
 ### Gemini direct API credential
 - access: Metered direct API; separate from the `agy` lane's personal OAuth
 - specialists: ai-engineer and approved media wrappers only
-- verified: partial — `GEMINI_API_KEY` and `GOOGLE_API_KEY` are present in the 2026-07-21 Codex launch environment; no provider request was made
+- verified: partial — requires `GEMINI_API_KEY` or `GOOGLE_API_KEY`; no provider request has been made
 - last_checked: 2026-07-21
-- test_reference: environment-variable name/presence probe only; values were never printed
+- test_reference: name-only credential check (2026-07-21); no value printed, no provider request
 - notes: Credential presence does not prove a model or operation. Direct calls remain behind provider/model allowlists and numeric spend ceilings.
 
 The `gemini` routing lane runs through Antigravity's `agy` CLI under personal
@@ -456,16 +456,34 @@ reported version 1.1.23 and the help command exited 0.
 - verified: yes-as-flag
 - last_checked: 2026-09-01
 - test_reference: `agy--help@2026-09-01:exit-0`
-- notes: The board passes the literal `model_id` owned by `shared/registries/profiles.tsv`.
+- notes: The board passes the literal `model_id` owned by [the profile registry](registries/profiles.tsv). The historical verification above proves the flag, not access to every model.
 
-### agy --effort {low,medium,high}
+**Configured routing:** Gemini 4 “Argon” is bound in configuration as the standard
+`gemini` model via profiles `gemini.argon.high` and `gemini.argon.medium` in
+[the profile registry](registries/profiles.tsv). A configured binding does not
+establish provider entitlement or role performance. Consult the
+[official Antigravity CLI reference](https://antigravity.google/docs/cli/reference/)
+for the provider interface and verify access with a current authorized probe.
+
+Resolve active
+bindings from the [canonical runtime map](specialist-runtime-map.tsv) and
+[profile registry](registries/profiles.tsv). Role performance and cost benefits
+remain unmeasured.
+
+Activation requires a provider-advertised exact ID, a fixed-output board canary
+with requested/effective-model evidence, and representative role/tool tests.
+Only then update scoped profiles, runtime bindings and generated adapters, and
+run validators while preserving cross-family review, backups and safety gates.
+Configuration alone cannot qualify Argon.
+
+### agy --effort {low,medium,high,xhigh,max}
 - url: N/A (CLI flag)
 - access: Personal OAuth
 - specialists: direct Antigravity sessions
 - verified: yes-as-flag
-- last_checked: 2026-09-01
-- test_reference: `agy--help@2026-09-01:exit-0`
-- notes: The board rail currently selects a profile model but does not pass a Gemini-lane effort flag.
+- last_checked: 2026-10-26 (agy 1.4.7)
+- test_reference: `agy --help @ 2026-10-26 (agy 1.4.7): exit-0` (historical: `agy--help@2026-09-01:exit-0`)
+- notes: The board rail currently selects a profile model (`--effort` is also passed when configured by the lane launcher).
 
 ### agy --print / --prompt <text>
 - url: N/A (CLI flag)
@@ -476,13 +494,13 @@ reported version 1.1.23 and the help command exited 0.
 - test_reference: `agy--help@2026-09-01:exit-0`
 - notes: Non-interactive single-prompt mode.
 
-### agy --mode {accept-edits,plan}
+### agy --mode {accept-edits,auto,plan}
 - url: N/A (CLI flag)
 - access: Personal OAuth
 - specialists: headless gemini-lane dispatch
 - verified: yes-as-flag
-- last_checked: 2026-09-01
-- test_reference: `agy--help@2026-09-01:exit-0`
+- last_checked: 2026-10-26 (agy 1.4.7)
+- test_reference: `agy --help @ 2026-10-26 (agy 1.4.7): exit-0` (historical: `agy--help@2026-09-01:exit-0`)
 - notes: Board dispatch does not pass this flag; memory distillation uses `plan`.
 
 ### agy --add-dir <directory>
@@ -631,210 +649,6 @@ reported version 1.1.23 and the help command exited 0.
 
 ---
 
-## 4. Moonshot / Kimi
-
-Kimi CLI flags — verified live via `kimi --help` capture on 2026-05-02. Subscription auth (`kimi login`) is OAuth-only; no env-drop needed.
-
-### kimi --print
-- url: N/A (CLI flag)
-- access: Subscription (`kimi login`)
-- specialists: all headless kimi dispatch (research pane)
-- verified: yes
-- last_checked: 2026-05-02
-- test_reference: `kimi --help` text "Run in print mode (non-interactive)"
-- notes: Headless mode.
-
-### kimi --quiet
-- url: N/A (CLI flag)
-- access: Subscription
-- specialists: structured-output kimi specialists
-- verified: yes
-- last_checked: 2026-05-02
-- test_reference: `kimi --help` capture; alias for `--print --output-format text --final-message-only`
-- notes: Compact output mode.
-
-### kimi --thinking / --no-thinking
-- url: N/A (CLI flag)
-- access: Subscription
-- specialists: research, deep-thinking specialists
-- verified: yes
-- last_checked: 2026-05-02
-- test_reference: `kimi --help` text "Enable thinking mode. Default: default thinking mode set in config file."
-- notes: Explicit thinking-mode toggle (kimi has it, gemini does NOT).
-
-### kimi -p / --prompt <text> (alias -c / --command)
-- url: N/A (CLI flag)
-- access: Subscription
-- specialists: all headless kimi dispatch
-- verified: yes
-- last_checked: 2026-05-02
-- test_reference: `kimi --help` capture
-- notes: Prompt input.
-
-### kimi -y / --yolo / --yes
-- url: N/A (CLI flag)
-- access: Subscription
-- specialists: fully-unattended dispatch
-- verified: yes
-- last_checked: 2026-05-02
-- test_reference: `kimi --help` capture
-- notes: Auto-approve all actions.
-
-### kimi --add-dir <directory>
-- url: N/A (CLI flag)
-- access: Subscription
-- specialists: cross-dir kimi specialists
-- verified: yes
-- last_checked: 2026-05-02
-- test_reference: `kimi --help` capture
-- notes: Filesystem-scope expansion.
-
-### kimi -w / --work-dir <directory>
-- url: N/A (CLI flag)
-- access: Subscription
-- specialists: kimi specialists working in non-cwd directory
-- verified: yes
-- last_checked: 2026-05-02
-- test_reference: `kimi --help` capture
-- notes: Working-directory override.
-
-### kimi -m / --model <text>
-- url: N/A (CLI flag)
-- access: Subscription
-- specialists: model-routing specialists
-- verified: yes
-- last_checked: 2026-05-02
-- test_reference: `kimi --help` capture
-- notes: Model selector.
-
-### kimi --mcp-config-file <file> (repeatable)
-- url: N/A (CLI flag)
-- access: Subscription
-- specialists: board dispatch harness (kimi path)
-- verified: yes
-- last_checked: 2026-05-02
-- test_reference: `kimi --help` capture
-- notes: Per-launch MCP scoping.
-
-### kimi --mcp-config <text> (JSON string, repeatable)
-- url: N/A (CLI flag)
-- access: Subscription
-- specialists: board dispatch harness
-- verified: yes
-- last_checked: 2026-05-02
-- test_reference: `kimi --help` capture
-- notes: JSON-string MCP config.
-
-### kimi --skills-dir <directory> (repeatable)
-- url: N/A (CLI flag)
-- access: Subscription
-- specialists: harness-optimizer (skill-set scoping)
-- verified: yes
-- last_checked: 2026-05-02
-- test_reference: `kimi --help` text "Overrides default discovery"
-- notes: Override skill-discovery roots.
-
-### kimi --agent {default,okabe}
-- url: N/A (CLI flag)
-- access: Subscription
-- specialists: persona-specific kimi dispatch
-- verified: yes
-- last_checked: 2026-05-02
-- test_reference: `kimi --help` capture
-- notes: Builtin agent selection.
-
-### kimi --agent-file <file>
-- url: N/A (CLI flag)
-- access: Subscription
-- specialists: board dispatch harness (custom-agent path)
-- verified: yes
-- last_checked: 2026-05-02
-- test_reference: `kimi --help` capture
-- notes: Custom agent specification.
-
-### kimi --max-steps-per-turn <N>
-- url: N/A (CLI flag)
-- access: Subscription
-- specialists: long-running kimi specialists
-- verified: yes
-- last_checked: 2026-05-02
-- test_reference: `kimi --help` capture; INTEGER ≥ 1
-- notes: Step-budget per turn.
-
-### kimi --max-retries-per-step <N>
-- url: N/A (CLI flag)
-- access: Subscription
-- specialists: harness-optimizer
-- verified: yes
-- last_checked: 2026-05-02
-- test_reference: `kimi --help` capture; INTEGER ≥ 1
-- notes: Retry budget.
-
-### kimi --max-ralph-iterations <N>
-- url: N/A (CLI flag)
-- access: Subscription
-- specialists: ralph-loop kimi workflows
-- verified: yes
-- last_checked: 2026-05-02
-- test_reference: `kimi --help` text "Extra iterations after the first turn in Ralph mode. Use -1 for unlimited."
-- notes: Ralph-mode iteration cap.
-
-### kimi --afk
-- url: N/A (CLI flag)
-- access: Subscription
-- specialists: long-running unattended dispatch
-- verified: yes
-- last_checked: 2026-05-02
-- test_reference: `kimi --help` capture; "AFK mode auto-dismisses AskUserQuestion"
-- notes: Auto-dismiss user-question prompts.
-
-### kimi --plan
-- url: N/A (CLI flag)
-- access: Subscription
-- specialists: planner specialists
-- verified: yes
-- last_checked: 2026-05-02
-- test_reference: `kimi --help` capture
-- notes: Start in plan mode.
-
-### kimi --input-format / --output-format {text,stream-json}
-- url: N/A (CLI flag)
-- access: Subscription
-- specialists: structured-IO specialists
-- verified: yes
-- last_checked: 2026-05-02
-- test_reference: `kimi --help` enum capture
-- notes: Structured I/O.
-
-### Kimi 300 parallel sub-agents (native)
-- url: N/A
-- access: Subscription
-- specialists: research, large-context-analyst (potentially)
-- verified: needs-research
-- last_checked: 2026-05-02
-- research_task: verify usage pattern; not a CLI flag, may be K2.6 model behavior or runtime/agent-spec capability documented elsewhere
-- notes: `--help` exposes `--max-steps-per-turn` and `--max-ralph-iterations` but NO explicit "parallel sub-agent count" flag.
-
-### Kimi 4000 coordinated tool steps
-- url: N/A
-- access: Subscription
-- specialists: research, multi-step kimi specialists
-- verified: needs-research
-- last_checked: 2026-05-02
-- research_task: identify the actual mechanism — config-file key, model-side capability, or marketing claim
-- notes: Same status as 300-parallel claim.
-
-### MoonViT vision
-- url: https://moonshot.ai (likely)
-- access: Subscription (uncertain)
-- specialists: vision specialists, screenshot-analysis workflows
-- verified: needs-research
-- last_checked: 2026-05-02
-- research_task: confirm access path (CLI surface vs API)
-- notes: Moonshot's vision capability.
-
----
-
 ## 5. xAI / Grok
 
 ### xAI direct chat/reasoning (requested `grok-4-fast` alias)
@@ -844,7 +658,7 @@ Kimi CLI flags — verified live via `kimi --help` capture on 2026-05-02. Subscr
 - verified: yes for direct text/reasoning transport; partial for vision and exact-model pinning
 - last_checked: 2026-07-17
 - test_reference: `TASK-2026-07-17-0310-probemetered` made one bounded direct chat-completions call: HTTP 200, requested `grok-4-fast`, returned `grok-4.3`, with visible text plus reasoning-token telemetry.
-- notes: Direct chat/reasoning is verified only under the registry metered guard. Vision was not probed, and this call used zero sources, so it does not verify or replace the separate grounded `xai_search` route. The requested alias remapped and must not be treated as exact-model pinning.
+- notes: Direct chat/reasoning is verified only under the registry metered guard. Vision was not probed, and this call used zero sources. The requested alias remapped and must not be treated as exact-model pinning.
 
 ### Grok-X integration
 - url: https://x.ai
@@ -855,13 +669,22 @@ Kimi CLI flags — verified live via `kimi --help` capture on 2026-05-02. Subscr
 - research_task: investigate full integration surface
 - notes: Beyond Grok-4-fast model access — broader xAI product surface.
 
+### grok CLI (board lane)
+- url: https://x.ai
+- access: API (`XAI_API_KEY`; `auth_policy=xai-api-key-only` in `model-lanes/lane-capabilities.tsv`)
+- specialists: smokey (primary), research and bounty-researcher (escalate), plus backup/review routes in `shared/specialist-runtime-map.tsv`
+- verified: yes for CLI binary and board-lane declaration; live per-server MCP connection status not re-probed in this session
+- last_checked: 2026-10-26 (`grok --version` → `1.0.44`); historical full-surface probe `2026-09-01:grok-1.0.5:inspect-289skills+28agents+15mcps+imagine:exit-0`
+- test_reference: `model-lanes/lane-capabilities.tsv` (`grok` row: `cli=grok`, `auth_policy=xai-api-key-only`, 15 declared MCPs); `bin/board-supervisor.sh` launches `grok` with `--disable-web-search`
+- notes: First-class board lane (`to_model: grok`). The board launch requires an xAI API key. Its `--disable-web-search` flag disables general web retrieval while native `x_keyword_search` and `x_thread_fetch` remain available; `shared/routing.md` § Grok board launch constraints owns the boundary and probe provenance.
+
 ---
 
 ## 6. DeepSeek
 
 ### DeepSeek direct chat (`deepseek-chat` returned `deepseek-v4-flash`)
 - url: https://api.deepseek.com/chat/completions
-- access: Direct API (`DEEPSEEK_API_KEY` present on the probed Codex lane)
+- access: Direct API (`DEEPSEEK_API_KEY`)
 - specialists: cost-sensitive fan-out, contrarian model voice
 - verified: yes for direct text-completion transport; partial for coding/reasoning quality
 - last_checked: 2026-07-17
@@ -910,8 +733,8 @@ Per-pane verification matrix for each chrono-* family MCP. Claude pane verificat
   - sysmgmt pane (claude): yes — same
   - coding pane (codex): yes — `codex mcp list` shows enabled in chrono-* config (ENV: CHRONO_VAULT_ROOT, OBSIDIAN_REST_API_KEY, OBSIDIAN_VAULT_ROOT)
   - content lane (gemini via agy): declared in `model-lanes/lane-capabilities.tsv`; current live connection status requires an `agy mcp list` probe
-  - research pane (kimi): yes — `kimi mcp list` shows configured
-- last_checked: 2026-05-03 for claude panes; 2026-05-02 for codex/kimi; Gemini declaration reconciled 2026-09-01, live connection status not re-probed
+  - grok lane (grok): declared in `model-lanes/lane-capabilities.tsv` (historical receipt `2026-09-01:grok-1.0.5:inspect-289skills+28agents+15mcps+imagine:exit-0`; current live connection status not re-probed)
+- last_checked: 2026-05-03 for claude panes; 2026-05-02 for codex; Gemini and Grok declarations reconciled 2026-09-01, live connection status not re-probed
 
 ### chrono-kg MCP
 - status: live compatibility namespace backed by `chrono-vault`; no SQLite state remains
@@ -920,45 +743,44 @@ Per-pane verification matrix for each chrono-* family MCP. Claude pane verificat
 - last_checked: 2026-09-01 from the registered `FastMCP("chrono-kg")` server and namespace dispatch path
 
 ### chrono-obsidian MCP
-- purpose: Obsidian REST-API bridge for vault read/write
-- specialists: technical-writer, brand-voice, any specialist publishing markdown to operator's vault
+- purpose: legacy read-only alias of `chrono-vault` (`plugins/chrono-vault/mcp_server.py --namespace obsidian`) exposing `vault_list`, `vault_get`, and `vault_search` for human-only browsing; no publish path exists here (typed durable-memory notes use `chrono-vault:record`, and arbitrary Markdown publishing is supplied by neither this alias nor `record`)
 - verified per pane:
   - chrono pane (claude): yes — test_reference: `claude mcp list` post-2026-05-03 tilde-fix shows ✓ Connected
   - security pane (claude): yes — same
   - sysmgmt pane (claude): yes — same
   - coding pane (codex): yes — `codex mcp list` shows enabled (ENV: OBSIDIAN_REST_API_KEY, OBSIDIAN_VAULT_ROOT)
-  - content pane (gemini): yes — verified post-Task 6
-  - research pane (kimi): yes — `kimi mcp list` shows configured
-- last_checked: 2026-05-03 for claude panes; 2026-05-02 for codex/kimi; 2026-05-02 for gemini (absent)
+  - content lane (gemini via agy): declared in `model-lanes/lane-capabilities.tsv` (historical 2026-05-02 inventory noted absent before post-Task 6 configuration; not named in the 2026-09-02 `agy` MCP-list receipt; current live connection status not re-probed)
+  - grok lane (grok): declared in `model-lanes/lane-capabilities.tsv` (historical receipt `2026-09-01:grok-1.0.5:inspect-289skills+28agents+15mcps+imagine:exit-0`; current live connection status not re-probed)
+- last_checked: 2026-05-03 for claude panes; 2026-05-02 for codex; Gemini and Grok declarations checked 2026-10-26 (live status not re-probed)
 
 ### chrono-catalog MCP (retired/removed)
 - status: retired 2026-07-14 — the plugin registration was removed because the namespace was never implemented and crashed at startup
 - replacement: inspect installed plugin/skill manifests directly; use `chrono-vault` `record`/`recall` for durable memory
 
 ### chrono-research-arsenal MCP
-- purpose: Current live research wrapper exposing `arxiv_search`, `xai_search`, and the Firecrawl v2 operations `firecrawl_scrape`, `firecrawl_crawl`, and `firecrawl_parse`. `firecrawl_scrape` is provider-proven; crawl/parse are registered and unit-tested but remain partial until their own provider calls are authorized and pass. `perplexity_search_web` remains a sibling MCP under the same plugin namespace via `uvx perplexity-mcp`. Brave, Apify, and Serper are separately verified metered direct-API routes; they are not wrapper operations and still require task budgets.
+- purpose: Current live research wrapper exposing `arxiv_search` (`e.g. category + query -> paper metadata/abstracts`). Brave, Apify, and Serper are separately verified metered direct-API routes; they are not wrapper operations and still require task budgets.
 - specialists: research, scout, large-context-analyst, data-extraction-engineer
 - verified per pane:
-  - chrono pane (claude): yes — wrapper registered; verified live: `arxiv_search`, `perplexity_search_web` (Perplexity smoke test 2026-07-12 returned cited results), and `xai_search` (fixed 2026-07-12 to use xAI Responses API `POST https://api.x.ai/v1/responses` with `web_search` / `x_search` tools; smoke test returned `ok:true` with real URLs).
+  - chrono pane (claude): yes — wrapper registered; verified live: `arxiv_search`.
   - security pane (claude): yes — same
   - sysmgmt pane (claude): yes — same
-  - coding pane (codex): yes — registered; 2026-07-20 MCP handshake returned all five operations. On 2026-07-21 the fixed `firecrawl_scrape` wrapper returned HTTP 200, provider `success:true`, and 165 characters of real Example Domain markdown. Crawl/parse have no live provider receipt.
-  - content pane (gemini): yes — live runtime probe 2026-07-15 confirmed `arxiv_search` and `xai_search`; the shared wrapper makes the three Firecrawl operations available through the same configured server. `perplexity_search_web` remains a separate sibling surface.
-  - research pane (kimi): lead-broker registration only; the shared wrapper advertises the same Firecrawl operations, but Kimi children must route them through the lead rather than claiming inherited child MCP access.
-- last_checked: 2026-07-21 for the default-off retention fix, ten focused unit tests, and one bounded live scrape
-- test_reference: fixed wrapper call to `https://example.com/` returned `{ok:true,status_code:200}` with provider `success:true` and real markdown; the key came from the off-repo launch environment sourced by `~/.config/shell/secrets.zsh`, and its value was never printed
-- Firecrawl provider path: `chrono-research-arsenal:firecrawl_scrape` / `firecrawl_crawl` / `firecrawl_parse`, distinct from the Claude-only skill plugin below. The wrapper reads `FIRECRAWL_API_KEY` only at call time and never returns it. Scrape/crawl are bounded, do not accept caller headers, and disable provider cache where supported. `zeroDataRetention` is omitted by default; `FIRECRAWL_ZERO_DATA_RETENTION=true` explicitly enables the enterprise-only option. An opt-in 403 returns a typed error and never silently retries with weaker retention. Parse accepts explicit base64 bytes only (no filesystem path), supports documented document extensions, and caps payloads at 10 MiB.
+  - coding pane (codex): yes — registered (`arxiv_search`).
+  - content pane (gemini): yes — live runtime probe 2026-07-15 confirmed `arxiv_search`.
+  - grok lane (grok): declared in `model-lanes/lane-capabilities.tsv` (historical receipt `2026-09-01:grok-1.0.5:inspect-289skills+28agents+15mcps+imagine:exit-0`; current live connection status not re-probed)
+- last_checked: 2026-07-21
+- test_reference: `arxiv_search` live handshake and paper-query verification across Claude, Codex, and Gemini
 
 ### chrono-media-studio MCP
-- purpose: Current live content/media wrapper exposing `generate_image`, `generate_video`, and `generate_audio`. Provider-specific child routes such as ElevenLabs and Higgsfield are separate surfaces unless the active lane schema exposes them.
+- purpose: Current live content/media wrapper exposing `generate_image`, `generate_video`, `generate_audio`, and `openai_auth_diagnostic` (non-generating OpenAI auth probe). Provider-specific child routes such as ElevenLabs and Higgsfield are separate surfaces unless the active lane schema exposes them.
+- route: OpenAI images default to a subscription-backed CLI route (`openai_route="codex"`); the API-key route is opt-in (`openai_route="api"`). Gemini images use the agy CLI; xAI images and video providers use API routes. The wrapper retains its `metered` classification and `paid_media` gate; route selection does not authorize provider spend.
 - specialists: image-designer, video-director, video-editor, music-composer, sound-designer, voice-narrator
 - verified per pane:
   - chrono pane (claude): wired-pending-relaunch — correct `chrono-media-studio@claude-vibe-squad` project enablement is now present; post-relaunch connection receipt required
   - security pane (claude): wired-pending-relaunch — same shared Claude plugin/config context
   - sysmgmt pane (claude): wired-pending-relaunch — same shared Claude plugin/config context
   - coding pane (codex): yes — registered; wrapper tools must be verified with `tools/list`
-  - content pane (gemini): yes — wrapper registered; current wrapper tools are `generate_image`, `generate_video`, `generate_audio`; do not request ElevenLabs child tools from Gemini unless the lane schema exposes them
-  - research pane (kimi): yes — registered; wrapper tools must be verified with `tools/list`
+  - content pane (gemini): yes — wrapper registered; current wrapper tools are `generate_image`, `generate_video`, `generate_audio`, `openai_auth_diagnostic`; do not request ElevenLabs child tools from Gemini unless the lane schema exposes them
+  - grok lane (grok): declared in `model-lanes/lane-capabilities.tsv` (historical receipt `2026-09-01:grok-1.0.5:inspect-289skills+28agents+15mcps+imagine:exit-0`; current live connection status not re-probed)
 - last_checked: 2026-07-21 for Claude-lane plugin diagnosis and project enablement; not yet post-relaunch verified
 
 ### Codex Sites connector
@@ -973,14 +795,14 @@ Per-pane verification matrix for each chrono-* family MCP. Claude pane verificat
 - purpose: OSINT recon — DNS, WHOIS, crt.sh certificate enumeration, Wayback snapshots, GitHub leaked-secrets search. Tools: `dns_enumerate_tool`, `whois_lookup_tool`, `crt_sh_certificates_tool`, `wayback_snapshots_tool`, `github_leaked_secrets_tool`.
 - specialists: scout, security-analyst, exploit-developer
 - verified per pane:
-  - chrono pane (claude): yes — `claude mcp list` shows `plugin:chrono-recon:chrono-recon` ✓ Connected (loaded via the `chrono` plugin marketplace, not the `settings.json` `mcpServers` block)
+  - chrono pane (claude): yes — `claude mcp list` shows `plugin:chrono-recon:chrono-recon` ✓ Connected (loaded via the `claude-vibe-squad` plugin marketplace, not the `settings.json` `mcpServers` block)
   - security pane (claude): yes — same (claude global config)
   - sysmgmt pane (claude): yes — same
   - coding pane (codex): yes — `codex mcp list` shows `chrono-recon` enabled (ENV: GH_TOKEN)
-  - content pane (gemini): yes — `~/.gemini/settings.json` `mcpServers` includes `chrono-recon`
-  - research pane (kimi): yes — `kimi mcp list` shows `chrono-recon` (stdio)
-- last_checked: 2026-07-12 — live re-verified on all 4 model CLIs; 5 tools returned by a `tools/list` handshake
-- notes: Recon-only (no active scanning). `github_leaked_secrets_tool` requires a valid `GH_TOKEN` in the lane env (the Gemini pane currently stores it literally — tracked separately). Cited in `scout` / `security-analyst` / `exploit-developer` `preferred_tools`.
+  - content lane (gemini via agy): yes — historical probe receipt `2026-09-02:agy-1.1.23:mcp-list-sequential-thinking+chrono-recon:exit-0`; current live connection not re-probed
+  - grok lane (grok): declared in `model-lanes/lane-capabilities.tsv` (historical receipt `2026-09-01:grok-1.0.5:inspect-289skills+28agents+15mcps+imagine:exit-0`; current live connection status not re-probed)
+- last_checked: 2026-07-12 — live re-verified on all 3 subscription model CLIs; 5 tools returned by a `tools/list` handshake
+- notes: Recon-only (no active scanning). `github_leaked_secrets_tool` requires a valid `GH_TOKEN` in the lane env. Cited in `scout` / `security-analyst` / `exploit-developer` `preferred_tools`.
 
 ### sequential-thinking MCP
 - purpose: Multi-step structured reasoning tool (`sequentialthinking`)
@@ -990,9 +812,9 @@ Per-pane verification matrix for each chrono-* family MCP. Claude pane verificat
   - security pane (claude): yes — same
   - sysmgmt pane (claude): yes — same
   - coding pane (codex): yes — `codex mcp list` shows enabled (stdio, npx)
-  - content pane (gemini): yes — verified post-Task 6
-  - research pane (kimi): yes — `kimi mcp list` shows configured (stdio, npx)
-- last_checked: 2026-05-02 (claude/codex/kimi); 2026-05-02 (gemini absent)
+  - content lane (gemini via agy): declared in `model-lanes/lane-capabilities.tsv`; historical probe receipt `2026-09-02:agy-1.1.23:mcp-list-sequential-thinking+chrono-recon:exit-0` (supersedes 2026-05-02 absent observation; current session live connection not re-probed)
+  - grok lane (grok): declared in `model-lanes/lane-capabilities.tsv` (historical receipt `2026-09-01:grok-1.0.5:inspect-289skills+28agents+15mcps+imagine:exit-0`; current live connection status not re-probed)
+- last_checked: 2026-05-02 (claude/codex); 2026-09-02 receipt for gemini (`agy 1.1.23`); 2026-09-01 receipt for grok
 
 ---
 
@@ -1004,11 +826,9 @@ Claude Code plugins available on the `claude` / `chrono` panes. Not part of the 
 - purpose: Browser navigation, DOM/accessibility snapshots, console/network inspection, screenshots, and non-authenticated scraping in fresh isolated browser profiles.
 - verified per pane:
   - claude: yes — existing fresh-browser MCPs; authenticated raw-CDP `:9222` remains a separate Claude-specific path.
-  - codex: yes — repo-local `model-lanes/gpt-codex/.codex/config.toml` pins `@playwright/mcp@0.0.78` and `chrome-devtools-mcp@1.6.0`; `codex mcp list` reported both enabled and direct MCP handshakes returned tool lists.
+  - codex: declared browser MCP routes; follow [utility MCP setup](../docs/install/README.md#8-utility-mcps), then verify locally with `codex mcp list` and a `tools/list` handshake before claiming availability.
   - gemini: declared for the agy-backed lane in `model-lanes/lane-capabilities.tsv`; persistent `agy` MCP state requires a current live probe before connection is claimed.
-  - kimi: no inherited child MCP — `lead-broker-only`; browser work must be brokered by the lead or use the host CLI after a task-local probe.
-- Playwright PATH CLI: `/opt/homebrew/bin/playwright`, version `1.61.0`, probe receipt `2026-07-20:shell-playwright-cli:exit-0`.
-- MCP receipts: `2026-07-20:codex-playwright+chrome-devtools:exit-0`; `2026-07-20:gemini-playwright+chrome-devtools:exit-0`.
+- Local verification (unverified on the reader's host): `playwright --version`; use the lane's MCP listing and a `tools/list` handshake for each configured browser MCP.
 - notes: These MCPs launch fresh profiles and do not imply access to the operator's authenticated browser session. Scout's authenticated CDP `:9222` recon stays Claude-anchored.
 
 ### context7 MCP
@@ -1018,24 +838,15 @@ Claude Code plugins available on the `claude` / `chrono` panes. Not part of the 
 - verified: yes
 - last_checked: 2026-07-12
 - test_reference: `claude mcp list` shows `plugin:context7:context7` ✓ Connected (`npx -y @upstash/context7-mcp`)
-- notes: Live docs fetch (`resolve-library-id`, `query-docs`). Claude/chrono panes only; not registered on codex/gemini/kimi.
-
-### firecrawl (plugin skills — NOT an MCP server)
-- url: https://www.firecrawl.dev
-- access: Public (Claude Code plugin `firecrawl@claude-plugins-official`; live calls need a Firecrawl API key)
-- specialists: any specialist doing web scrape/crawl (no current brief declares `firecrawl:*` in `required_tools`)
-- verified: yes (plugin enabled) — NOTE: firecrawl is a **skills** plugin, not an MCP server; it does **not** appear in `claude mcp list`.
-- last_checked: 2026-07-12
-- test_reference: `jq '.enabledPlugins["firecrawl@claude-plugins-official"]' ~/.claude/settings.json` → `true`; skills `firecrawl-scrape` / `firecrawl-crawl` / `firecrawl-map` / `firecrawl-parse` present in the plugin catalog.
-- notes: The `firecrawl:scrape` token used by the legacy Claude plugin refers to this plugin's scrape capability, not an MCP `server:tool`. The all-lane replacement path is separately cataloged as `chrono-research-arsenal:firecrawl_scrape`; a key-backed call still requires `FIRECRAWL_API_KEY` in the executing lane's off-repo environment.
+- notes: Live docs fetch (`resolve-library-id`, `query-docs`). Claude/chrono panes only; not registered on codex/gemini.
 
 ### ultra-research (Claude deep-research slash command)
-- url: N/A (local Claude plugin)
+- url: N/A (legacy local Claude plugin; not shipped in this repository)
 - access: Local plugin; rounds call metered providers and require a separate explicit budget/confirmation gate
 - specialists: large-context-analyst (Claude handoff owner); research and bounty-researcher route deep six-round work to that role
-- verified: no (present legacy plugin, failed current slash-command discovery)
+- verified: no (legacy local plugin; failed current slash-command discovery)
 - last_checked: 2026-07-20
-- test_reference: no-execution probe `claude --plugin-dir ~/.claude/plugins/ultra-research --tools '' ... -p '/ultra-research ...'` returned `Unknown command: /ultra-research` with zero turns/tokens/cost; `claude plugin validate ~/.claude/plugins/ultra-research` reported the missing `.claude-plugin/plugin.json`
+- test_reference: a no-execution probe `claude --plugin-dir <plugin-dir> --tools '' ... -p '/ultra-research ...'` returned `Unknown command: /ultra-research` with zero turns/tokens/cost; `claude plugin validate <plugin-dir>` reported the missing `.claude-plugin/plugin.json`
 - notes: Do not run or advertise as live until the plugin is migrated inside an authorized write scope and a fresh slash-command probe passes. Grounded live search stays on Gemini. A full run remains separately gated because rounds use Perplexity, Gemini, GPT, Apify, and optional ElevenLabs resources.
 
 ---
@@ -1044,16 +855,16 @@ Claude Code plugins available on the `claude` / `chrono` panes. Not part of the 
 
 ### Gmail / email triage
 - access: Claude connected app / Gmail MCP where configured
-- specialists: privacy-steward, Outreach Mode approval gate
+- specialists: privacy-steward; `live_outreach` gate (`project` mode, `profile_family`: outreach)
 - verified: partial
-- last_checked: 2026-05-02 inventory shows Claude Gmail connected; current live MCP audit does not catalog it yet
+- last_checked: 2026-05-02; the current live MCP audit does not catalog it
 - notes: Read/triage/draft workflows are allowed only when the active pane has verified access. Sending requires explicit per-message operator approval.
 
 ### Google Calendar / reminders / todos
 - access: Calendar/Todo MCPs where configured
 - specialists: mac-ops
 - verified: auth-pending
-- last_checked: 2026-05-02 inventory marked Calendar auth-pending
+- last_checked: 2026-05-02
 - notes: Specialists must return a missing-auth report instead of claiming calendar/todo writes when auth is absent.
 
 ### Outreach pipeline bridge
@@ -1086,7 +897,7 @@ These showed `Failed to connect` in `claude mcp list` post-2026-05-03 tilde fix 
 - verified: yes (re-verified 2026-07-12; the 2026-05-03 "Failed to connect" no longer reproduces)
 - last_checked: 2026-07-12
 - test_reference: `claude mcp list` shows `plugin:github:github: https://api.githubcopilot.com/mcp/ (HTTP) - ✔ Connected`
-- notes: Now connects on the claude lane — the earlier failure is resolved (github graduated out of the failed set; kept here with a resolved marker rather than moved). Availability on codex/gemini/kimi is per-lane; verify before citing off-claude.
+- notes: Now connects on the claude lane — the earlier failure is resolved (github graduated out of the failed set; kept here with a resolved marker rather than moved). Availability on codex/gemini is per-lane; verify before citing off-claude.
 
 ### plugin:greptile:greptile (HTTP)
 - verified: no
@@ -1097,11 +908,16 @@ These showed `Failed to connect` in `claude mcp list` post-2026-05-03 tilde fix 
 
 ## 12. Local Security Toolchain
 
-Local security/bounty CLIs installed on the operator's Mac, invoked via **Bash** (these are CLIs, not MCPs). Specialists in the `security` and smart-contract namespaces may now cite any `verified: yes` entry here (this section is the sanction that unblocks the `## Tools` prose in those briefs).
+Local security/bounty CLIs, invoked via **Bash** (these are CLIs, not MCPs).
+Catalog verification does not establish availability on a reader's host: install
+and verify the intended tool locally before citing it. Entries explicitly marked
+unverified below provide setup/probe commands, not installation receipts.
+`access: Public` describes public distribution, not local installation or provider
+entitlement. Specialists may cite only entries marked `verified: yes`.
 
-Unless an entry carries a newer `last_checked`, `--version` output below was reproduced live on 2026-07-12 (root CLAUDE.md rule 8). `access: Public` = locally installed binary or local container image, no subscription/API gate.
-
-**PATH caveat:** `waybackurls` and `interactsh-client` are installed under `~/go/bin`, which is NOT on the default login PATH. Invoke them by absolute path, or add `~/go/bin` to PATH (operator action — not done by this task). All other tools are on PATH via `/opt/homebrew/bin` or `~/.local/bin`.
+**PATH setup:** `go install` normally writes binaries under `$(go env GOPATH)/bin`;
+add that directory to PATH or use an absolute path. Homebrew and uv installation
+prefixes vary by host; use `command -v <tool>` to resolve the intended executable.
 
 ### Smart-contract tooling → `smart-contract-engineer`, `exploit-developer`
 
@@ -1200,11 +1016,11 @@ Unless an entry carries a newer `last_checked`, `--version` output below was rep
 - url: https://github.com/fuzzland/ityfuzz
 - access: Public
 - specialists: smart-contract-engineer, exploit-developer
-- verified: yes (containerized CLI; native macOS ARM install is not verified)
-- install_command: `curl -fL https://github.com/fuzzland/ityfuzz/releases/download/nightly-35b7f08962fdd0c2e02df7ef8a43164913d514d9/ityfuzz_nightly_linux_amd64.tar.gz -o ~/.local/share/ityfuzz-nightly-35b7f089/ityfuzz_nightly_linux_amd64.tar.gz`; verify `shasum -a 256` equals `73cb7cdb8eab5341c2a61b267df83f63f7c537c2950c1aa1bdbdf15beadcb489`; build the repo-owned `Dockerfile.ityfuzz` as `docker build --platform linux/amd64 -f _state/tooling-arsenal-2026-07-18/Dockerfile.ityfuzz -t vibe-ityfuzz:nightly-35b7f089 _state/tooling-arsenal-2026-07-18`
-- last_checked: 2026-07-18
-- test_reference: `docker run --name arsenal-1015-ityfuzz-smoke --platform linux/amd64 --network none --read-only --tmpfs /tmp:rw,noexec,nosuid,size=16m --cap-drop ALL --security-opt no-new-privileges --pids-limit 64 --memory 512m --cpus 1 vibe-ityfuzz:nightly-35b7f089 --version` → `ityfuzz 35b7f08962fdd0c2e02df7ef8a43164913d514d9[...]`
-- notes: Use for EVM/MoveVM hybrid fuzzing and Foundry invariant campaigns in an authorized local test environment. The upstream release offers only Linux/amd64; the native Apple Silicon source build failed first on CMake policy handling and, after `CMAKE_POLICY_VERSION_MINIMUM=3.5`, on pinned Z3 4.12.1 / AppleClang compilation. The verified path is therefore the pinned container image, not a host binary. Retain explicit `--platform linux/amd64` on this ARM Mac and add network/write mounts only when an approved test plan requires them.
+- verified: no — installation and execution are unverified on the reader's host
+- install_command: download the pinned Linux/amd64 release with `curl -fL https://github.com/fuzzland/ityfuzz/releases/download/nightly-35b7f08962fdd0c2e02df7ef8a43164913d514d9/ityfuzz_nightly_linux_amd64.tar.gz -o ityfuzz_nightly_linux_amd64.tar.gz`; require `shasum -a 256 ityfuzz_nightly_linux_amd64.tar.gz` to equal `73cb7cdb8eab5341c2a61b267df83f63f7c537c2950c1aa1bdbdf15beadcb489`. Provision a compatible Linux/amd64 environment separately.
+- last_checked: unverified on the reader's host
+- test_reference: local verification command (unverified): `ityfuzz --version` inside the provisioned Linux/amd64 environment
+- notes: Use for EVM/MoveVM hybrid fuzzing and Foundry invariant campaigns only in an authorized local test environment. For a container route, use a reviewed image with `--platform linux/amd64`; authorize network and write mounts separately.
 
 ### Web / recon tooling → `scout`
 
@@ -1316,7 +1132,7 @@ Unless an entry carries a newer `last_checked`, `--version` output below was rep
 - verified: yes
 - last_checked: 2026-07-18
 - test_reference: `semgrep --version` → `1.157.0` (`/opt/homebrew/bin/semgrep`); `semgrep mcp --help` → bundled MCP entry point with `stdio` and `streamable-http`, both reproduced 2026-07-18
-- notes: Use for pattern-based SAST over target source. The bundled MCP is present in the restart-discoverable Claude/Codex project configs behind Context Protector; no running lane was restarted, so runtime activation remains operator-controlled.
+- notes: Use for pattern-based SAST over target source. The binary also bundles an MCP entry point (`semgrep mcp`), but no lane wires it; the guarded route through Context Protector was retired on 2026-10-27.
 
 ### LLM / agent security pilots → `security-analyst`, `experimental-attacker`, `agentops`
 
@@ -1324,61 +1140,61 @@ Unless an entry carries a newer `last_checked`, `--version` output below was rep
 - url: https://github.com/promptfoo/promptfoo
 - access: Public; provider campaigns remain separately cost/data-flow gated
 - specialists: security-analyst, experimental-attacker, test-engineer
-- verified: yes (CLI install/version smoke only)
-- install_command: `npm install --prefix _state/tooling-arsenal-2026-07-18/tools/promptfoo promptfoo@0.121.19`
-- last_checked: 2026-07-18
-- test_reference: state-local `promptfoo --version` → `0.121.19`; no provider was called
-- notes: Use for synthetic prompt/eval regression design. Never infer authorization for a live target or provider spend.
+- verified: no — installation and provider execution are unverified on the reader's host
+- install_command: `npm install --prefix <tool-root>/promptfoo promptfoo@0.121.19`
+- last_checked: unverified on the reader's host
+- test_reference: local verification command (unverified): `<tool-root>/promptfoo/node_modules/.bin/promptfoo --version`; this does not call a provider
+- notes: Use for synthetic prompt/eval regression design only after re-verifying the intended binary and version. Never infer authorization for a live target or provider spend.
 
 #### garak
 - url: https://github.com/NVIDIA/garak
 - access: Public; model/provider scans are separately gated
 - specialists: security-analyst, experimental-attacker
-- verified: yes (CLI version smoke only)
-- install_command: state-local Python 3.12 venv + `uv pip install 'garak==0.15.1'`
-- last_checked: 2026-07-18
-- test_reference: state-local `garak --version` → `garak LLM vulnerability scanner v0.15.1`
-- notes: Use for a bounded model-security baseline only after target, provider, data-flow, and spend authorization.
+- verified: no — installation and runtime use are unverified on the reader's host
+- install_command: a dedicated Python 3.12 venv + `uv pip install --python <venv>/bin/python 'garak==0.15.1'`
+- last_checked: unverified on the reader's host
+- test_reference: local verification command (unverified): `<venv>/bin/garak --version`; provider/model-backed execution requires separate authorization
+- notes: Use for a bounded model-security baseline only after reinstalling and obtaining target, provider, data-flow, and spend authorization.
 
 #### PyRIT
 - url: https://github.com/microsoft/PyRIT
 - access: Public; targets/providers remain separately gated
 - specialists: security-analyst, experimental-attacker
-- verified: yes (package import/version smoke only)
-- install_command: state-local Python 3.12 venv + `uv pip install 'pyrit==0.14.0'`
-- last_checked: 2026-07-18
-- test_reference: `importlib.metadata.version('pyrit')` → `0.14.0`; no scenario or target ran
-- notes: Use for reviewed multi-turn red-team scenario construction, never as authority to expand scope.
+- verified: no — installation and runtime use are unverified on the reader's host
+- install_command: a dedicated Python 3.12 venv + `uv pip install --python <venv>/bin/python 'pyrit==0.14.0'`
+- last_checked: unverified on the reader's host
+- test_reference: local verification command (unverified): `<venv>/bin/python -c "import importlib.metadata; print(importlib.metadata.version('pyrit'))"`; provider/model-backed execution requires separate authorization
+- notes: Use for reviewed multi-turn red-team scenario construction only after reinstalling, never as authority to expand scope.
 
 #### Snyk Agent Scan (`mcp-scan` lineage)
 - url: https://github.com/invariantlabs-ai/mcp-scan
 - access: Public package; current verification scans require Snyk account/token and transmit allowlisted component metadata under upstream terms
 - specialists: agentops, security-analyst, detection-engineer
-- verified: yes for installed CLI/help; no for fleet scan/proxy
-- install_command: state-local Python 3.12 venv + `uv pip install 'mcp-scan==0.4.3'` (compatibility package installs `snyk-agent-scan==0.5.15`)
-- last_checked: 2026-07-18
-- test_reference: state-local `snyk-agent-scan --help` succeeded; no MCP config was executed and no Snyk API call was made
-- notes: Upstream renamed/reworked mcp-scan as Snyk Agent Scan. It remains outside the inline MCP set. `plugins/security-mcp-stack/preactivate-security-stack.sh` is the fail-closed pre-restart gate: it requires inherited `SNYK_TOKEN` and `SOLODIT_API_KEY`, runs the normalized three-server mirror with `--ci`, and blocks restart on findings or runtime failure. No network scan ran during configuration preparation.
+- verified: no — installation and runtime use are unverified on the reader's host
+- install_command: a dedicated Python 3.12 venv + `uv pip install --python <venv>/bin/python 'mcp-scan==0.4.3'`
+- last_checked: unverified on the reader's host
+- test_reference: local verification command (unverified): `<venv>/bin/snyk-agent-scan --help`; provider/model-backed execution requires separate authorization
+- notes: Upstream renamed/reworked mcp-scan as Snyk Agent Scan. It remains outside the inline MCP set. The guarded-stack pre-activation scan that used it was retired with that stack on 2026-10-27.
 
 #### LlamaFirewall
 - url: https://github.com/meta-llama/PurpleLlama/tree/main/LlamaFirewall
 - access: Public framework; PromptGuard models require separate Hugging Face access/download and AlignmentCheck requires provider configuration
 - specialists: agentops, detection-engineer, security-analyst
-- verified: yes for pinned package import/CLI help; no for model-backed enforcement
-- install_command: state-local Python 3.12 venv + `uv pip install 'git+https://github.com/meta-llama/PurpleLlama.git@b71c6350a2acf2fb62c2328a734cbf440ecac386#subdirectory=LlamaFirewall'`
-- last_checked: 2026-07-18
-- test_reference: package version `1.0.3` and `llamafirewall --help`; no model download or provider call
-- notes: Installed as a defensive pilot, not enabled inline. Model/license/data-flow review is required before configuring a scanner.
+- verified: no — installation and runtime use are unverified on the reader's host
+- install_command: a dedicated Python 3.12 venv + `uv pip install --python <venv>/bin/python 'git+https://github.com/meta-llama/PurpleLlama.git@b71c6350a2acf2fb62c2328a734cbf440ecac386#subdirectory=LlamaFirewall'`
+- last_checked: unverified on the reader's host
+- test_reference: local verification command (unverified): `<venv>/bin/llamafirewall --help`; provider/model-backed execution requires separate authorization
+- notes: Defensive pilot; local installation does not establish model-backed enforcement. Model/license/data-flow review is required before configuring a scanner.
 
 #### Heimdall-rs
 - url: https://github.com/Jon-Becker/heimdall-rs
 - access: Public
 - specialists: reverse-engineer, exploit-developer, smart-contract-engineer
-- verified: yes (pinned binary checksum + version/help smoke); pilot
-- install_command: download official `0.9.3/heimdall-macos-arm64` over HTTPS to the task-state bin and require SHA-256 `c279e92aa5a2178cb6327861f206eddee5d53209bb19a863915159b844cc0d23`
-- last_checked: 2026-07-18
-- test_reference: checksum matched GitHub release metadata; binary returned `heimdall 0.9.2` and command help
-- notes: Upstream's 0.9.3 asset embeds a 0.9.2 version string; this mismatch is disclosed. Never use the unencrypted-HTTP bootstrap.
+- verified: no — installation and execution are unverified on the reader's host
+- install_command: choose an official HTTPS release asset matching the target platform and verify its published checksum before execution; never use the unencrypted-HTTP bootstrap
+- last_checked: unverified on the reader's host
+- test_reference: local verification commands (unverified): `heimdall --version` and `heimdall --help`
+- notes: Confirm the asset checksum and embedded version against the selected release before use.
 
 #### radare2
 - url: https://rada.re/n/
@@ -1412,46 +1228,28 @@ Unless an entry carries a newer `last_checked`, `--version` output below was rep
 - url: https://github.com/runtimeverification/kontrol
 - access: Public
 - specialists: smart-contract-engineer, exploit-developer
-- verified: no (installer prerequisite gap)
-- install_command: pinned official `kup` commit `2e3469d16437a2abe639e59123e1a25037ca205b`; intended Kontrol release `v1.0.255`
-- last_checked: 2026-07-18
-- test_reference: `kup` package installed, then its first invocation failed `FileNotFoundError: nix`; Kontrol publishes no release assets and documents a 30–60 minute Nix/kup install
-- notes: Pilot is not installed. Requires separately approved Nix provisioning, disk budget, containment, and rollback.
+- verified: no — prerequisites and execution are unverified on the reader's host
+- install_command: provision Nix and the official `kup` installer at commit `2e3469d16437a2abe639e59123e1a25037ca205b`, then install the intended Kontrol release `v1.0.255` following its official instructions under an approved provisioning plan
+- last_checked: unverified on the reader's host
+- test_reference: local verification commands (unverified): `nix --version`, `kup --help`, and `kontrol --version`
+- notes: Requires separately approved Nix provisioning, disk budget, containment, and rollback.
 
-### Guarded security MCP stack → Claude and gpt-codex only
+### Guarded security MCP stack (retired 2026-10-27)
 
-> Heading corrected 2026-08-13: this group was labelled "restart-gated pilots". The guarded
-> Semgrep/Slither/Solodit trio below is **live-probed and in service**; only the Model Armor entry
-> remains genuinely gated (on credentials). Read each entry's own `verified:` field.
+`guarded-semgrep`, `guarded-slither`, and `guarded-solodit` were staged to run behind Trail of Bits `mcp-context-protector` (https://github.com/trailofbits/mcp-context-protector), then retired on 2026-10-27. No lane declares them, and they are not citable. Use the `semgrep` and `slither` CLI entries in this section instead. Solodit findings have no CLI replacement: use a separately provisioned prior-art service, or query Solodit by hand.
 
-#### mcp-context-protector / guarded Semgrep, Slither, and Solodit MCPs
-- url: https://github.com/trailofbits/mcp-context-protector ; https://github.com/trailofbits/slither-mcp
-- access: Public
-- specialists: security-analyst, exploit-developer, smart-contract-engineer, agentops
-- verified: **yes — live-probed on the `claude` lane 2026-08-13**. All three answered a real call with usable data. Caveats are per-entry-point, not per-server: see notes.
-- install_command: pinned commits `05e56c1616f4382ca25eb15bdfc98c4967bbdd74` and `196a420a90f4b5e27d245148f46fb1ad32c40458`; Semgrep uses installed `/opt/homebrew/bin/semgrep mcp`
-- last_checked: 2026-08-13
-- test_reference: live probe on the `claude` lane, 2026-08-13 (literal commands + literal results retained in the private audit record). `guarded-semgrep`: `semgrep_scan_with_custom_rule` returned 2 findings, semgrep `1.157.0`, `engine_kind: OSS`, `errors: []`. `guarded-slither`: `run_detectors` returned `success:true`, `total_count:4`, including the planted `reentrancy-eth` (High) at `src/VulnFixture.sol#19-24`. `guarded-solodit`: `search_findings keywords="reentrancy"` returned a populated result set and a live rate-limit header. Static config validation remains `plugins/security-mcp-stack/validate_staged.py`.
-- notes: **Live, not staged.** Restart-discoverable files are `model-lanes/claude/.mcp.json` and `model-lanes/gpt-codex/.codex/config.toml`. `model-lanes/specialist-lane-capabilities.v1.json` records all three as `availability: available` and generated adapters DO project them (confirmed in a live `claude`/`security-analyst` dispatch). **The `staged_mcp_surface` drift recorded here on 2026-08-13 is closed: `model-lanes/lane-capabilities.tsv` no longer lists the trio.** Re-verified 2026-08-15 — `awk -F '\t' 'NR > 1 {print $1, $6}' model-lanes/lane-capabilities.tsv` prints `[]` for all four lanes, and `model-lanes/specialist-lane-capabilities.v1.json` contains zero `availability: pending-restart-activation` records. The runtime state below and the TSV now agree; nothing about this entry is staged. Context Protector is in the call path and passing calls through: no approval/quarantine notice was returned by any probe call, and `--visualize-ansi-codes` is demonstrably active (responses carry the literal string `ESC[32m` where bare Semgrep emits real escape bytes). No guardrail provider is configured, so response quarantine is not active. Two operational caveats. (1) `guarded-semgrep`'s **`semgrep_scan` (registry default ruleset) is unusable**: `Failed to download config from https://semgrep.dev/c/p/default, returned code 401: {"error":"Not authorized"}` — `SEMGREP_APP_TOKEN` is absent from env. This is not an MCP fault; bare `semgrep --config p/default` reproduces the identical 401 (exit 7) while `--config <local rule>` succeeds (exit 0). Use `semgrep_scan_with_custom_rule` until a token is provisioned. (2) `guarded-slither` must be pointed at a **Foundry/Hardhat project root**, never a loose `.sol` file: its non-framework path is self-contradictory (given a directory it errors `Expected a Solidity file`; given a file it errors `Path is not a directory`). `solc 0.8.27` + `solc-select` are present, and the server uses `tools/slither-mcp/bin/slither-mcp`, which is a different binary from `slither` on PATH.
+The Google Model Armor gateway once staged alongside them was removed earlier:
 
-#### solodit-mcp (cutover-ready, restart-gated)
-- url: https://github.com/zerotrust-labs/solodit-mcp
-- access: Requires a Solodit API key
-- specialists: security-analyst, smart-contract-engineer
-- verified: yes for remediated build, production-only install, and static cutover wiring; **and yes for a live API call as of 2026-08-13** — reached through `guarded-solodit`, which execs exactly this runtime
-- install_command: copy pinned commit `72ff083167a10b332a04651a2ed4897551fb3f7c` to a fresh remediated tree; install `@modelcontextprotocol/sdk@^1.29.0`; run `npm run build`; copy build/package manifests to a fresh runtime; run `npm ci --omit=dev --ignore-scripts`
-- last_checked: 2026-07-19
-- test_reference: SDK resolved `1.29.0`; TypeScript build passed; fresh runtime installed 93 packages / audited 94; `npm audit --omit=dev --json` reported 2 residual advisories (fast-uri high, ajv moderate), down from the prior 7 production advisories; `validate_staged.py` passed with Solodit in all Claude/Codex live/review mirrors
-- notes: The guarded command points only to `_state/tooling-arsenal-2026-07-18/runtime/solodit-mcp-prod/dist/index.js`. `SOLODIT_API_KEY` is inherited and absent from config — **and the inheritance works**: a live probe on 2026-08-13 returned a populated, paginated result set with a sub-second query time and a live rate-limit header, so the key is reaching the server and the remote API is answering. The prior qualifier "it does not claim a lane restart or API query" is superseded: the API query is now measured. Data-quality nit, cosmetic only: results render `Report Date: [object Object]` — ignore that field.
-
-#### Google Model Armor gateway (credential-blocked)
+#### Google Model Armor gateway (removed/disabled)
 - url: https://docs.cloud.google.com/model-armor
-- access: GCP project service; durable OAuth2 service-account identity or ADC required
+- access: N/A (removed 2026-08-10 by operator decision, commit `e63ed567`)
 - specialists: security-analyst, agentops
-- verified: no for credential or live gateway; configuration contract only
-- last_checked: 2026-07-19
-- test_reference: `plugins/security-mcp-stack/validate_staged.py` requires `held-modelarmor.json.activation == blocked-on-operator-credential`, the exact operator ask, and no credential literal
-- notes: Not an MCP server and not present in Claude/Codex lane configs. Operator ask: Provide either the absolute path to a durable least-privilege Model Armor service-account JSON key via GOOGLE_APPLICATION_CREDENTIALS, or run `gcloud auth application-default login` for the gateway identity. Copied bearer tokens are rejected.
+- verified: no
+- last_checked: 2026-10-26 (removed 2026-08-10, commit `e63ed567`)
+- test_reference: Removed in commit `e63ed567` (2026-08-10): `plugins/security-mcp-stack/held-modelarmor.json` was deleted and `plugins/security-mcp-stack/validate_staged.py` no longer defines or checks any Model Armor contract (historical snapshot: 2026-07-19 staged contract only)
+- notes: Integration disabled and removed by operator decision on 2026-08-10 (`e63ed567`). There is no active configuration contract and no current credential-provisioning ask.
+
+### Dependency and secret scanning → `security-analyst`
 
 #### osv-scanner
 - url: https://github.com/google/osv-scanner
@@ -1522,7 +1320,7 @@ Installed and runnable high-blast-radius active tools. Usable for authorized bou
 - test_reference: `uv tool install manticore` → FAILED (pysha3 native build error on py3.13/ARM 2026-07-12). Superseded by halmos/mythril/echidna (all verified:yes); not pursued.
 - notes: Symbolic-execution engine (EVM + native). Heavy/brittle native deps; pip-only, historically fragile install. Deferred — flag before forcing.
 
-**Footnote — semgrep MCP (updated 2026-07-19):** the former standalone `semgrep/mcp` repository is deprecated because Semgrep moved the server into the main CLI. This host's verified `semgrep 1.157.0` exposes `semgrep mcp` directly. The restart-discoverable Claude/Codex project configs now route its stdio server through Context Protector with an empty cloud token. No lane was restarted; schema approval, Snyk pre-scan, and post-restart read-only verification remain mandatory.
+**Footnote — semgrep MCP (updated 2026-10-27):** the former standalone `semgrep/mcp` repository is deprecated because Semgrep moved the server into the main CLI; `semgrep 1.157.0` exposes `semgrep mcp` directly. No lane wires it: the Context Protector route staged for it was retired on 2026-10-27, so use the `semgrep` CLI.
 
 ### Host-resolved dev/ops tools (capability id resolves to an alternate binary)
 
@@ -1666,7 +1464,7 @@ Added 2026-07-26 (Wave 3 tooling-enablement pass). Chrono performed and canary-v
 - verified: yes
 - last_checked: 2026-07-26
 - test_reference: `chrono-canary:2026-07-26`, `snyk 1.1306.1`; `command -v snyk` → `/opt/homebrew/bin/snyk` (npm global).
-- notes: SCA / dependency and container scanning. Needs `SNYK_TOKEN`, which is already held in the off-repo secret store — never inline the token in a command or commit it. `snyk test`/`snyk code test` transmit dependency metadata to Snyk's API, so it is **network-dependent** and unusable from a network-isolated board worker. Distinct from the *Snyk Agent Scan (`mcp-scan` lineage)* entry above.
+- notes: SCA / dependency and container scanning. Needs `SNYK_TOKEN`; keep it in an off-repo secret store and never inline it in a command or commit it. `snyk test`/`snyk code test` transmit dependency metadata to Snyk's API, so it is **network-dependent** and unusable from a network-isolated board worker. Distinct from the *Snyk Agent Scan (`mcp-scan` lineage)* entry above.
 
 #### angr
 - url: https://angr.io
@@ -1686,7 +1484,7 @@ Added 2026-07-26 (Wave 3 tooling-enablement pass). Chrono performed and canary-v
 - verified: yes
 - last_checked: 2026-07-26
 - test_reference: `chrono-canary:2026-07-26`, Godot `4.7.1` (Homebrew cask); `command -v godot` → `/opt/homebrew/bin/godot`.
-- notes: Game engine; CLI + GUI. **Projected 2026-07-26** onto `game-engineer` (claude lane, `preferred`/`host-PATH`) — this supersedes the earlier "recorded but not projected onto any lane" record. Automation must use `godot --headless` (`--headless --export-release <preset> <out>`, `--headless --script`); a bare `godot` opens the GUI editor and is operator-attended, not lane-usable. Projection covers the **Godot** native path only: Unity/console runtimes and game store/console publishing remain `needs_tool` in `shared/capabilities/project/game-production.md` (no verified toolchain / connector).
+- notes: Game engine; CLI + GUI. **Projected 2026-07-26** onto `game-engineer` (claude lane, `preferred`/`host-PATH`) — this supersedes the earlier "recorded but not projected onto any lane" record. Automation must use `godot --headless` (`--headless --export-release <preset> <out>`, `--headless --script`); a bare `godot` opens the GUI editor and is operator-attended, not lane-usable. Projection covers the **Godot** native path only: Unity/console runtimes and game store/console publishing remain `needs_tool` in the game-production capability card (`shared/capabilities/public/project/game-production.md` in a public checkout; no verified toolchain / connector).
 
 ### Repo-venv data/extraction stack (import-only via the repo interpreter)
 
@@ -1764,16 +1562,16 @@ ${VAULT_ROOT}/.venv/bin/python -c 'import pandas'
 
 ## Local skill catalog summary
 
-477 unique SKILL.md files across 40+ plugins (verified by `find ~/.claude/plugins/cache -path "*/skills/*" -name "SKILL.md" | wc -l` per Capability Inventory).
+Repository skills live under `.claude/skills/` (mirrored to `.agents/skills/` and `model-lanes/gemini/.agents/skills/`) and `plugins/chrono-vault/skills/`; the README states the shipped count. Skills from third-party plugins installed in a CLI vary per host; list your own with `find ~/.claude/plugins/cache -path "*/skills/*" -name "SKILL.md"`.
 
-Highlights useful to specialists:
-- Trail of Bits-derived: review-severity-ladder, code-review-loop, multi-llm-audit-adjudication, differential-review, fp-check
-- Smart-contract: chain-construct-smart-contract, evm-audit-flow, solana-audit-flow, defi-invariant-check, vulnhunter-solana, gptscan-prompt-templates
-- Security: agentic-safety-audit, semgrep-rule-author, supply-chain-audit, web-vuln, github-recon, osint-platform-audit, pre-audit-threat-model
-- Frontend/UI: frontend-design, design-token-governance, a11y-audit, react-performance-loop, figma-* (10+ skills)
-- Process: brainstorming, writing-plans, executing-plans, verification-before-completion, test-driven-development, systematic-debugging (writing-skills authors SKILL.md files; it was retired from the writing specialists on 2026-09-18 in favour of copy-refinement and de-ai-before-delivery)
-- Memory/knowledge: kg-integrity-gate, stale-knowledge-purge, brain-trio-amendment-authoring  *(skill names retain the `kg-` prefix; they are cited verbatim by specialist files and checked by the catalog validator, so the names are not renamed here)*
-- Multi-model: cross-provider-dissent, council-consensus, cross-model-verification, multi-stance-audit-fanout
+Highlights useful to specialists (repository skills unless marked third-party):
+- Review: review-severity-ladder, code-review-loop, differential-review; third-party: fp-check (Trail of Bits)
+- Smart-contract: chain-construct-smart-contract, evm-audit-flow, solana-audit-flow, defi-invariant-check, vulnhunter-solana
+- Security: agentic-safety-audit, semgrep-rule-author, supply-chain-audit, osint-platform-audit, pre-audit-threat-model
+- Frontend/UI: third-party: frontend-design, figma-*
+- Writing: copy-refinement, de-ai-before-delivery
+- Process: third-party (superpowers): brainstorming, writing-plans, executing-plans, verification-before-completion, test-driven-development, systematic-debugging
+- Multi-model: multi-stance-audit-fanout
 
 Specialist files cite skills by exact name; validator (Task 9) verifies skill exists in local catalog.
 
@@ -1783,14 +1581,13 @@ Specialist files cite skills by exact name; validator (Task 9) verifies skill ex
 
 These entries are flagged `verified: needs-research` above. They run as harness-optimizer sub-tasks during compatibility work. Specialist files ignore `needs-research` entries until verified.
 
-Backlog (8 categories):
+Backlog (7 categories):
 1. **Gemini ecosystem** (Nano Banana / Veo 3 / Imagen / Search grounding / Jules / Flow / NotebookLM / Antigravity)
-2. **Kimi advanced features** (300 parallel sub-agents native usage / 4000 tool steps / MoonViT vision)
-3. **xAI / Grok** (Grok-4-fast 2M context / Grok-X integration)
-4. **DeepSeek V4** (API setup + integration into chrono MCPs / fanout pool)
-5. **Anthropic /ultrareview command behavior** (verify in-session slash-command + cloud-hosted review runtime via live test)
-6. **Codex Cloud Agents async access** (operator ChatGPT Plus tier verification)
-7. **Codex native macOS computer use** (verify access path — CLI vs API-only)
-8. **Higgsfield Claude-lane verification** (Codex cannot attest the Claude-only OAuth surface; the independent Claude reviewer must run `claude mcp list` plus one harmless non-generation call such as `higgsfield__models_explore` before any promotion)
+2. **xAI / Grok** (Grok-4-fast 2M context / Grok-X integration)
+3. **DeepSeek V4** (API setup + integration into chrono MCPs / fanout pool)
+4. **Anthropic /ultrareview command behavior** (verify in-session slash-command + cloud-hosted review runtime via live test)
+5. **Codex Cloud Agents async access** (verification)
+6. **Codex native macOS computer use** (verify access path — CLI vs API-only)
+7. **Higgsfield Claude-lane verification** (Codex cannot attest the Claude-only OAuth surface; the independent Claude reviewer must run `claude mcp list` plus one harmless non-generation call such as `higgsfield__models_explore` before any promotion)
 
 Each produces a private `research-{topic}` sub-report. Catalog entries flip `needs-research` → `yes`/`no` based on findings.

@@ -40,6 +40,7 @@ SNAPSHOT_INPUTS = (
     "scripts/python/validate_specialists.py",
     "scripts/python/validate_capability_homes.py",
     "scripts/python/validate_skill_wiring.py",
+    "scripts/python/disk_hygiene.py",
     "scripts/python/specialist_capability_source.py",
     "scripts/python/gen_runtime_tool_summary.py",
     "scripts/python/repo_root.py",

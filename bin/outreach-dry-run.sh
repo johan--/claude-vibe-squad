@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Run the private/local outreach pipeline in fixture mode only.
-# This bridge proves the restored Outreach Mode without sending email or
+# This bridge exercises the legacy outreach package (now the project-mode outreach
+# capability, gated by `live_outreach`) in dry-run only, without sending email or
 # copying private lead data into the public Vibe Squad repo.
 
 set -euo pipefail

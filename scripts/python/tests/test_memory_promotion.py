@@ -1049,6 +1049,9 @@ class EndToEndSettlementTests(unittest.TestCase):
         note_id = self._seed_memory(TASK)
         env = self._fixture(verdict="APPROVE", review_class="standard")
         staged = self.squad_root / "staged" / "scripts" / "python"
+        # An inherited test-runner search path would reintroduce the deliberately
+        # absent promotion module from the real source tree.
+        env.pop("PYTHONPATH", None)
         staged.mkdir(parents=True)
         for module in (
             "board_process_truth.py",
@@ -1066,6 +1069,9 @@ class EndToEndSettlementTests(unittest.TestCase):
         ):
             shutil.copy2(SCRIPTS_ROOT / module, staged / module)
         self.assertFalse((staged / "memory_promotion.py").exists())
+        # Durable notification publication is part of settlement; promotion is
+        # the optional dependency this fixture deliberately withholds.
+        shutil.copytree(SCRIPTS_ROOT / "chrono_state", staged / "chrono_state")
 
         for arguments in (
             ("--task-id", TASK),

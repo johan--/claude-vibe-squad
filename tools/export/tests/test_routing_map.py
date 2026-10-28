@@ -79,7 +79,7 @@ class RoutingMapGeneratorTests(unittest.TestCase):
         lanes = [
             ("codex", "allow", "Heavy-hitter implementation lane."),
             ("claude", "allow", "Heavy-hitter judgment lane."),
-            ("kimi", "deny", "Kimi is deny-default."),
+            ("gemini", "allow", "Grounded research and multimodal lane."),
         ]
         if include_grok:
             lanes.insert(2, ("grok", "deny", "Grok is deny-default."))
@@ -114,9 +114,9 @@ class RoutingMapGeneratorTests(unittest.TestCase):
                         "shared",
                         "judgment",
                         "high",
-                        "kimi",
+                        "gemini",
                         "codex",
-                        "kimi",
+                        "gemini",
                         "codex",
                     ),
                 )
@@ -142,7 +142,7 @@ class RoutingMapGeneratorTests(unittest.TestCase):
         self.assertNotIn("stale hand-maintained rows", page)
         self.assertIn("2 specialists", page)
         self.assertIn("CODING|alpha|implementation|medium|codex|claude|claude", page)
-        self.assertIn("SHARED|beta|judgment|high|kimi|codex|codex", page)
+        self.assertIn("SHARED|beta|judgment|high|gemini|codex|codex", page)
         self.assertIn(r'raw.split("\n")', page)
 
         checked = self._run("--check")

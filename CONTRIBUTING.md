@@ -5,7 +5,7 @@ Vibe Squad is intentionally small and markdown-first. Contributions should make 
 ## Architecture Rules
 
 - Chrono is the only controller.
-- GPT/Codex, Claude, Gemini, Kimi, and Grok are model leads, not department owners.
+- GPT/Codex, Claude, Gemini, and Grok are model leads, not department owners.
 - `shared/specialist-runtime-map.tsv` is the routing source of truth.
 - `departments/` is source namespace and mailbox compatibility storage only.
 - Modes, specialist briefs, model lead prompts, and protocol rules stay in markdown.

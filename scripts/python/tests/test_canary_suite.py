@@ -317,7 +317,6 @@ class SkillsProbeMeasuresFiringNotProjection(unittest.TestCase):
             ("claude", ".claude/skills", SENTINEL, AGENTS_SENTINEL),
             ("codex", ".agents/skills", AGENTS_SENTINEL, SENTINEL),
             ("gpt-codex", ".agents/skills", AGENTS_SENTINEL, SENTINEL),
-            ("kimi", ".agents/skills", AGENTS_SENTINEL, SENTINEL),
             ("gemini", "model-lanes/gemini/.agents/skills", AGENTS_SENTINEL, SENTINEL),
         )
         for lane, home, expected, wrong in homes:
@@ -363,7 +362,7 @@ class SkillsProbeMeasuresFiringNotProjection(unittest.TestCase):
 
                 skill.write_text(expected, encoding="utf-8")
                 artifact.write_text(expected, encoding="utf-8")
-                context["authority"]["lane"] = "kimi" if lane == "claude" else "claude"
+                context["authority"]["lane"] = "grok" if lane == "claude" else "claude"
                 context_path.write_text(json.dumps(context), encoding="utf-8")
                 result = run_canary("--task", task, "--no-memory-write", root=root)
                 self.assertEqual(status_of(result.stdout, "skills"), "NOT MEASURED", result.stdout)

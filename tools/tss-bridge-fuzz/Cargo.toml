@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["rig", "targets/svm-gateway"]
+members = ["rig"]
 exclude = ["canary", "fuzz"]
 
 [workspace.dependencies]

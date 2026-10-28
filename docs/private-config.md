@@ -5,7 +5,7 @@ Do not commit local secrets, browser state, raw logs, or live task outputs.
 Private/local:
 
 - API keys and OAuth tokens
-- Provider CLI auth state for Claude, Codex, Gemini/agy, Grok, and Kimi, including local CLI homes and credential stores
+- Provider CLI auth state for Claude, Codex, Gemini/agy, and Grok, including local CLI homes and credential stores
 - legacy Chrono repo at `~/chrono`
 - Chrono Vault / Obsidian knowledge vault contents when they include private operator memory
 - Chrome profiles and CDP session state

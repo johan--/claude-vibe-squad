@@ -247,9 +247,6 @@ class GeminiBridgeContentTests(unittest.TestCase):
         self.shared = self.write(wiring.AGENTS_SKILLS_REL, 'fixture-skill', self.content)
         self.bridge_home = f'{wiring.GEMINI_BRIDGE_REL}/skills'
         self.bridge = self.write(self.bridge_home, 'fixture-skill', self.content)
-        supervisor = self.root / wiring.SUPERVISOR_REL
-        supervisor.parent.mkdir(parents=True)
-        supervisor.write_text('kimi launch: --skills-dir .agents/skills\n')
 
     def write(self, home, name, content):
         path = self.root / home / name / 'SKILL.md'

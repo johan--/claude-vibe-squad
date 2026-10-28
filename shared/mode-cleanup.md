@@ -4,7 +4,7 @@ Cited by `shared/lifecycle.md` rule 13 (mode-close cleanup is mandatory).
 
 This file declares per mode what's ephemeral (cleaned at mode-close) vs. durable (preserved). Each mode reads this on engagement start (Phase 0) and applies the cleanup at mode-close.
 
-There are exactly **two modes** — `project` and `bounty` (`shared/modes/`). The former domain modes (content, maintenance, incident, research) are folded into `project` as profile families / the Incident flow, and triage is now a dispatch mechanic (`shared/modes/project.md`). Their declarations below are grouped as Project Mode family sections: a project engagement in one of those families applies both its family table and the Project Mode base table. (The outreach family carries no dedicated declaration yet — the universal rules apply.)
+There are exactly **two modes** — `project` and `bounty` (`shared/modes/`). The former domain modes (content, maintenance, incident, research) are folded into `project` as profile families / the Incident flow, and triage is now a dispatch mechanic (`shared/specialists/triage.md`; `chrono/SPECIALIST-INDEX.md` § Common Routing). Their declarations below are grouped as Project Mode family sections: a project engagement in one of those families applies both its family table and the Project Mode base table. (The outreach family carries no dedicated declaration yet — the universal rules apply.)
 
 **Status — operative policy, machine-enforcement deferred.** The declarations in this file are the authoritative cleanup policy: every mode reads them at Phase 0 and applies them at mode-close, and the operator deletion gate below is binding. What is not yet in place is automated enforcement. The cleanup obligation is currently a discipline on whoever closes the mode, not a check the executable runs — `vibecoding_check.py` does not verify ephemeral-artifact cleanup against disk (see § Audit hooks, verified 2026-08-17) — and the individual `shared/modes/<mode>.md` files do not yet carry their own `## Cleanup` sections (see the per-mode wiring follow-up under § How modes invoke this). Apply the per-mode tables below as the current rules by hand, refined as that automation lands; they are the operative policy, not placeholder drafts.
 
@@ -139,11 +139,11 @@ docker start <run-id-containers>
 
 ## Triage (dispatch mechanic, not a mode)
 
-Triage runs as a dispatch mechanic under a mode (`shared/modes/project.md` Dispatch Notes); its decision log stays durable regardless of which mode invoked it.
+Triage runs as a dispatch mechanic under a mode (`shared/specialists/triage.md`; `chrono/SPECIALIST-INDEX.md` § Common Routing); its decision artifacts stay durable regardless of which mode invoked it.
 
 | Category | Items | Action at mode-close |
 |----------|-------|----------------------|
-| **Durable (preserve)** | Triage decision log entry, `routing-decision.md` | Append to `_state/triage-log.jsonl` and preserve run artifact |
+| **Durable (preserve)** | Triage decision log entry, `triage-decision.md` / `routing-decision.md` | Preserve the task's actual return artifact; `_state/triage-log.jsonl` is a manual policy destination until an automated writer is defined |
 | **Ephemeral (clean)** | none | n/a |
 
 ---

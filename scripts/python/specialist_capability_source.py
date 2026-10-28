@@ -16,7 +16,7 @@ SOURCE_RELATIVE = Path("model-lanes/specialist-lane-capabilities.v1.json")
 SOURCE_SCHEMA = "specialist-lane-capabilities/v1"
 SURFACE_SCHEMA = "capability-surface/v1"
 CAPABILITY_FIELDS = ("skills", "tools", "mcps")
-LANES = ("gpt-codex", "claude", "gemini", "grok", "kimi")
+LANES = ("gpt-codex", "claude", "gemini", "grok")
 SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 # Availability states, with their semantics. The single most damaging legacy
 # defect was one undifferentiated ``uninstalled`` bucket that conflated "not yet
@@ -69,11 +69,10 @@ EVIDENCE_KINDS = {
     "shared-registry:authored",
     "staged-lane-config:validate-staged",
     "verified-registry:claude-mcp",
-    # Guarded security MCPs (mcp-context-protector children) are proven by a
-    # verified shared-registry record rather than the lane inventory, because
-    # `model-lanes/lane-capabilities.tsv` still lists them under
-    # `staged_mcp_surface`. Distinct from `verified-registry:claude-mcp`
-    # because the guarded trio is declared on both the claude and codex lanes.
+    # Former evidence for the guarded security MCPs (mcp-context-protector
+    # children), which were retired on 2026-10-27 and are declared in no lane
+    # config. No source row cites this kind any longer; it remains accepted
+    # vocabulary only.
     "verified-registry:guarded-mcp",
     # --- Wave 1 (2026-07-26) evidence kinds for the typed availability states ---
     # The old `host-PATH:absent` evidence was applied to skills too, which was a

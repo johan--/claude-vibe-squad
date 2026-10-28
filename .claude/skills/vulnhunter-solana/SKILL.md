@@ -8,7 +8,7 @@ description: Use when reviewing Solana program code for the account-model bug cl
 
 Manual vulnerability pattern review for Solana Rust programs. Use this during
 `solana-audit-flow`. There is **no Solana static-analysis step** — Slither has zero Solana
-detectors (`slither --list-detectors` → 104, none for Solana), so any "slither Solana scan" is
+detectors (`slither --list-detectors` lists only EVM/Solidity checks, none for Solana), so any "slither Solana scan" is
 a fabricated capability. Manual pattern matching is the primary coverage on Solana; the
 automated Solana tooling is dynamic (anchor build warnings, litesvm/trident fuzzing), not
 static taint analysis.

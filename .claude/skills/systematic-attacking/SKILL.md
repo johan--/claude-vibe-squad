@@ -61,7 +61,7 @@ Every reference doc and specialist uses **these** words. Do not redefine "findin
 **Promotion points have one home: `shared/modes/bounty.md` § "Evidence vocabulary — the
 pipeline's type system".** That mode is the promotion home — it owns *when* each token is promoted
 and what proof each transition demands (its state-token table and the Law 2 gate), and it already
-names this section as naming "the same offensive tokens." So the glosses below are denotational
+names this section as naming "the same tokens." So the glosses below are denotational
 only; for a token's **promotion point** read the mode, not here — exactly as this skill already
 defers the phase list one section down. A restated criterion is what split `candidate` two ways; one
 home ends it.
@@ -90,7 +90,7 @@ skill uniquely owns; for phase definitions, gates and owners, read the mode.
 **This skill's job is METHOD**: how to discover primitives, how to compose them, and what
 evidence survives review. It is target-agnostic. Target-class specifics live in their own
 checklists (`cross-chain-bridge-audit`, `cosmos-sdk-audit-checklist`,
-`solana-anchor-audit-checklist`, `known-advisory-backport-check`); campaign process lives in the
+`vulnhunter-solana`, `known-advisory-backport-check`); campaign process lives in the
 mode; this lane's task lives in the packet.
 
 ## Phase numbering — read campaign phases from the mode; two other numberings are different objects
@@ -117,12 +117,10 @@ for what each one *does* (its gate, owner, and procedure) read the mode; this is
 **`S0`–`S7` are NOT a parallel numbering of these campaign phases.** They are a *different object*: a
 single lane's internal verification-contract stages (`required_phase_ids` in a task packet, enforced
 by `scripts/python/verification_contract.py`) — one lane proving its own claim, not the cross-lane
-campaign. The mode says so directly, in Phase 5:
-
-> "A lane's own `S5`. The verification contract makes every lane run an internal `S0-S7` and owes
-> `poc_reproduction` before it may report a finding at all. That is the lane proving its own claim,
-> and it is required. It is not campaign Phase 5, which is a *cross-lane* re-verification of whatever
-> survived Phases 3 and 4."
+campaign. The mode says so directly: see `shared/modes/bounty.md` § "Phase 5 — VERIFY", which
+names the two things mistaken for this phase and rejects both — a lane's own `S5` (its internal
+`S0-S7`, proving its own claim, required) and a Phase 3 deliverable review (does the artifact hold
+up, not does it reproduce elsewhere).
 
 So a lane's `S5` and campaign Phase 5 are not the same event. Lining `S0`–`S7` up in a column beside
 the campaign phases is exactly what made "Phase 5" ambiguous; keep them apart.
@@ -152,7 +150,10 @@ skill or into chain-strike-v2. The verification back-end (Phases 4–8) is ident
 | **smart-contract / DeFi** | `shared/capabilities/bounty/smart-contract-web3.md` | `evm-audit-flow`, `cosmos-sdk-audit-checklist`, `cross-chain-bridge-audit`, `known-advisory-backport-check`; DeFi patterns in chain-strike-v2 §9 |
 | **LLM / AI** | `shared/capabilities/bounty/ai-llm-system.md` | LLM/AI patterns in chain-strike-v2 §9; live-endpoint probing is `needs_tool` (offline transcript analysis is the live scope) |
 | **mobile** | *(no dedicated card — profile of web-api-saas)* | mobile pattern set in chain-strike-v2 §9; mobile targets are `needs_tool` per the web card |
-| **binary / firmware** | `shared/capabilities/bounty/binary-firmware.md` | `binary-re-pipeline`, `sandbox-provision-discipline`; card is `needs_tool` (radare2 static only) |
+| **binary / firmware** | `shared/capabilities/bounty/binary-firmware.md` | `sandbox-provision-discipline`; card is `needs_tool` (radare2 static only) |
+
+The card paths above are the full, maintainer-internal cards. A public checkout ships the public
+versions under the same file names in `shared/capabilities/public/bounty/`.
 
 **Cross-domain pivots** — where the shortest path to critical usually lives — are handled in
 chain-strike-v2 §10 (web SSRF→cloud IMDS→ATO; LLM injection→MCP→cloud action; mobile deeplink→web
@@ -208,7 +209,7 @@ chain-strike-v2 over the pool. No new comms machinery is required or assumed.
 ## Quick checklist
 
 - [ ] Phase 0: in-scope allowlist + forbidden set written; ambiguous scope STOPPED; operator target-engage obtained.
-- [ ] Phase 1: prior-art + composite dedup run via `chrono-dedup` *before* effort; refreshed pre-submit.
+- [ ] Phase 1: prior-art + composite dedup run *before* effort (`dedup-prior-art-check`: a separately provisioned prior-art service, or manual Solodit / GitHub-advisory searches); refreshed pre-submit.
 - [ ] Phase 3: leads/primitives only from both lanes; 3b held to the same bar as 3a.
 - [ ] Phase 4: typed graph + impact-first bidirectional search; shortest reliable path; **no CVSS / no severity arithmetic**.
 - [ ] Phase 5: runnable PoC vs the real oracle; five link controls + chain-level control pass; operator gate cleared for any live action.

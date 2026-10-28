@@ -38,14 +38,12 @@ Two corollaries the rest of the document enforces:
 
 1. **Exception ⇒ demote.** If a candidate fact is *almost* always true at a level but has an
    exception there, it does not belong at that level. Either it moves down to the level where it is
-   exceptionless, or it splits into the general part (higher) and the exception (lower). **The one
-   standing counter-example is enforced, not a defect:** the single Kimi-MCP-brokering caveat in the
-   shared *Tools available to me* paragraph ("Kimi subagents cannot hold MCP …") rides in the L3 base
-   of every brief, pinned identical by `scripts/python/validate_capability_homes.py` against the
-   approved text in `model-lanes/adapter-capability-policy.json`. Under Hard Rule 10 (a validator pins
-   the identity, a named file states the text) that makes it a legitimate enforced duplicate and *not*
-   a demote target — even though a lane-varying capability fact normally is. The runtime enforces this
-   L3 placement, so it wins over the demote rule here.
+   exceptionless, or it splits into the general part (higher) and the exception (lower). The generic
+   *Tools available to me* pointer remains a legitimate enforced duplicate: its one
+   home is `generic_pointer_line` in `model-lanes/adapter-capability-policy.json`, and
+   `scripts/python/validate_capability_homes.py` requires it byte-for-byte exactly once
+   in every brief. It states no lane-specific capability exception; lane-varying facts
+   belong in L4. Hard Rule 10 permits this enforced pointer, not additional capability prose.
 2. **Reusable + inlined = pointer.** If a block is constant across dispatches yet is physically
    injected on every dispatch, it is misplaced at L5. Its canonical home is a file one level up, and
    L5 should carry a one-line pointer to it. This is the single largest source of unearned token cost.
@@ -108,7 +106,7 @@ the taxonomy covers the six live strata a worker actually experiences (L0 boot �
   **role** but hold on every lane the role can run on.
 - **Never:** tool/MCP/skill names or capability claims (they vary by lane → L4; the canonical base is
   explicitly designed to "name no tool, MCP, or skill" — see any brief's *Tools available to me*
-  paragraph, whose **one** validator-enforced exception is the Kimi-MCP-brokering caveat noted under
+  paragraph, whose exact generic pointer is validator-enforced as noted under
   *Exception ⇒ demote* above); model/lane routing (TSV); board-orchestration mechanics such as "invoke
   X via the `Task` tool" (a controller action, and a capability no board lane has — see the calibration
   appendix); system policy (L1).
@@ -122,7 +120,7 @@ the taxonomy covers the six live strata a worker actually experiences (L0 boot �
 - **Belongs:** the lane binding ("you are the `X` specialist running inside the `claude` model lane"),
   the capability projection (the `mcps`/tools this role actually receives on *this* lane, inside the
   `# BEGIN SPECIALIST CAPABILITY PROJECTION` block), a pointer back to the canonical L3 brief, and
-  genuinely lane-specific execution notes ("Kimi subagents cannot hold MCP"). Facts that vary by
+  genuinely lane-specific execution notes about the native runtime. Facts that vary by
   **model family**.
 - **Never:** a re-statement of the role's judgment or behaviour — the adapter must *point* to L3
   ("Canonical specialist instructions live at `shared/specialists/...`. Read that file at task start
@@ -280,7 +278,7 @@ check, the decision test, and a calibration hit proving the pass catches a known
   *and* misleads, so it is unearned cost compounded with a Pass-3 conflict.
 - **Finding fix.** Relocate to the canonical file and inject a one-line pointer, or delete.
 - **Calibration hits.**
-  - *A capability no lane has, repeated 11×.* Briefs instruct invoking another specialist "via the
+  - *A capability no lane has, repeated 11× (resolved — retained as the pass's worked example; `rg -i subagent_type` / `Task tool` over `departments/` and `shared/specialists/` now returns nothing).* Briefs instructed invoking another specialist "via the
     `Task` tool with `subagent_type: …`" — `scout.md:27,43`, `security-analyst.md:31,32,48`,
     `threat-modeler.md:27,43`, `impact-validator.md:65`, `privacy-steward.md:27`
     (`Agent(subagent_type=research)`), and `shared/specialists/skeptic.md:84`. A board worker cannot
@@ -321,13 +319,13 @@ Proof the rubric catches every defect the task named, each with the pass and the
 | # | Known defect (as stated in the task) | Rubric pass | Live citation |
 |---|---|---|---|
 | 1 | Multi-model check claimed "in-lane / solo / no dispatch" | Pass 3 CONFLICTING (self + cross-level) | Resolved in `architect.md` 2026-08-13 (was `:28` "handle solo as multi-model", `:69` "invoke as multi-model"); also surfaced at `smart-contract-engineer.md:26` "handle solo with … the multi-stance audit flow", resolved 2026-08-12 (`:70` scopes the stances to one worker; cross-family review handed to Chrono) |
-| 2 | Multi-model check "via the `Task` tool / subagent" — a capability no lane has | Pass 5 UNEARNED-COST + Pass 3 CONFLICTING | `scout.md:27,43`; `security-analyst.md:31,32,48`; `threat-modeler.md:27,43`; `impact-validator.md:65`; `privacy-steward.md:27`; `skeptic.md:84` |
-| 3 | Injected rail labels the **compatibility** namespace under the word **Source** | Pass 1 OUTDATED (comment ⇄ code drift) | emitted text is already fixed to "Mailbox namespace (compatibility)" at `dispatch-toolkit.sh:268`, but the header comments still mislabel it — `dispatch-toolkit.sh:2` "emit source-namespace context" and `:11` "every lane sees the source namespace roster", while the code takes `<compatibility-namespace>` (`:22`) |
+| 2 | Multi-model check "via the `Task` tool / subagent" — a capability no lane has | Pass 5 UNEARNED-COST + Pass 3 CONFLICTING | Resolved — `rg -i subagent_type` over `departments/`/`shared/specialists/` now returns nothing; retained as the pass's worked example (was: `scout.md:27,43`; `security-analyst.md:31,32,48`; `threat-modeler.md:27,43`; `impact-validator.md:65`; `privacy-steward.md:27`; `skeptic.md:84`) |
+| 3 | Injected rail labels the **compatibility** namespace under the word **Source** | Pass 1 OUTDATED (comment ⇄ code drift) | Resolved 2026-08-09 — the emitted text was fixed 2026-08-08 and the header comments were corrected 2026-08-09 (`dispatch-toolkit.sh:2` now "emit mailbox-namespace context", `:16` "mailbox namespace roster", fix dated at `:6-9`); the code takes `<compatibility-namespace>`. Retained as the pass's worked example (was: comments said "emit source-namespace context" / "source namespace roster") |
 | 4 | "lane" meaning both a model family and a single running worker | Pass 4 UNCLEAR | `dispatch-toolkit.sh:269` (family) vs `:299` and the process-isolation rail (running worker) |
 | 5 | `memory-curator.md:100` points at `_state/dream-config.yaml` as a live allowlist; zero readers | Pass 1 OUTDATED | Resolved in `memory-curator.md` 2026-08-09, commit `8c83b1fe` (was `:100` "Allowlist of paths to scan (in `_state/dream-config.yaml`)"); the file remains absent and the only `dream-config` mentions left under `tools/export/` are regression tests pinning its removal |
 
 Note on #3: the calibration example describes the *emitted* mislabel, which has since been corrected in
-the rendered output. The residue survives in the script's comments. This is why Pass 1 treats a file's
+the rendered output. The comment residue was itself corrected on 2026-08-09 (`dispatch-toolkit.sh:6-9` records it); the example is kept because the lesson stands. This is why Pass 1 treats a file's
 comments and its code as **one surface**: a corrected output beneath a stale comment still misleads the
 next editor, who trusts the comment. A rubric that only read rendered output would miss it.
 
@@ -365,5 +363,5 @@ document agreement.
   model-CLI exec") plus Hard Rule 4 (model leads do not talk to the operator / each other).
   **Verdict:** the capability is not a worker capability — the briefs that instruct it are defective.
 - **Q:** Does the emitted rail still label the compatibility namespace "Source"? **Oracle:**
-  `dispatch-toolkit.sh:268` renders "(compatibility)". **Verdict:** BOUNDED, not REFUTED — the emitted
-  text is fixed, but the mislabel survives in comments (`:2`, `:11`); the defect class is still live.
+  `dispatch-toolkit.sh:268` renders "(compatibility)". **Verdict:** was BOUNDED (emitted text fixed 2026-08-08, comments still said "source"); now
+  REFUTED — the comments were corrected 2026-08-09 (`dispatch-toolkit.sh:2`/`:16`), closing the example.

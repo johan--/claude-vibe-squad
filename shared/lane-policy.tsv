@@ -3,7 +3,6 @@ adapter_template	claude	model-lanes/claude/.claude/agents/{specialist}.md	frontm
 adapter_template	codex	model-lanes/gpt-codex/.codex/agents/{specialist}.toml	underscore_toml_name	Codex TOML name uses underscores while the filename remains canonical hyphenated specialist.
 adapter_template	gemini	model-lanes/gemini/.gemini/agents/{specialist}.md	exact_frontmatter_name	Gemini native markdown adapter with exact canonical name.
 adapter_template	grok	model-lanes/grok/.grok/agents/{specialist}.yaml	main_yaml_registration	Grok YAML adapter must also be registered in model-lanes/grok/main.yaml.
-adapter_template	kimi	model-lanes/kimi/.kimi/agents/{specialist}.yaml	main_yaml_registration	Kimi YAML adapter must also be registered in model-lanes/kimi/main.yaml.
 heightened_role	asset-provenance-and-rights-auditor	true	all	Heightened rights gate.
 heightened_role	detection-engineer	true	all	Heightened defensive security.
 heightened_role	experimental-attacker	true	all	Authorized experimental offensive lead generation.
@@ -23,10 +22,8 @@ primary_default	claude	allow	all	Heavy-hitter judgment lane.
 primary_default	codex	allow	all	Heavy-hitter implementation lane.
 primary_default	gemini	allow	all	Grounded research and multimodal lane.
 primary_default	grok	deny	all	Grok primary remains forbidden unless an explicit role exception exists.
-primary_default	kimi	deny	all	Kimi primary remains forbidden unless an explicit role exception exists.
 primary_exception	grok	allow	smokey	Operator-ratified 2026-08-30: persona-blank, artifact-only advisor used as the first and only specialist binding that proves the Grok lane.
-primary_exception	kimi	allow	summarizer	Narrow operator-ratified low-risk supplied-document summarization exception; Claude review remains required before consequential use.
-primary_exception	kimi	allow	kestrel	Operator-ratified 2026-08-25: persona-blank advisory primary exception. Advisory behavior and formal-review anti-affinity are defined in shared/specialists/exodia.md; read the runtime-map rows for current advisor membership and reviewer bindings. MCP is lead-brokered on this lane (Kimi subagents cannot hold MCP).
+throughput_exception	privacy	allow	memory-curator	Operator-approved 2026-10-26 map: same-lane routine vault-hygiene sub-work only; the per-task downshift gate still excludes note content that carries personal or restricted data.
 vocabulary	anti_affinity	author_family	all	Review anti-affinity.
 vocabulary	anti_affinity	none	all	No anti-affinity.
 vocabulary	capability_class	code_review	all	Code review.
@@ -52,7 +49,6 @@ vocabulary	route_lane	claude	all	Claude lane.
 vocabulary	route_lane	codex	all	Codex lane.
 vocabulary	route_lane	gemini	all	Gemini lane.
 vocabulary	route_lane	grok	all	Grok lane.
-vocabulary	route_lane	kimi	all	Kimi lane.
 vocabulary	safety_level	high	all	High safety floor.
 vocabulary	safety_level	low	all	Low safety floor.
 vocabulary	safety_level	medium	all	Medium safety floor.
@@ -66,7 +62,9 @@ vocabulary	source_namespace	research	all	Research source namespace.
 vocabulary	source_namespace	security	all	Security source namespace.
 vocabulary	source_namespace	shared	all	Shared source namespace.
 vocabulary	source_namespace	sysmgmt	all	System-management source namespace.
-vocabulary	throughput_lane	kimi	all	Only Kimi may be a throughput lane.
+vocabulary	throughput_lane	claude	all	Budget slot; use requires the per-task downshift conjunction gate.
+vocabulary	throughput_lane	codex	all	Budget slot; use requires the per-task downshift conjunction gate.
+vocabulary	throughput_lane	gemini	all	Budget slot; use requires the per-task downshift conjunction gate.
 vocabulary	throughput_lane	none	all	No throughput lane.
 vocabulary	tool_profile	media.elevenlabs	all	ElevenLabs media profile.
 vocabulary	tool_profile	media.elevenlabs-agent	all	ElevenLabs agent profile.

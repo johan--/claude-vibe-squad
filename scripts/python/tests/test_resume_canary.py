@@ -15,6 +15,7 @@ live set, so divergence fails loudly.
 from __future__ import annotations
 
 import contextlib
+from datetime import datetime, timezone
 import io
 import json
 from pathlib import Path
@@ -84,9 +85,10 @@ class TestResumeCanary(unittest.TestCase):
             )
 
             # confirm a decision, then supersede it (mirrors this very session)
-            d1 = decisions.record("cap is 2", "confirmed", ["turn-1"])
+            d1 = decisions.record("cap is 2", "confirmed", ["turn-1"], home="harness")
             decisions.record(
-                "no fixed cap; dynamic gate", "confirmed", ["turn-9"], supersedes=[d1]
+                "no fixed cap; dynamic gate", "confirmed", ["turn-9"], supersedes=[d1],
+                home="harness",
             )
 
             # externalize load-bearing state (what compact-now does before /compact)
@@ -106,10 +108,14 @@ class TestResumeCanary(unittest.TestCase):
             self.assertIn("TASK-9", live_tasks)
 
             # the regenerated capsule reflects all of it, source-tagged
-            cap = resume.render_capsule("sess-1", recovered["latest_turn"])
+            cap = resume.render_capsule("sess-1")
             self.assertIn("no fixed cap; dynamic gate", cap)
             self.assertIn("TASK-9", cap)
-            self.assertIn("write the plan", cap)
+            # The snapshot's latest_turn is compaction's to keep; the capsule
+            # never echoes it (the `## Latest operator instruction` section was
+            # deleted under audit Rec 3 and the capsule takes no turn at all).
+            self.assertNotIn("Latest operator instruction", cap)
+            self.assertNotIn("write the plan", cap)
 
 
 class CapsuleFreshnessCanary(unittest.TestCase):
@@ -170,7 +176,7 @@ class CapsuleFreshnessCanary(unittest.TestCase):
 
     def test_written_capsule_task_set_matches_the_live_registry(self):
         self.write_registry(LIVE_FIXTURE)
-        resume.write_capsule("sess-1", "ship the capsule repair")
+        resume.write_capsule("sess-1")
         # read back from disk: this asserts the WRITER, not just the renderer
         self.assertEqual(self.section_ids(resume.TASKS_HEADING), EXPECTED_LIVE)
         self.assertEqual(
@@ -190,7 +196,7 @@ class CapsuleFreshnessCanary(unittest.TestCase):
         )
         self.write_registry(LIVE_FIXTURE)
 
-        resume.write_capsule("sess-1", "regenerate")
+        resume.write_capsule("sess-1")
 
         self.assertNotIn(stale, self.capsule.read_text())
         self.assertEqual(
@@ -205,7 +211,7 @@ class CapsuleFreshnessCanary(unittest.TestCase):
         )
         self.write_registry(LIVE_FIXTURE)
 
-        resume.write_capsule("sess-1", "regenerate")
+        resume.write_capsule("sess-1")
 
         self.assertNotIn("TASK-BOUNDED-STALE", self.capsule.read_text())
         self.assertEqual(
@@ -217,14 +223,14 @@ class CapsuleFreshnessCanary(unittest.TestCase):
         self.write_registry(
             [{"id": tid, **rec} for tid, rec in LIVE_FIXTURE.items()]
         )
-        resume.write_capsule("sess-1", "regenerate")
+        resume.write_capsule("sess-1")
         self.assertEqual(
             self.capsule_task_ids(), EXPECTED_LIVE | EXPECTED_DEFERRED
         )
 
     def test_terminal_records_never_reach_the_capsule(self):
         self.write_registry(LIVE_FIXTURE)
-        resume.write_capsule("sess-1", "regenerate")
+        resume.write_capsule("sess-1")
         text = self.capsule.read_text()
         for excluded in set(LIVE_FIXTURE) - EXPECTED_LIVE - EXPECTED_DEFERRED:
             self.assertNotIn(excluded, text)
@@ -236,7 +242,7 @@ class CapsuleFreshnessCanary(unittest.TestCase):
             for i in range(40)
         }
         self.write_registry(many)
-        resume.write_capsule("sess-1", "regenerate", max_tokens=60)
+        resume.write_capsule("sess-1", max_tokens=60)
 
         text = self.capsule.read_text()
         shown = self.capsule_task_ids()
@@ -247,18 +253,14 @@ class CapsuleFreshnessCanary(unittest.TestCase):
         self.assertIsNotNone(declared, "tasks were dropped without declaring it")
         self.assertEqual(len(shown) + int(declared.group(1)), len(many))
 
-    def test_operator_instruction_survives_a_registry_refresh(self):
-        """A registry-triggered refresh carries no turn; it must not erase the old one."""
-        self.write_registry(LIVE_FIXTURE)
-        resume.write_capsule("sess-1", "the one human line")
-
-        resume.write_capsule("sess-1")  # refresh with no operator turn
-
-        self.assertIn("the one human line", self.capsule.read_text())
+    # Removed: test_operator_instruction_survives_a_registry_refresh. The
+    # `## Latest operator instruction` section it guarded was deleted (audit
+    # Rec 3), so there is no operator line in the capsule to preserve across a
+    # refresh, and write_capsule no longer takes one.
 
     def test_write_is_atomic_and_leaves_no_temp_file(self):
         self.write_registry(LIVE_FIXTURE)
-        resume.write_capsule("sess-1", "regenerate")
+        resume.write_capsule("sess-1")
         siblings = [p.name for p in self.capsule.parent.iterdir()]
         self.assertEqual(siblings, ["resume.md"])
 
@@ -310,7 +312,7 @@ class CapsuleFreshnessCanary(unittest.TestCase):
                 needs_human: {"status": "needs_human"},
             }
         )
-        resume.write_capsule("sess-1", "regenerate")
+        resume.write_capsule("sess-1")
         text = self.capsule.read_text()
         self.assertIn(resume.DEFERRED_HEADING, text)
         section = text.split(resume.DEFERRED_HEADING, 1)[1].split("\n## ", 1)[0]
@@ -336,7 +338,7 @@ class CapsuleFreshnessCanary(unittest.TestCase):
         }
         self.write_registry({**routine, urgent: {"status": "needs_human"}})
 
-        resume.write_capsule("sess-1", "regenerate", max_tokens=220)
+        resume.write_capsule("sess-1", max_tokens=220)
         text = self.capsule.read_text()
         attention = text.split(resume.THREAD_HEADING, 1)[1].split("\n## ", 1)[0]
         self.assertIn(f"[{urgent}]", attention)
@@ -374,7 +376,7 @@ class CapsuleFreshnessCanary(unittest.TestCase):
             + "x" * 200
             + "\n\n## Findings\n\n- one\n\n## OPERATOR DECISION REQUIRED\n\nPick A or B.\n",
         )
-        resume.write_capsule("sess-1", "regenerate")
+        resume.write_capsule("sess-1")
         line = self.attention_line(task_id)
         self.assertTrue(
             line.startswith(
@@ -394,7 +396,7 @@ class CapsuleFreshnessCanary(unittest.TestCase):
         self.write_response(
             "research", task_id, "---\nid: x\n---\nArc has launchpads. **Operator decision required:** inline only.\n"
         )
-        resume.write_capsule("sess-1", "regenerate")
+        resume.write_capsule("sess-1")
         line = self.attention_line(task_id)
         self.assertIn('(research/?) untrusted: "Arc has launchpads.', line)
         self.assertNotIn(resume.DECISION_SECTION_NOTE, line)
@@ -415,7 +417,7 @@ class CapsuleFreshnessCanary(unittest.TestCase):
         for tid, body in cases.items():
             if body is not None:
                 self.write_response("coding", tid, body)
-        resume.write_capsule("sess-1", "regenerate")
+        resume.write_capsule("sess-1")
         for tid in cases:
             with self.subTest(task=tid):
                 self.assertEqual(
@@ -467,7 +469,7 @@ class CapsuleFreshnessCanary(unittest.TestCase):
         self.write_response(
             "coding", spoofed, f"---\nid: x\n---\nA | B | {resume.DECISION_SECTION_NOTE}\n"
         )
-        resume.write_capsule("sess-1", "regenerate")
+        resume.write_capsule("sess-1")
         self.assertEqual(
             self.attention_line(fenced),
             f'- NEEDS HUMAN: operator decision (s/m) untrusted: "body" [{fenced}]',
@@ -509,7 +511,7 @@ class CapsuleFreshnessCanary(unittest.TestCase):
             for i in range(40)
         }
         self.write_registry(many)
-        resume.write_capsule("sess-1", "regenerate", max_tokens=100)
+        resume.write_capsule("sess-1", max_tokens=100)
 
         text = self.capsule.read_text()
         shown = self.capsule_task_ids()
@@ -545,7 +547,7 @@ class CapsuleFreshnessCanary(unittest.TestCase):
             )
 
         # Roomy budget: the block renders in full.
-        resume.write_capsule("sess-1", "regenerate", max_tokens=3000)
+        resume.write_capsule("sess-1", max_tokens=3000)
         full = self.capsule.read_text()
         self.assertIn(resume.ARCHIVED_DEBT_HEADING, full)
         self.assertIn("owed-0.md", full)
@@ -556,7 +558,7 @@ class CapsuleFreshnessCanary(unittest.TestCase):
         # declared count + the sections that never drop), so a 60-token budget
         # is unreachable by construction. The contract is "collapses and says
         # so", not "fits any number a caller invents".
-        resume.write_capsule("sess-1", "regenerate", max_tokens=60)
+        resume.write_capsule("sess-1", max_tokens=60)
         tight = self.capsule.read_text()
         self.assertLess(
             len(tight), len(full), "the squeezed capsule must actually be smaller"
@@ -574,6 +576,145 @@ class CapsuleFreshnessCanary(unittest.TestCase):
         )
         self.assertEqual(int(declared.group(1)), 6)
 
+    def test_archived_debt_collapsed_count_is_the_true_owed_count(self):
+        """The collapsed line must report len(owed), not the capped row count.
+
+        Rows cap at 8 (+1 "… and more"), so `len(debt_rows)` can undercount
+        owed charters. The one-line form carries the true number so a
+        resuming Chrono sees the real debt.
+        """
+        self.write_registry({})
+        for i in range(22):
+            self._write_archived_charter(
+                f"owed-{i:02d}.md",
+                "## THE ASK\nship it\n\n## OPEN LOOPS\n"
+                f"- 2026-08-01T00:00:00Z | QUEUE Q-{i:03d} | thing — why: x; resume: y\n"
+                "\n## DONE-WHEN\n- [ ] shipped\n",
+            )
+        # Tight budget forces the block to collapse to its declared count.
+        resume.write_capsule("sess-1", max_tokens=60)
+        tight = self.capsule.read_text()
+        declared = re.search(
+            r"\((\d+) archived charter\(s\) still owed, omitted", tight
+        )
+        self.assertIsNotNone(declared, "archived debt collapsed without a count")
+        self.assertEqual(int(declared.group(1)), 22)
+
+    def test_every_populated_section_fits_the_default_token_bound(self):
+        """Rec 3.5: with every droppable section populated, nothing overflows.
+
+        Exercises active decisions (recent), live, deferred, pending
+        completions, and archived debt together at the real 3000-token bound,
+        and asserts each heading renders — the budget win must not come from a
+        section silently vanishing.
+        """
+        self.write_registry(
+            {
+                "TASK-2026-10-20-0001-live": {
+                    "status": "in-flight",
+                    "specialist": "planner",
+                },
+                "TASK-2026-10-20-0002-owed": {"status": "needs_rework"},
+            }
+        )
+        self.write_queue(
+            [
+                "2026-10-20T00:00:00Z | needs_review | coding/TASK-3 | review this",
+                "2026-10-20T00:00:00Z | BLOCKED | security/TASK-4 | stuck",
+            ]
+        )
+        decisions.record(
+            "keep the dynamic gate", "confirmed", ["turn-1"], home="harness"
+        )
+        self._write_archived_charter(
+            "owed.md",
+            "## THE ASK\nship it\n\n## OPEN LOOPS\n"
+            "- 2026-08-01T00:00:00Z | QUEUE Q-001 | thing — why: x; resume: y\n"
+            "\n## DONE-WHEN\n- [ ] shipped\n",
+        )
+        resume.write_capsule("sess-1", max_tokens=3000)
+        text = self.capsule.read_text()
+        for heading in (
+            "## Active decisions",
+            resume.TASKS_HEADING,
+            resume.DEFERRED_HEADING,
+            resume.QUEUE_HEADING,
+            resume.ARCHIVED_DEBT_HEADING,
+        ):
+            self.assertIn(heading, text, f"section missing: {heading}")
+        self.assertIn("keep the dynamic gate", text)
+        self.assertLessEqual(len(text) // 4, 3000)
+
+    def test_handled_pending_statuses_are_not_counted_as_owed(self):
+        """Settled queue receipts must not render as "awaiting a decision".
+
+        The append-only queue keeps every AUTO-CLOSED / TASK-CLOSED / cancelled
+        / complete receipt; counting them would present handled work as
+        outstanding debt.
+        """
+        self.write_registry({})
+        self.write_queue(
+            [
+                "2026-10-20T00:00:00Z | needs_review | coding/TASK-1 | real",
+                "2026-10-20T00:00:00Z | AUTO-CLOSED | coding/TASK-2 | done",
+                "2026-10-20T00:00:00Z | TASK-CLOSED | coding/TASK-3 | done",
+                "2026-10-20T00:00:00Z | cancelled | coding/TASK-4 | gone",
+                "2026-10-20T00:00:00Z | complete | coding/TASK-5 | done",
+                "2026-10-20T00:00:00Z | completed | coding/TASK-6 | done",
+            ]
+        )
+        resume.write_capsule("sess-1", max_tokens=3000)
+        text = self.capsule.read_text()
+        self.assertIn("1 x coding | needs_review", text)
+        for handled in ("AUTO-CLOSED", "TASK-CLOSED", "cancelled", "| complete", "completed"):
+            self.assertNotIn(handled, text)
+
+    def test_active_decisions_older_than_30_days_collapse_to_a_count(self):
+        """Rec 3.1: the capsule renders only harness decisions within 30 days.
+
+        Older confirmed decisions still live in the journal; the capsule names
+        how many there are and points at it instead of re-stating months-old
+        authority every session, preserving the capsule budget for current
+        work without losing access to older decisions.
+        """
+        decisions.DECISIONS_FILE.write_text(
+            json.dumps(
+                {
+                    "decision_id": "DEC-recent",
+                    "status": "confirmed",
+                    "home": "harness",
+                    "statement": "recent policy",
+                    "scope": [],
+                    "supersedes": [],
+                    "source_turn_ids": ["t"],
+                    "timestamp": "2026-10-20T00:00:00Z",
+                }
+            )
+            + "\n"
+            + json.dumps(
+                {
+                    "decision_id": "DEC-stale",
+                    "status": "confirmed",
+                    "home": "harness",
+                    "statement": "stale policy",
+                    "scope": [],
+                    "supersedes": [],
+                    "source_turn_ids": ["t"],
+                    "timestamp": "2026-07-01T00:00:00Z",
+                }
+            )
+            + "\n"
+        )
+        self.write_registry({})
+        resume.write_capsule(
+            "sess-1", "regenerate", now=datetime(2026, 10, 27, tzinfo=timezone.utc)
+        )
+        text = self.capsule.read_text()
+        self.assertIn("- recent policy [DEC-recent]", text)
+        self.assertNotIn("stale policy", text)
+        self.assertNotIn("[DEC-stale]", text)
+        self.assertIn("1 harness decision(s) older than 30 days", text)
+
     def test_archived_debt_block_is_silent_when_nothing_is_owed(self):
         """Probation clause: no debt, no block. A check that always fires is noise."""
         self.write_registry({})
@@ -583,7 +724,7 @@ class CapsuleFreshnessCanary(unittest.TestCase):
             "- 2026-08-01T00:00:00Z | FOLD | thing — why: x; resume: y\n"
             "\n## DONE-WHEN\n- [x] shipped\n",
         )
-        resume.write_capsule("sess-1", "regenerate", max_tokens=3000)
+        resume.write_capsule("sess-1", max_tokens=3000)
         self.assertNotIn(resume.ARCHIVED_DEBT_HEADING, self.capsule.read_text())
 
     def test_pending_drops_under_the_bound_are_declared(self):
@@ -602,7 +743,7 @@ class CapsuleFreshnessCanary(unittest.TestCase):
                 for i in range(40)
             ]
         )
-        resume.write_capsule("sess-1", "regenerate", max_tokens=150)
+        resume.write_capsule("sess-1", max_tokens=150)
 
         text = self.capsule.read_text()
         self.assertLessEqual(len(text) // 4, 150)
@@ -624,7 +765,7 @@ class CapsuleFreshnessCanary(unittest.TestCase):
                 "2026-08-16T00:01:00Z | needs_review | coding/TASK-2 | b",
             ]
         )
-        resume.write_capsule("sess-1", "regenerate")  # real 3000-token budget
+        resume.write_capsule("sess-1")  # real 3000-token budget
 
         text = self.capsule.read_text()
         self.assertIn(resume.QUEUE_HEADING, text)
@@ -643,7 +784,7 @@ class CapsuleFreshnessCanary(unittest.TestCase):
         self.write_registry({"TASK-X": {"status": "quarantined"}})
         stderr = io.StringIO()
         with contextlib.redirect_stderr(stderr):
-            resume.write_capsule("sess-1", "regenerate")
+            resume.write_capsule("sess-1")
         text = self.capsule.read_text()
         self.assertIn("UNCLASSIFIED", text)
         self.assertIn("quarantined", text)
@@ -652,13 +793,13 @@ class CapsuleFreshnessCanary(unittest.TestCase):
     def test_replace_failure_leaves_no_temp_and_preserves_the_old_capsule(self):
         """The 0210 review's fault injection: a failed rename must clean its temp."""
         self.write_registry(LIVE_FIXTURE)
-        resume.write_capsule("sess-1", "the good capsule")
+        resume.write_capsule("sess-1")
         before = self.capsule.read_text()
         with mock.patch.object(
             resume.os, "replace", side_effect=OSError("injected replace failure")
         ):
             with self.assertRaises(OSError):
-                resume.write_capsule("sess-1", "must not land")
+                resume.write_capsule("sess-1")
         self.assertEqual(self.capsule.read_text(), before)
         self.assertEqual(
             [p.name for p in self.capsule.parent.iterdir()], ["resume.md"]
@@ -673,7 +814,7 @@ class CapsuleFreshnessCanary(unittest.TestCase):
         capsule must survive.
         """
         self.write_registry(LIVE_FIXTURE)
-        resume.write_capsule("sess-1", "the good capsule")
+        resume.write_capsule("sess-1")
         before = self.capsule.read_text()
 
         class FaultyTemp:
@@ -697,7 +838,7 @@ class CapsuleFreshnessCanary(unittest.TestCase):
             lambda *args, **kwargs: FaultyTemp(real_factory(*args, **kwargs)),
         ):
             with self.assertRaises(OSError) as caught:
-                resume.write_capsule("sess-1", "must not land")
+                resume.write_capsule("sess-1")
         self.assertEqual(str(caught.exception), "injected write failure")
         self.assertEqual(self.capsule.read_text(), before)
         self.assertEqual(
@@ -705,7 +846,7 @@ class CapsuleFreshnessCanary(unittest.TestCase):
         )
 
     def test_missing_registry_yields_an_empty_capsule_not_a_crash(self):
-        resume.write_capsule("sess-1", "regenerate")
+        resume.write_capsule("sess-1")
         self.assertEqual(self.capsule_task_ids(), set())
         self.assertIn("(none)", self.capsule.read_text())
 

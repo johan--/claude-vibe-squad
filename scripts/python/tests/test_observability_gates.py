@@ -322,10 +322,8 @@ class McpAuditEnvStatusTest(unittest.TestCase):
 class McpAuditDeclaredCredentialsTest(unittest.TestCase):
     """The audited credential list must match the credentials the server reads.
 
-    The comparison is against observed tool behaviour: each tool is called with
-    an empty environment and asked which credential it wanted. A credential no
-    tool ever names is dead weight in the audit; one that a tool names but the
-    audit omits is an outage the audit cannot see.
+    Academic search takes no provider credentials. Check the audit declaration
+    and exercise the retained tool with an empty environment and mocked network.
     """
 
     @classmethod
@@ -350,49 +348,21 @@ class McpAuditDeclaredCredentialsTest(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         return set(result.stdout.split())
 
-    def _credentials_tools_ask_for(self) -> set[str]:
-        """Call every credential-gated tool with no credentials and collect the
-        names they report missing. Each returns before any network call.
+    def test_audit_declares_no_credentials_for_academic_search(self) -> None:
+        self.assertEqual(self._declared(), set())
 
-        `arxiv_search` is deliberately not called: it takes no credential and
-        would reach the network, so it can contribute no name either way.
-        """
-        calls = (
-            ("xai_search", lambda s: s.xai_search(query="probe")),
-            ("perplexity_search", lambda s: s.perplexity_search(query="probe")),
-            ("firecrawl_scrape", lambda s: s.firecrawl_scrape(url="https://example.com")),
-            ("firecrawl_crawl", lambda s: s.firecrawl_crawl(url="https://example.com")),
-            ("firecrawl_parse", lambda s: s.firecrawl_parse(
-                filename="probe.pdf", content_base64="cHJvYmU=")),
-        )
-        wanted: set[str] = set()
-        cleared = {k: v for k, v in os.environ.items() if not k.endswith(("_API_KEY", "_TOKEN"))}
-        with unittest.mock.patch.dict(os.environ, cleared, clear=True):
-            for name, call in calls:
-                result = call(self.server)
-                self.assertFalse(result.get("ok"), f"{name} succeeded without credentials")
-                match = re.search(r"\b([A-Z][A-Z0-9_]*(?:_API_KEY|_TOKEN))\b", str(result))
-                self.assertIsNotNone(match, f"{name} did not name a credential: {result}")
-                wanted.add(match.group(1))
-        return wanted
+    def test_retained_search_works_without_provider_credentials(self) -> None:
+        import asyncio
 
-    def test_audit_declares_exactly_the_credentials_the_tools_ask_for(self) -> None:
-        """Catches: restoring APIFY_TOKEN/BRAVE_API_KEY/SERPER_API_KEY (which no
-        tool reads, so their absence can never explain an outage), or dropping
-        FIRECRAWL_API_KEY (which three of the six tools require).
-        """
-        declared = self._declared()
-        wanted = self._credentials_tools_ask_for()
-        self.assertEqual(
-            declared, wanted,
-            f"audit declares {sorted(declared)}, tools ask for {sorted(wanted)}",
-        )
-
-    def test_firecrawl_credential_is_audited(self) -> None:
-        """Named explicitly because its omission was the live blind spot: three
-        of six tools return `FIRECRAWL_API_KEY missing` without it.
-        """
-        self.assertIn("FIRECRAWL_API_KEY", self._declared())
+        tools = asyncio.run(self.server.mcp.list_tools())
+        self.assertEqual([tool.name for tool in tools], ["arxiv_search"])
+        with unittest.mock.patch.dict(os.environ, {}, clear=True), unittest.mock.patch.object(
+            self.server.arxiv, "Client"
+        ) as client:
+            client.return_value.results.return_value = []
+            self.assertEqual(self.server.arxiv_search("probe"),
+                             {"ok": True, "result": {"papers": []}})
+            client.return_value.results.assert_called_once()
 
 
 class DashboardSnapshotFailureTest(unittest.TestCase):
@@ -507,8 +477,8 @@ class AuthStatusReachesTheVerdictTests(unittest.TestCase):
     `bin/mcp-audit.sh` printed auth_ok into the per-server row and then counted
     issues/warnings from registered/reachable/usable only. `bin/doctor.sh:925-932`
     keys entirely on the `summary: issues=N warnings=N` line, so with
-    FIRECRAWL_API_KEY unset the log read `auth_ok=partial(2/3)` while doctor
-    printed "MCP usability audit passed" -- three of six arsenal tools dead.
+    a required credential unset the log read `auth_ok=partial(2/3)` while doctor
+    printed "MCP usability audit passed" despite the authentication failure.
 
     A signal computed and then discarded before the machine-readable verdict is
     the same defect as a gate that cannot fail.

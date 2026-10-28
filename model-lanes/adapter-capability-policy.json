@@ -56,7 +56,7 @@
     "tags",
     "version"
   ],
-  "generic_pointer_line": "Tool, skill, and MCP capabilities are **lane-specific** and are defined authoritatively in this specialist's per-lane adapter under `model-lanes/`, bounded by the lane capability profile in `model-lanes/lane-capabilities.tsv`. This canonical base names no tool, MCP, or skill by design (the boundary test: a sentence that would be false on some lane belongs in the adapter). Read your adapter for the exact executables and MCP/skill surface available on your lane, and verify each in your live runtime before use — declare a capability gap and use the task-approved fallback if a declared capability is absent. Kimi subagents cannot hold MCP, so on the Kimi lane any MCP work is lead-brokered.",
+  "generic_pointer_line": "Tool, skill, and MCP capabilities are **lane-specific** and are defined authoritatively in this specialist's per-lane adapter under `model-lanes/`, bounded by the lane capability profile in `model-lanes/lane-capabilities.tsv`. This canonical base names no tool, MCP, or skill by design (the boundary test: a sentence that would be false on some lane belongs in the adapter). Read your adapter for the exact executables and MCP/skill surface available on your lane, and verify each in your live runtime before use — declare a capability gap and use the task-approved fallback if a declared capability is absent.",
   "migration_parity_retirements": [
     {
       "specialist": "content-verifier",
@@ -177,6 +177,270 @@
       "retired_on": "2026-09-18",
       "source_task": "TASK-2026-09-18-1019-2c251a13",
       "reason": "skill-authoring methodology misrouted as a prose methodology: `writing-skills` resolves to the superpowers skill for authoring SKILL.md files, not for writing prose, so the three writing specialists loaded it and applied no craft skill. Superseded by copy-refinement (wired, both skill roots) plus de-ai-before-delivery on the claude lane (wired, .claude/skills). Measured 2026-09-18: the article-writing lane reported skills_applied=claim-verification only and itself flagged that the projection should point at a prose skill."
+    },
+    {
+      "specialist": "agentops",
+      "kind": "tools",
+      "identifier": "xai_search",
+      "retired_on": "2026-10-27",
+      "source_task": "TASK-2026-10-26-2324-e1af1561",
+      "reason": "Operator-approved research tool retirement; capability intentionally removed from all routed lanes."
+    },
+    {
+      "specialist": "ai-engineer",
+      "kind": "tools",
+      "identifier": "xai_search",
+      "retired_on": "2026-10-27",
+      "source_task": "TASK-2026-10-26-2324-e1af1561",
+      "reason": "Operator-approved research tool retirement; capability intentionally removed from all routed lanes."
+    },
+    {
+      "specialist": "architect",
+      "kind": "tools",
+      "identifier": "xai_search",
+      "retired_on": "2026-10-27",
+      "source_task": "TASK-2026-10-26-2324-e1af1561",
+      "reason": "Operator-approved research tool retirement; capability intentionally removed from all routed lanes."
+    },
+    {
+      "specialist": "backend-engineer",
+      "kind": "tools",
+      "identifier": "xai_search",
+      "retired_on": "2026-10-27",
+      "source_task": "TASK-2026-10-26-2324-e1af1561",
+      "reason": "Operator-approved research tool retirement; capability intentionally removed from all routed lanes."
+    },
+    {
+      "specialist": "code-reviewer",
+      "kind": "tools",
+      "identifier": "xai_search",
+      "retired_on": "2026-10-27",
+      "source_task": "TASK-2026-10-26-2324-e1af1561",
+      "reason": "Operator-approved research tool retirement; capability intentionally removed from all routed lanes."
+    },
+    {
+      "specialist": "content-verifier",
+      "kind": "tools",
+      "identifier": "xai_search",
+      "retired_on": "2026-10-27",
+      "source_task": "TASK-2026-10-26-2324-e1af1561",
+      "reason": "Operator-approved research tool retirement; capability intentionally removed from all routed lanes."
+    },
+    {
+      "specialist": "data-extraction-engineer",
+      "kind": "tools",
+      "identifier": "xai_search",
+      "retired_on": "2026-10-27",
+      "source_task": "TASK-2026-10-26-2324-e1af1561",
+      "reason": "Operator-approved research tool retirement; capability intentionally removed from all routed lanes."
+    },
+    {
+      "specialist": "devops-engineer",
+      "kind": "tools",
+      "identifier": "xai_search",
+      "retired_on": "2026-10-27",
+      "source_task": "TASK-2026-10-26-2324-e1af1561",
+      "reason": "Operator-approved research tool retirement; capability intentionally removed from all routed lanes."
+    },
+    {
+      "specialist": "exploit-developer",
+      "kind": "tools",
+      "identifier": "xai_search",
+      "retired_on": "2026-10-27",
+      "source_task": "TASK-2026-10-26-2324-e1af1561",
+      "reason": "Operator-approved research tool retirement; capability intentionally removed from all routed lanes."
+    },
+    {
+      "specialist": "frontend-engineer",
+      "kind": "tools",
+      "identifier": "xai_search",
+      "retired_on": "2026-10-27",
+      "source_task": "TASK-2026-10-26-2324-e1af1561",
+      "reason": "Operator-approved research tool retirement; capability intentionally removed from all routed lanes."
+    },
+    {
+      "specialist": "harness-optimizer",
+      "kind": "tools",
+      "identifier": "xai_search",
+      "retired_on": "2026-10-27",
+      "source_task": "TASK-2026-10-26-2324-e1af1561",
+      "reason": "Operator-approved research tool retirement; capability intentionally removed from all routed lanes."
+    },
+    {
+      "specialist": "impact-validator",
+      "kind": "tools",
+      "identifier": "xai_search",
+      "retired_on": "2026-10-27",
+      "source_task": "TASK-2026-10-26-2324-e1af1561",
+      "reason": "Operator-approved research tool retirement; capability intentionally removed from all routed lanes."
+    },
+    {
+      "specialist": "knowledge-librarian",
+      "kind": "tools",
+      "identifier": "xai_search",
+      "retired_on": "2026-10-27",
+      "source_task": "TASK-2026-10-26-2324-e1af1561",
+      "reason": "Operator-approved research tool retirement; capability intentionally removed from all routed lanes."
+    },
+    {
+      "specialist": "large-context-analyst",
+      "kind": "tools",
+      "identifier": "xai_search",
+      "retired_on": "2026-10-27",
+      "source_task": "TASK-2026-10-26-2324-e1af1561",
+      "reason": "Operator-approved research tool retirement; capability intentionally removed from all routed lanes."
+    },
+    {
+      "specialist": "loop-operator",
+      "kind": "tools",
+      "identifier": "xai_search",
+      "retired_on": "2026-10-27",
+      "source_task": "TASK-2026-10-26-2324-e1af1561",
+      "reason": "Operator-approved research tool retirement; capability intentionally removed from all routed lanes."
+    },
+    {
+      "specialist": "mac-ops",
+      "kind": "tools",
+      "identifier": "xai_search",
+      "retired_on": "2026-10-27",
+      "source_task": "TASK-2026-10-26-2324-e1af1561",
+      "reason": "Operator-approved research tool retirement; capability intentionally removed from all routed lanes."
+    },
+    {
+      "specialist": "memory-curator",
+      "kind": "tools",
+      "identifier": "xai_search",
+      "retired_on": "2026-10-27",
+      "source_task": "TASK-2026-10-26-2324-e1af1561",
+      "reason": "Operator-approved research tool retirement; capability intentionally removed from all routed lanes."
+    },
+    {
+      "specialist": "performance-optimizer",
+      "kind": "tools",
+      "identifier": "xai_search",
+      "retired_on": "2026-10-27",
+      "source_task": "TASK-2026-10-26-2324-e1af1561",
+      "reason": "Operator-approved research tool retirement; capability intentionally removed from all routed lanes."
+    },
+    {
+      "specialist": "privacy-steward",
+      "kind": "tools",
+      "identifier": "xai_search",
+      "retired_on": "2026-10-27",
+      "source_task": "TASK-2026-10-26-2324-e1af1561",
+      "reason": "Operator-approved research tool retirement; capability intentionally removed from all routed lanes."
+    },
+    {
+      "specialist": "product-manager",
+      "kind": "tools",
+      "identifier": "xai_search",
+      "retired_on": "2026-10-27",
+      "source_task": "TASK-2026-10-26-2324-e1af1561",
+      "reason": "Operator-approved research tool retirement; capability intentionally removed from all routed lanes."
+    },
+    {
+      "specialist": "refactor-cleaner",
+      "kind": "tools",
+      "identifier": "xai_search",
+      "retired_on": "2026-10-27",
+      "source_task": "TASK-2026-10-26-2324-e1af1561",
+      "reason": "Operator-approved research tool retirement; capability intentionally removed from all routed lanes."
+    },
+    {
+      "specialist": "research",
+      "kind": "tools",
+      "identifier": "firecrawl",
+      "retired_on": "2026-10-27",
+      "source_task": "TASK-2026-10-26-2324-e1af1561",
+      "reason": "Operator-approved research tool retirement; capability intentionally removed from all routed lanes."
+    },
+    {
+      "specialist": "research",
+      "kind": "tools",
+      "identifier": "xai_search",
+      "retired_on": "2026-10-27",
+      "source_task": "TASK-2026-10-26-2324-e1af1561",
+      "reason": "Operator-approved research tool retirement; capability intentionally removed from all routed lanes."
+    },
+    {
+      "specialist": "scout",
+      "kind": "tools",
+      "identifier": "xai_search",
+      "retired_on": "2026-10-27",
+      "source_task": "TASK-2026-10-26-2324-e1af1561",
+      "reason": "Operator-approved research tool retirement; capability intentionally removed from all routed lanes."
+    },
+    {
+      "specialist": "scraping-engineer",
+      "kind": "tools",
+      "identifier": "xai_search",
+      "retired_on": "2026-10-27",
+      "source_task": "TASK-2026-10-26-2324-e1af1561",
+      "reason": "Operator-approved research tool retirement; capability intentionally removed from all routed lanes."
+    },
+    {
+      "specialist": "security-analyst",
+      "kind": "tools",
+      "identifier": "xai_search",
+      "retired_on": "2026-10-27",
+      "source_task": "TASK-2026-10-26-2324-e1af1561",
+      "reason": "Operator-approved research tool retirement; capability intentionally removed from all routed lanes."
+    },
+    {
+      "specialist": "smart-contract-engineer",
+      "kind": "tools",
+      "identifier": "xai_search",
+      "retired_on": "2026-10-27",
+      "source_task": "TASK-2026-10-26-2324-e1af1561",
+      "reason": "Operator-approved research tool retirement; capability intentionally removed from all routed lanes."
+    },
+    {
+      "specialist": "summarizer",
+      "kind": "tools",
+      "identifier": "xai_search",
+      "retired_on": "2026-10-27",
+      "source_task": "TASK-2026-10-26-2324-e1af1561",
+      "reason": "Operator-approved research tool retirement; capability intentionally removed from all routed lanes."
+    },
+    {
+      "specialist": "synthesizer",
+      "kind": "tools",
+      "identifier": "xai_search",
+      "retired_on": "2026-10-27",
+      "source_task": "TASK-2026-10-26-2324-e1af1561",
+      "reason": "Operator-approved research tool retirement; capability intentionally removed from all routed lanes."
+    },
+    {
+      "specialist": "systems-engineer",
+      "kind": "tools",
+      "identifier": "xai_search",
+      "retired_on": "2026-10-27",
+      "source_task": "TASK-2026-10-26-2324-e1af1561",
+      "reason": "Operator-approved research tool retirement; capability intentionally removed from all routed lanes."
+    },
+    {
+      "specialist": "test-engineer",
+      "kind": "tools",
+      "identifier": "xai_search",
+      "retired_on": "2026-10-27",
+      "source_task": "TASK-2026-10-26-2324-e1af1561",
+      "reason": "Operator-approved research tool retirement; capability intentionally removed from all routed lanes."
+    },
+    {
+      "specialist": "threat-modeler",
+      "kind": "tools",
+      "identifier": "xai_search",
+      "retired_on": "2026-10-27",
+      "source_task": "TASK-2026-10-26-2324-e1af1561",
+      "reason": "Operator-approved research tool retirement; capability intentionally removed from all routed lanes."
+    },
+    {
+      "specialist": "ui-engineer",
+      "kind": "tools",
+      "identifier": "xai_search",
+      "retired_on": "2026-10-27",
+      "source_task": "TASK-2026-10-26-2324-e1af1561",
+      "reason": "Operator-approved research tool retirement; capability intentionally removed from all routed lanes."
     }
   ],
   "identifier_seeds": {

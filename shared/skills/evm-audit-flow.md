@@ -7,14 +7,16 @@ status: authored
 
 Stateful EVM audit pipeline from raw contract source through confirmed-finding delivery. Use
 when you have a Foundry or Hardhat project with Solidity/Vyper contracts. Every step runs a
-**native host CLI** or a **guarded MCP** (`guarded-slither`, `guarded-semgrep` — Trail-of-Bits
-mcp-context-protector, schema-pinned and fail-closed); there is no `tool_wrappers` layer and no
-retired KG. Start from `pre-audit-threat-model` if an x-ray does not already exist.
+**native host CLI** (`slither`, `semgrep`, `myth`, `echidna`/`medusa`, `halmos`, `forge`) invoked
+directly; there is no MCP wrapper in front of them, no `tool_wrappers` layer, and no retired KG.
+Start from `pre-audit-threat-model` if an x-ray does not already exist.
 
 ## Order of ops
 
-1. **Static analysis pass.** Run `slither .` (or the `guarded-slither` MCP for structured,
-   fail-closed queries — `list_detectors`, `run_detectors`, `get_function_source`). Classify
+1. **Static analysis pass.** Run `slither .` directly from the project root (it needs the
+   Foundry/Hardhat build context, not a loose `.sol` file). `slither . --json -` gives
+   structured output, `slither --list-detectors` enumerates detectors, and
+   `slither . --print function-summary` gives per-function context. Classify
    detectors: HIGH-signal (`reentrancy-eth`, `arbitrary-send`, `controlled-delegatecall`,
    `suicidal`, `unprotected-upgrade`) vs NOISE (naming-convention, too-many-digits,
    solc-version). Do NOT dismiss `reentrancy-eth` as a false positive without tracing the call
@@ -22,18 +24,20 @@ retired KG. Start from `pre-audit-threat-model` if an x-ray does not already exi
    `--always-install` (no silent network downloads); confirm the version is already present.
 
 2. **Pattern/taint pass (the static analog of symbolic execution).** Run project-specific
-   Semgrep rules via the `guarded-semgrep` MCP (`semgrep_scan_with_custom_rule`) — taint
+   Semgrep rules with the `semgrep` CLI directly —
+   `semgrep scan --config <rules.yaml> --metrics=off --json <path>` — taint
    sources = external/`msg.sender`-reachable inputs, sinks = value transfers,
    `delegatecall`, storage writes. Author rules with `semgrep-rule-author`; a reachable sink
-   with no realized impact is a lead, not a finding.
+   with no realized impact is a lead, not a finding. Local rule files need no login.
 
-   **Pass `code_files[].path` as a RELATIVE path.** An absolute path is rejected with
-   `Untrusted path must be relative`. The sibling tool `semgrep_scan` takes the opposite
-   convention (absolute only) and then fails anyway -- it fetches its ruleset from the
-   registry and 401s -- so treat `semgrep_scan_with_custom_rule` as the only working MCP
-   entry point, with the `semgrep` CLI as the fallback. Both failure modes return an empty
-   result that reads as a clean scan, so **confirm your rule fires on a known positive
-   before believing a zero.** (Measured 2026-08-02.)
+   **A zero is not a clean scan until the same rule has fired on a known positive.** Two
+   measured ways to get an empty result (2026-10-27, semgrep 1.157.0): a rule file that fails
+   YAML parsing exits 7 and reports the error only in the JSON `errors` array with an empty
+   `results` list (an unquoted pattern containing `{` or `:` is the usual cause — quote it:
+   `pattern: "$X.call{value: $V}($A)"` fires, the unquoted form does not parse); and a
+   pattern that does not match the call shape — `$X.call(...)` misses
+   `to.call{value: 1}("")` — returns zero findings, zero errors, exit 0. Check the exit code,
+   `errors`, and the positive control before believing a zero.
 
 3. **Symbolic execution.** Run `myth analyze <contract> --execution-timeout 600` on every
    contract flagged HIGH by step 1, plus any contract with external calls, `delegatecall`, or
@@ -79,12 +83,19 @@ retired KG. Start from `pre-audit-threat-model` if an x-ray does not already exi
 - Do NOT invoke any dead `tool_wrappers/*` name (`slither_scan`, `mythril_analyze`,
   `echidna_fuzz`, `halmos_check`, `forge_test`); those wrap a container library that no longer
   exists — use the native CLIs above.
+- Do NOT route through the retired `guarded-slither` / `guarded-semgrep` MCPs (Trail of Bits
+  mcp-context-protector wrappers, removed from both lanes on 2026-10-27, commit `02442bdc`);
+  their tool names (`run_detectors`, `semgrep_scan_with_custom_rule`) no longer resolve — run
+  the CLIs above.
 
 ## Example
 
 ```bash
 # Step 1: static analysis (native)
 slither . --exclude naming-convention,solc-version
+
+# Step 2: taint rules (native) -- run the same rule on a known positive first
+semgrep scan --config rules/evm-taint.yaml --metrics=off --json src/
 
 # Step 3: symbolic execution on a flagged contract
 myth analyze src/Vault.sol --execution-timeout 600

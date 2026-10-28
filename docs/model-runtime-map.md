@@ -11,7 +11,7 @@ Operator -> Chrono -> board dispatch -> one fresh specialist CLI per task
 
 Chrono is the only controller. Each specialist runs as a freshly spawned,
 capability-scoped CLI in its own git worktree, bound to the model its runtime-map
-row selects — model binding is **per specialist**. `codex`, `claude`, `kimi`, and
+row selects — model binding is **per specialist**. `codex`, `claude`, and
 `grok` name their executables; the `gemini` routing identifier resolves to
 Antigravity's `agy` executable. These are task vehicles, not standing lanes. The
 `departments/` tree is compatibility storage for canonical specialist markdown,
@@ -29,7 +29,7 @@ tab-separated fields, in this order:
 4. `safety_level` — `low | medium | high`.
 5. `safety_tags` — structured dual-use/privacy/financial and related tags.
 6. `tool_profile` — named tool-host constraint, or `none`.
-7. `primary_lane` — `codex | claude | gemini | kimi | grok`; Kimi is default-deny except for the two allowlisted primaries `summarizer` and `kestrel`.
+7. `primary_lane` — `codex | claude | gemini | grok`; primary eligibility is governed by `shared/lane-policy.tsv`.
 8. `primary_profile` — model/effort/flags key in `shared/registries/profiles.tsv`.
 9. `backup_lane` — genuine cross-family operational backup.
 10. `backup_profile` — backup profile registry key.
@@ -39,9 +39,9 @@ tab-separated fields, in this order:
 14. `review_lane` — independent reviewer lane, or `none` where permitted.
 15. `review_profile` — reviewer profile registry key, or `none`.
 16. `anti_affinity` — reviewer-separation constraint, or `none`.
-17. `throughput_lane` — optional bulk/downshift lane.
+17. `throughput_lane` — optional cheap-tier slot (Claude, Codex, or Gemini in the current map); availability does not establish per-task eligibility.
 18. `throughput_profile` — optional bulk profile.
-19. `throughput_policy` — versioned downshift policy.
+19. `throughput_policy` — versioned downshift policy; the low-safety, non-sensitive, explicit per-task flag conjunction is defined in `shared/routing.md` §5.
 20. `failover_policy` — versioned operational-failover policy.
 21. `operator_gate` — closed list of actions requiring explicit operator approval.
 22. `heightened_risk` — `true | false` defense-in-depth marker.
@@ -53,7 +53,7 @@ tab-separated fields, in this order:
 28. `version` — row contract version.
 29. `operator_model_consult` — `true | false`; whether operator-model consultation is part of the routed contract.
 
-`bin/validate-specialists.sh` is a thin wrapper: the live engine is `scripts/python/validate_specialists.py`, followed by the capability-home gate in `scripts/python/validate_capability_homes.py`. It rejects a header that is neither the canonical 29-field header nor the 28-field legacy header (legacy rows are normalized by defaulting `operator_model_consult` to `false`), and rejects any row whose width does not match the declared header. It also validates lane/profile and policy foreign keys, source namespaces, capability and safety enums, cross-family primary/backup separation, Kimi's narrow-primary allowlist (read from `shared/lane-policy.tsv`, not hardcoded), review independence, high/heightened-risk escalation floors, throughput gates, operator gates, tool-profile compatibility, specialist briefs, and native adapters. Folder location must never be used to infer model choice.
+`bin/validate-specialists.sh` is a thin wrapper: the live engine is `scripts/python/validate_specialists.py`, followed by the capability-home gate in `scripts/python/validate_capability_homes.py`. It rejects a header that is neither the canonical 29-field header nor the 28-field legacy header (legacy rows are normalized by defaulting `operator_model_consult` to `false`), and rejects any row whose width does not match the declared header. It also validates lane/profile and policy foreign keys, source namespaces, capability and safety enums, cross-family primary/backup separation, primary eligibility (read from `shared/lane-policy.tsv`), review independence, high/heightened-risk escalation floors, throughput gates, operator gates, tool-profile compatibility, specialist briefs, and native adapters. Folder location must never be used to infer model choice.
 
 ## CLI Vehicles
 
@@ -65,8 +65,7 @@ Model binding is per specialist. These are the CLIs a specialist row can be boun
 | `codex` | OpenAI | implementation, repo edits, tests, refactors, PoC mechanics |
 | `claude` | Anthropic | judgment, safety review, privacy/auth reasoning, memory hygiene, adversarial challenge |
 | `gemini` (`agy` executable) | Google | multimodal analysis, media generation routes, visual/design review, grounded content |
-| `kimi` | Moonshot | two allowlisted primaries (`summarizer`, `kestrel`); otherwise throughput-only bulk/mechanical work under an explicit downshift gate |
-| `grok` | xAI | one primary (`smokey`, the blank advisor); escalate route for `research` and `bounty-researcher`. Board launch requires API-key authority and has native web search disabled; `shared/routing.md` § Grok board launch constraints owns that policy. `read_file` hard-fails past ~25k tokens — large documents need shell or paged ingest |
+| `grok` | xAI | one primary (`smokey`, the blank advisor); escalate route for `research` and `bounty-researcher`. Board launch requires API-key authority and disables general web retrieval while retaining native X search; `shared/routing.md` § Grok board launch constraints owns that policy. `read_file` hard-fails past ~25k tokens — large documents need shell or paged ingest |
 
 ## Dispatch Algorithm
 

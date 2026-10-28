@@ -61,7 +61,6 @@ GEMINI_GENERATED_ROLES = (
     "voice-agent-builder",
     "voice-narrator",
 )
-KIMI_GENERATED_ROLES: tuple[str, ...] = ()
 GROK_GENERATED_ROLES = ("smokey",)
 ADVISOR_GENERATED_ROLES = ("ichigo", "exodia")
 SWARM_CRITICAL_ROLES = (
@@ -96,8 +95,6 @@ GEMINI_AGENT_NATIVE_TOOLS = (
     "glob",
     "grep_search",
 )
-KIMI_LEAD_BROKER_POLICY = "lead-broker-only"
-KIMI_LEAD_BROKER_BOUNDARY = "MCP tools are unavailable inside Kimi subagents"
 
 
 class AdapterValidationError(RuntimeError):
@@ -142,7 +139,7 @@ def load_capability_registry(path: str | Path) -> dict[str, CapabilityRow]:
             lane = raw["lane"]
             if lane in result:
                 raise AdapterValidationError(f"duplicate lane capability row: {lane}")
-            if lane not in {"gpt-codex", "claude", "gemini", "grok", "kimi"}:
+            if lane not in {"gpt-codex", "claude", "gemini", "grok"}:
                 raise AdapterValidationError(f"unknown lane capability row: {lane}")
             if not raw["probe_receipt"]:
                 raise AdapterValidationError(f"lane {lane} is missing a probe receipt")
@@ -162,8 +159,8 @@ def load_capability_registry(path: str | Path) -> dict[str, CapabilityRow]:
                 probe_receipt=raw["probe_receipt"],
                 version=raw["version"],
             )
-    if set(result) != {"gpt-codex", "claude", "gemini", "grok", "kimi"}:
-        raise AdapterValidationError("lane capability registry must contain exactly five lanes")
+    if set(result) != {"gpt-codex", "claude", "gemini", "grok"}:
+        raise AdapterValidationError("lane capability registry must contain exactly four lanes")
     return result
 
 
@@ -220,6 +217,16 @@ def upsert_capability_projection(
     """Replace only the generated capability block and preserve adapter policy/prose."""
     projection = capability_projection(repo_root, lane, specialist)
     lines = existing.splitlines(keepends=True)
+    if lane == "gpt-codex":
+        # `model_reasoning_effort` is a dispatch-time (route-tier) decision applied at
+        # launch via `-c model_reasoning_effort=<selected profile effort>`. A static pin
+        # in the agent adapter shadows the selected profile (e.g. ultra/max), so the
+        # generated adapter must never carry it. Strip any legacy pin on regeneration.
+        lines = [
+            line
+            for line in lines
+            if not re.match(r"^\s*model_reasoning_effort\s*=", line)
+        ]
     begin = next((i for i, line in enumerate(lines) if PROJECTION_BEGIN in line), None)
     end = next((i for i, line in enumerate(lines) if PROJECTION_END in line), None)
     replacement = projection.splitlines(keepends=True)
@@ -443,7 +450,6 @@ def render_adapter(
             f"# {marker}\n"
             f'name = "{specialist.replace("-", "_")}\"\n'
             f'description = "Thin Codex adapter for {specialist}; canonical brief is authoritative.\"\n'
-            'model_reasoning_effort = "high"\n'
             'sandbox_mode = "workspace-write"\n'
             f"{projection}"
             f"{instructions}"
@@ -517,18 +523,6 @@ def render_adapter(
             "---\n\n"
             f"{body}"
         )
-    if lane == "kimi":
-        return (
-            f"# {marker}\n"
-            "version: 1\n"
-            f"{projection}"
-            "agent:\n"
-            f"  name: {specialist}\n"
-            "  extend: default\n"
-            f'  description: "Thin Kimi adapter for {specialist}; canonical brief is authoritative."\n'
-            f"  system_prompt_path: ../prompts/{specialist}.md\n"
-            "  model: kimi-code/kimi-for-coding-highspeed\n"
-        )
     if lane == "grok":
         return (
             f"# {marker}\n"
@@ -539,28 +533,9 @@ def render_adapter(
             "  extend: default\n"
             f'  description: "Thin Grok adapter for {specialist}; canonical brief is authoritative."\n'
             f"  system_prompt_path: ../prompts/{specialist}.md\n"
-            "  model: grok-4.6\n"
+            "  model: grok-4.7\n"
         )
     raise AdapterValidationError(f"generation is not enabled for lane {lane}")
-
-
-def render_kimi_prompt(repo_root: str | Path, specialist: str) -> str:
-    root = Path(repo_root)
-    row = _runtime_rows(root).get(specialist)
-    if row is None:
-        raise AdapterValidationError(f"unknown specialist: {specialist}")
-    brief = canonical_brief(root, row).as_posix()
-    registry_sha = _registry_sha(root)
-    return (
-        f"<!-- generated_by={GENERATED_MARKER} registry_sha256={registry_sha} -->\n"
-        f"# Specialist Adapter: {specialist}\n\n"
-        f"You are the `{specialist}` specialist in the `kimi` lane only through its ranked route.\n\n"
-        f"Canonical specialist instructions live at `{brief}`. Read that file at task start and follow it over this adapter.\n\n"
-        "Lane capability profile is `kimi` from `model-lanes/lane-capabilities.tsv`. MCP tools are unavailable inside Kimi "
-        "subagents. Work only from a frozen, provenance-bearing corpus supplied by the main Kimi lane; return any MCP or external "
-        "retrieval need to the lead as `subagent_mcp_gap` and never pretend the tool ran.\n\n"
-        "Execute only the assigned packet, stay inside write scope, and preserve every operator gate.\n"
-    )
 
 
 def render_grok_prompt(repo_root: str | Path, specialist: str) -> str:
@@ -710,8 +685,8 @@ def validate_adapter_file(
             if capability_bearing and actual != expected_arrays[field]:
                 raise AdapterValidationError(f"Claude adapter {specialist} has stale {field} projection")
         return
-    if lane in {"grok", "kimi"}:
-        lane_name = "Grok" if lane == "grok" else "Kimi"
+    if lane == "grok":
+        lane_name = "Grok"
         if not re.search(rf"(?m)^\s{{2}}name:\s*{re.escape(specialist)}$", text):
             raise AdapterValidationError(f"{lane_name} adapter identity mismatch: {specialist}")
         pointer = _frontmatter_value(text, "  system_prompt_path")
@@ -732,16 +707,6 @@ def validate_adapter_file(
             actual = tuple(json.loads(raw)) if raw else ()
             if capability_bearing and actual != expected_arrays[field]:
                 raise AdapterValidationError(f"{lane_name} adapter {specialist} has stale {field} projection")
-        # Native prompt adapters must state the lead-broker boundary. Older
-        # direct canonical pointers contain no independent capability claim and
-        # are therefore validated by identity/pointer only.
-        if (
-            "../prompts/" in pointer
-            and lane == "kimi"
-            and capability.child_mcp_policy == KIMI_LEAD_BROKER_POLICY
-            and KIMI_LEAD_BROKER_BOUNDARY not in prompt
-        ):
-            raise AdapterValidationError(f"Kimi adapter {specialist} lacks lead-broker MCP policy")
         return
     raise AdapterValidationError(f"validation is not enabled for lane {lane}")
 
@@ -755,8 +720,6 @@ def _target(root: Path, lane: str, specialist: str) -> Path:
         return root / "model-lanes" / "gemini" / ".gemini" / "agents" / f"{specialist}.md"
     if lane == "grok":
         return root / "model-lanes" / "grok" / ".grok" / "agents" / f"{specialist}.yaml"
-    if lane == "kimi":
-        return root / "model-lanes" / "kimi" / ".kimi" / "agents" / f"{specialist}.yaml"
     raise AdapterValidationError(f"unknown lane target: {lane}")
 
 
@@ -766,7 +729,7 @@ def generated_marker_files(repo_root: str | Path) -> list[tuple[str, Path]]:
     root = Path(repo_root)
     marker = GENERATED_MARKER.encode()
     generated: list[tuple[str, Path]] = []
-    for lane in ("gpt-codex", "claude", "gemini", "grok", "kimi"):
+    for lane in ("gpt-codex", "claude", "gemini", "grok"):
         lane_root = root / "model-lanes" / lane
         for path in sorted(lane_root.rglob("*")):
             if path.is_file() and marker in path.read_bytes():
@@ -839,11 +802,9 @@ def sync_derived_adapters(repo_root: str | Path) -> dict[str, int]:
 
     for specialist in ADVISOR_GENERATED_ROLES:
         for lane in ("claude", "gpt-codex"):
-            fields = (
-                {"model_reasoning_effort": "high"}
-                if lane == "gpt-codex"
-                else {}
-            )
+            # Effort is set at launch from the route-tier profile, never pinned in a
+            # static overlay (which would shadow ultra/max). Overlays carry no effort.
+            fields: dict[str, str] = {}
             overlay = (
                 root
                 / "shared"
@@ -908,7 +869,6 @@ def repository_report(repo_root: str | Path) -> dict[str, object]:
     rows = _runtime_rows(root)
     source_entries, _source_payload = load_source(root)
     mismatches: list[str] = []
-    kimi_prompt_root = root / "model-lanes" / "kimi" / ".kimi" / "prompts"
     grok_prompt_root = root / "model-lanes" / "grok" / ".grok" / "prompts"
     for lane, path in generated_marker_files(root):
         role = path.stem
@@ -927,13 +887,6 @@ def repository_report(repo_root: str | Path) -> dict[str, object]:
             except AdapterValidationError as exc:
                 mismatches.append(f"invalid:{lane}:{role}:{exc}")
             continue
-        if lane == "kimi" and path.parent == kimi_prompt_root:
-            try:
-                if _normalize_compatible_digest_metadata(path.read_text(encoding="utf-8")) != _normalize_compatible_digest_metadata(render_kimi_prompt(root, role)):
-                    mismatches.append(f"prompt:kimi:{role}")
-            except AdapterValidationError as exc:
-                mismatches.append(f"invalid:kimi-prompt:{role}:{exc}")
-            continue
         if lane == "grok" and path.parent == grok_prompt_root:
             try:
                 if _normalize_compatible_digest_metadata(path.read_text(encoding="utf-8")) != _normalize_compatible_digest_metadata(render_grok_prompt(root, role)):
@@ -946,7 +899,7 @@ def repository_report(repo_root: str | Path) -> dict[str, object]:
     physical_lanes: dict[str, list[str]] = {}
     for role in SWARM_CRITICAL_ROLES:
         valid_lanes: list[str] = []
-        for lane in ("gpt-codex", "claude", "gemini", "grok", "kimi"):
+        for lane in ("gpt-codex", "claude", "gemini", "grok"):
             target = _target(root, lane, role)
             if not target.is_file():
                 continue
@@ -962,7 +915,6 @@ def repository_report(repo_root: str | Path) -> dict[str, object]:
         "ranked_gaps": {
             "gemini": _ranked_gaps(root, "gemini", rows),
             "grok": _ranked_gaps(root, "grok", rows),
-            "kimi": _ranked_gaps(root, "kimi", rows),
         },
         "physical_lanes": physical_lanes,
     }
@@ -978,7 +930,7 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument("--check", action="store_true")
     parser.add_argument("--validate-adapter")
-    parser.add_argument("--lane", choices=("gpt-codex", "claude", "gemini", "grok", "kimi"))
+    parser.add_argument("--lane", choices=("gpt-codex", "claude", "gemini", "grok"))
     args = parser.parse_args(argv)
     try:
         if args.sync_gemini:
@@ -1030,7 +982,6 @@ def main(argv: list[str] | None = None) -> int:
         bool(report["generated_mismatches"])
         or bool(report["ranked_gaps"]["gemini"])
         or bool(report["ranked_gaps"]["grok"])
-        or bool(report["ranked_gaps"]["kimi"])
     )
 
 

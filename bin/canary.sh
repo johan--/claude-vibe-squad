@@ -198,7 +198,7 @@ with open(sys.argv[1], encoding="utf-8", newline="") as handle:
     rows = [row for row in csv.DictReader(handle, delimiter="\t")
             if row["specialist"] == sys.argv[2]]
 if len(rows) != 1 or rows[0]["primary_lane"] not in {
-    "codex", "claude", "gemini", "kimi", "grok"
+    "codex", "claude", "gemini", "grok"
 }:
     raise SystemExit("canary.sh: specialist has no unique supported primary lane")
 lane = rows[0]["primary_lane"]
@@ -425,7 +425,6 @@ def skill_oracle(entry, context):
     homes = {
         "claude": (".claude/skills", sentinel),
         "codex": (".agents/skills", os.environ["CANARY_AGENTS_SENTINEL"]),
-        "kimi": (".agents/skills", os.environ["CANARY_AGENTS_SENTINEL"]),
         "gemini": ("model-lanes/gemini/.agents/skills", os.environ["CANARY_AGENTS_SENTINEL"]),
     }
     if not isinstance(lane, str) or lane not in homes:
@@ -1035,7 +1034,7 @@ script = str(Path(os.environ["CANARY_TEST_SCRIPT"]).resolve())
 fixtures = Path(os.environ["CANARY_FIXTURES"])
 tid = "TASK-2099-01-01-0003-good"
 for lane, home in (("claude", ".claude/skills"), ("gpt-codex", ".agents/skills"),
-                   ("kimi", ".agents/skills"), ("gemini", "model-lanes/gemini/.agents/skills")):
+                   ("gemini", "model-lanes/gemini/.agents/skills")):
     root = fixtures / lane
     shutil.copytree(os.environ["CANARY_GOOD"], root)
     context_path = root / "_state/board-dispatch" / f"{tid}.d-good.context.json"

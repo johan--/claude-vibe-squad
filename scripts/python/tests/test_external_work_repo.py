@@ -79,9 +79,9 @@ class WorkRepoAdmissionTests(unittest.TestCase):
         self.assertEqual(verdict.decision, "deny")
         self.assertRegex(verdict.refusals[0]["message"], "work_repo.*" + message)
 
-    def test_absent_field_context_json_is_byte_identical_to_prechange_fixture(self):
-        # Captured before this implementation, with only file digests stubbed and
-        # the disposable squad-root prefix normalized. Compare the whole JSON.
+    def test_absent_field_context_json_matches_current_legacy_contract(self):
+        # Pin the current no-work_repo contract, with only file digests stubbed
+        # and the disposable squad-root prefix normalized. Compare the whole JSON.
         with mock.patch.object(dcb, "_sha256_file", return_value="a" * 64):
             actual = json.dumps(self.build(), sort_keys=True, indent=2)
         actual = actual.replace(str(self.root.resolve()), "__SQUAD_ROOT__") + "\n"
@@ -625,7 +625,7 @@ class GeneratingWrapperWorkRepoTests(unittest.TestCase):
             (root / "tools").mkdir()
             (root / "shared/lead-windows.sh").write_text(
                 "COMPATIBILITY_NAMESPACES=(coding)\n"
-                "MODEL_LANES=(gpt-codex claude gemini grok kimi)\n"
+                "MODEL_LANES=(gpt-codex claude gemini grok)\n"
                 'is_compatibility_namespace() { [[ "$1" == coding ]]; }\n'
             )
             dispatch = root / "bin/send-task.sh"
@@ -672,48 +672,44 @@ class GeneratingWrapperWorkRepoTests(unittest.TestCase):
 class SupervisorExternalBindingTests(unittest.TestCase):
     def test_external_role_prompts_enforce_combined_utf8_bound_with_success_controls(self):
         source = (ROOT / "bin/board-supervisor.sh").read_text()
-        for lane in ("kimi", "grok"):
-            with self.subTest(lane=lane), tempfile.TemporaryDirectory() as directory:
-                root = Path(directory)
-                begin = source.index(f"    def {lane}_role_launcher(")
-                end_marker = "    def grok_role_launcher(" if lane == "kimi" else "    lane_launcher ="
-                block = textwrap.dedent(source[begin:source.index(end_marker, begin)])
-                args = ["--agent-file" if lane == "kimi" else "--agent",
-                        str(root / "model-lanes" / lane / "main.yaml")]
-                if lane == "kimi":
-                    args += ["--add-dir", str(root)]
-                launcher = mock.Mock(return_value="launched")
-                namespace = {"json": json, "executable": Path("/bin/true"),
-                             "envelope": SimpleNamespace(worker_projection=lambda: {}),
-                             "capability_plan": SimpleNamespace(authorized_mcps=()),
-                             "trusted_task_prompt": "Authorized task", "skill_contract": "\nSkills\n",
-                             "agent_system_context": "é" * 70, "external_work_repo": True,
-                             "lane_config_root": root, "handle": SimpleNamespace(worktree_root=root),
-                             "capability_lane_args": args, "authority": {"lane_args": []},
-                             "selected_launcher": launcher, "_prompt_limit": 32768}
-                exec(compile(block, f"supervisor-{lane}-prompt", "exec"), namespace)
-                command = ("/bin/true", "-p", "task", *args)
-                run = namespace[f"{lane}_role_launcher"]
-                self.assertEqual(run(None, command), "launched")
-                prompt = launcher.call_args.args[1][-1]
-                self.assertTrue(prompt.startswith("é" * 70 + "\n\nAuthorized task"))
-                namespace["_prompt_limit"] = len(prompt.encode("utf-8"))
-                self.assertEqual(run(None, command), "launched")
-                launcher.reset_mock()
-                namespace["_prompt_limit"] -= 1
-                with self.assertRaisesRegex(ValueError, f"{lane.title()} external role/task prompt exceeds"):
-                    run(None, command)
-                launcher.assert_not_called()
-                # The existing squad path still binds the role through its file.
-                namespace["external_work_repo"] = False
-                if lane == "kimi":
-                    args += ["--skills-dir", str(root / ".agents/skills")]
-                restored = mock.Mock(side_effect=lambda path, suffix, launch: launch())
-                namespace["run_with_restored_prompt"] = restored
-                namespace["_prompt_limit"] = 1
-                self.assertEqual(run(None, ("/bin/true", "-p", "task", *args)), "launched")
-                restored.assert_called_once()
-                self.assertFalse(launcher.call_args.args[1][-1].startswith("é"))
+        lane = "grok"
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            begin = source.index(f"    def {lane}_role_launcher(")
+            end_marker = "    lane_launcher ="
+            block = textwrap.dedent(source[begin:source.index(end_marker, begin)])
+            args = ["--agent",
+                    str(root / "model-lanes" / lane / "main.yaml")]
+            launcher = mock.Mock(return_value="launched")
+            namespace = {"json": json, "executable": Path("/bin/true"),
+                         "envelope": SimpleNamespace(worker_projection=lambda: {}),
+                         "capability_plan": SimpleNamespace(authorized_mcps=()),
+                         "trusted_task_prompt": "Authorized task", "skill_contract": "\nSkills\n",
+                         "agent_system_context": "é" * 70, "external_work_repo": True,
+                         "lane_config_root": root, "handle": SimpleNamespace(worktree_root=root),
+                         "capability_lane_args": args, "authority": {"lane_args": []},
+                         "selected_launcher": launcher, "_prompt_limit": 32768}
+            exec(compile(block, f"supervisor-{lane}-prompt", "exec"), namespace)
+            command = ("/bin/true", "-p", "task", *args)
+            run = namespace[f"{lane}_role_launcher"]
+            self.assertEqual(run(None, command), "launched")
+            prompt = launcher.call_args.args[1][-1]
+            self.assertTrue(prompt.startswith("é" * 70 + "\n\nAuthorized task"))
+            namespace["_prompt_limit"] = len(prompt.encode("utf-8"))
+            self.assertEqual(run(None, command), "launched")
+            launcher.reset_mock()
+            namespace["_prompt_limit"] -= 1
+            with self.assertRaisesRegex(ValueError, f"{lane.title()} external role/task prompt exceeds"):
+                run(None, command)
+            launcher.assert_not_called()
+            # The existing squad path still binds the role through its file.
+            namespace["external_work_repo"] = False
+            restored = mock.Mock(side_effect=lambda path, suffix, launch: launch())
+            namespace["run_with_restored_prompt"] = restored
+            namespace["_prompt_limit"] = 1
+            self.assertEqual(run(None, ("/bin/true", "-p", "task", *args)), "launched")
+            restored.assert_called_once()
+            self.assertFalse(launcher.call_args.args[1][-1].startswith("é"))
 
     def test_external_read_paths_resolve_existing_inputs_and_refuse_missing_ones(self):
         source = (ROOT / "bin/board-supervisor.sh").read_text()
@@ -819,7 +815,7 @@ class SupervisorExternalBindingTests(unittest.TestCase):
                                               work_repo_root=root, work_base_branch="client-main")
             self.assertEqual(namespace["request_payload"]["branch"], "client-main")
 
-    def test_recovery_path_also_lands_only_external_task_branch(self):
+    def test_recovery_preserves_without_landing_external_task_branch(self):
         import test_trusted_launch as trusted_tests
         fixture = ExternalIntegrationTests()
         fixture.setUp()
@@ -833,9 +829,11 @@ class SupervisorExternalBindingTests(unittest.TestCase):
             exec(trusted_tests._supervisor_region("committed-work-recovery"), namespace)
             namespace["_work_recovery_window"][0] = True
             receipt = namespace["recover_committed_work_for_block"]()
-            self.assertEqual(receipt["status"], "integrated")
+            self.assertEqual(receipt["status"], "preserved")
             self.assertEqual(git(fixture.work, "rev-parse", "client-main"), fixture.before)
-            self.assertEqual(git(fixture.work, "show", f"board/{TASK}:code.txt"), "worker")
+            self.assertEqual(git(fixture.work, "branch", "--list", f"board/{TASK}"), "")
+            ref = receipt["evidence_preservation"]["evidence_ref"]
+            self.assertEqual(git(fixture.work, "show", f"{ref}:code.txt"), "worker")
         finally:
             fixture.doCleanups()
 

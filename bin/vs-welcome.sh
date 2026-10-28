@@ -181,7 +181,7 @@ printf '  %sfan-out%s  %s"send this to every lane"%s\n'    "$TEXT" "$R" "$DIM" "
 printf '  %sroute%s    %s"ask gemini about X"%s\n'         "$TEXT" "$R" "$DIM" "$R"
 printf '  %sstatus%s   %s"what is each lane on?"%s\n'      "$TEXT" "$R" "$DIM" "$R"
 printf '  %speek%s     %sC-b g key guide (%s / %s) · C-b Space reset · C-b d detach%s\n' "$TEXT" "$R" "$DIM" "${CHRONO_WINDOW}" "${WATCHERS_WINDOW}" "$R"
-printf '  %s/stop%s    %sinterrupt the active dispatch%s\n' "$TEXT" "$R" "$DIM" "$R"
+printf '  %scancel%s   %sbin/vs-cancel-spawn.sh <attempt.log> — stop one live specialist%s\n' "$TEXT" "$R" "$DIM" "$R"
 printf '  %s──────────────────────────────────────────────%s\n\n' "$DIM" "$R"
 
 sleep 1

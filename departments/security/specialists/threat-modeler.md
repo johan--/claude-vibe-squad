@@ -19,7 +19,7 @@ Repository-grounded threat modeling — trust boundaries, abuse cases, threat-mo
 
 ## Tools available to me
 
-Tool, skill, and MCP capabilities are **lane-specific** and are defined authoritatively in this specialist's per-lane adapter under `model-lanes/`, bounded by the lane capability profile in `model-lanes/lane-capabilities.tsv`. This canonical base names no tool, MCP, or skill by design (the boundary test: a sentence that would be false on some lane belongs in the adapter). Read your adapter for the exact executables and MCP/skill surface available on your lane, and verify each in your live runtime before use — declare a capability gap and use the task-approved fallback if a declared capability is absent. Kimi subagents cannot hold MCP, so on the Kimi lane any MCP work is lead-brokered.
+Tool, skill, and MCP capabilities are **lane-specific** and are defined authoritatively in this specialist's per-lane adapter under `model-lanes/`, bounded by the lane capability profile in `model-lanes/lane-capabilities.tsv`. This canonical base names no tool, MCP, or skill by design (the boundary test: a sentence that would be false on some lane belongs in the adapter). Read your adapter for the exact executables and MCP/skill surface available on your lane, and verify each in your live runtime before use — declare a capability gap and use the task-approved fallback if a declared capability is absent.
 
 ## When to fan out
 
@@ -83,7 +83,7 @@ At the S2 design step of every bounty card I anchor the model to the operator de
 
 ## Multi-model rule
 
-Multi-model with Claude + Gemini. Different models surface different attack scenarios — Claude tends toward logical-chain reasoning, Gemini surfaces broader-attack-surface possibilities.
+Multi-model by design — decorrelated families surface different attack scenarios, so this role is run on more than one lane and reviewed across families. This role's model and lane bindings (primary / backup / escalation / review) are read from `shared/specialist-runtime-map.tsv`, not restated here; nothing in this brief may assume a particular model.
 
 For high-stakes audits (Bounty Mode contests), can escalate to council-consensus (5-stance fan-out via skeptic in council mode).
 

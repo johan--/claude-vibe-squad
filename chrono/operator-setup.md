@@ -17,7 +17,6 @@ live in `chrono/CLAUDE.md`, `chrono/SOUL.md`, `shared/routing.md`, and `shared/p
 | `claude` | Claude Code (`claude`) | subscription/OAuth |
 | `gemini` | Antigravity CLI (`agy`) | personal OAuth |
 | `grok` | Grok CLI (`grok`) | declared lane auth policy |
-| `kimi` | Kimi CLI | `kimi login` |
 
 Launch rails unset API-key env vars for paid CLIs so subscription auth is preferred. Pay-per-token or external paid provider routes stay opt-in.
 
@@ -27,7 +26,9 @@ Run a CDP-accessible Chrome on the standard remote-debugging port 9222 so all mo
 for browser work, and keep that session signed in — attached tools reuse your working browser
 session. This is the operator-side setup step only. What workers must then *do* with that Chrome
 (attach, never spawn; the profile path; the one permitted exception) is stated once, in
-`shared/lifecycle.md` rule 11 — read it there rather than inferring the rule from this paragraph.
+`shared/lifecycle.md` rule 11. That file is maintainer-internal and withheld from the public
+export, so a public checkout has only the summary in this paragraph; where the file exists, read
+the rule there rather than inferring it from here.
 
 The toolkit supports bug-bounty / security-research platforms generally; the shipped setup does not name a
 platform set. The persistent-browser keep-alive (`scripts/python/browser_keep_alive.py`) monitors a tab list

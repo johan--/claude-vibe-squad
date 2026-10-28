@@ -12,10 +12,18 @@
 #   WRITE_SCOPE="path/a, path/b"  — extra writable paths, appended to the response
 #     artifact. Without this the wrapper could only ever author read-only packets,
 #     so any packet asking for code changes silently could not apply them.
+#   WRITE_SCOPE_BODY_ONLY_OK=1 — allow a body-only scope declaration without
+#     WRITE_SCOPE when the declaration is intentionally just prose.
 #   WORK_REPO=/absolute/main/checkout — optional external work repository.
 #     Unset emits no field and retains squad-repository dispatch behavior.
 #
-#   REVIEW_MODEL=codex|gpt-codex|claude|gemini|grok|kimi — alternate reviewer for
+#   ROUTE_TIER=primary|backup|escalate|review|throughput — pick this specialist's
+#     effort tier for one dispatch. Unset emits no field, so lane selection keeps
+#     its historical first-matching-tier behavior. An explicitly empty value is
+#     invalid. The tier must name a row whose
+#     *_lane is the lane the packet actually dispatches to.
+#
+#   REVIEW_MODEL=codex|gpt-codex|claude|gemini|grok — alternate reviewer for
 #     non-empty REVIEW_TRIGGERS. Defaults to the mapped reviewer; if that reviewer
 #     shares the author's family or is absent, explicitly choose an independent
 #     reviewer. The wrapper refuses before staging when no valid choice is given.
@@ -30,6 +38,12 @@
 #
 #   AUTHORIZED_DELETE_PATHS='"a", "b"'  — JSON-list members of paths the worker may
 #     DELETE. Required for any file MOVE; the board refuses worker deletions without it.
+#
+#   --supersedes TASK-ID  (env: SUPERSEDES=TASK-ID) — close the named task as
+#     `superseded` via registry_reconciler.py, but ONLY after this dispatch is
+#     admitted. A failed admission (set -e) or a --dry-run closes nothing. The
+#     close reason is "superseded by <new id>". Settlement becomes a side effect
+#     of the follow-up dispatch instead of a separate ceremony that gets skipped.
 #
 # This wrapper generates standard TASK frontmatter, then routes the packet
 # through bin/send-task.sh so normal Chrono dispatches get the same safety path
@@ -46,7 +60,7 @@ RUNTIME_MAP="${VAULT_ROOT}/shared/specialist-runtime-map.tsv"
 source "${VAULT_ROOT}/shared/lead-windows.sh"
 
 if [[ $# -lt 3 ]]; then
-    echo "usage: $0 <source-namespace> <body-file> <specialist> [to-model] --mode <project|bounty|modeless> [--dry-run]"
+    echo "usage: $0 <source-namespace> <body-file> <specialist> [to-model] --mode <project|bounty|modeless> [--dry-run] [--supersedes TASK-ID]"
     echo "  source-namespace: ${COMPATIBILITY_NAMESPACES[*]}"
     echo "  body-file: path to markdown file containing task body"
     echo "  specialist: canonical specialist name, or none only when direct_lane_work_allowed is intentionally true"
@@ -63,6 +77,10 @@ shift 3
 TO_MODEL=""
 MODE=""
 DRY_RUN="false"
+# Rec 5: settle a superseded task as a side effect of this dispatch. The env
+# form exists for the wrapper callers that cannot add a CLI flag; an explicit
+# --supersedes flag overrides it (parsed below).
+SUPERSEDES_ID="${SUPERSEDES:-}"
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -81,6 +99,14 @@ while [[ $# -gt 0 ]]; do
         --dry-run)
             DRY_RUN="true"
             shift
+            ;;
+        --supersedes)
+            [[ $# -ge 2 ]] || {
+                echo "ERROR: --supersedes requires a TASK-... id"
+                exit 1
+            }
+            SUPERSEDES_ID="$2"
+            shift 2
             ;;
         --*)
             echo "ERROR: unknown option: $1"
@@ -109,6 +135,38 @@ case "${MODE}" in
         ;;
 esac
 
+# An optional per-dispatch effort tier. Validate against ROUTE_TIERS in the
+# context builder rather than restating the vocabulary here: a second copy would
+# age independently and admit a tier the dispatcher then rejects after staging.
+# Membership in that tuple also implies single-line, round-trippable UTF-8, so
+# this subsumes the interpolation boundary check applied to the raw values below.
+# Resolve the builder from THIS script's checkout, not VAULT_ROOT: VAULT_ROOT is
+# the dispatch target and may be a fixture root with no scripts/python at all.
+# Failing to import is a refusal, never a silent skip of the check.
+ROUTE_TIER_LINE=""
+if [[ -n "${ROUTE_TIER+x}" ]]; then
+    if ! ROUTE_TIER="${ROUTE_TIER}" python3 -X utf8 - \
+        "$(cd "$(dirname "${BASH_SOURCE[0]}")/python" && pwd -P)" <<'PYEOF'
+import os
+import sys
+
+sys.path.insert(0, sys.argv[1])
+from dispatch_context_builder import ROUTE_TIERS
+
+tier = os.environ["ROUTE_TIER"]
+if tier not in ROUTE_TIERS:
+    print(
+        f"ERROR: invalid ROUTE_TIER {tier!r}; route_tier must be one of {', '.join(ROUTE_TIERS)}",
+        file=sys.stderr,
+    )
+    raise SystemExit(1)
+PYEOF
+    then
+        exit 1
+    fi
+    ROUTE_TIER_LINE="route_tier: ${ROUTE_TIER}"$'\n'
+fi
+
 # Review intent is an explicit admission-time union. An omitted variable used to
 # be indistinguishable from deliberate ordinary work, and a missing review target
 # cannot be reconstructed after launch. Validate before TASK_ID/UUID creation or
@@ -126,6 +184,14 @@ if [[ "${REVIEWS}" != "none" && ! "${REVIEWS}" =~ ^TASK-[0-9]{4}-[0-9]{2}-[0-9]{
     exit 1
 fi
 
+# A --supersedes/SUPERSEDES id is interpolated into the reconciler close reason
+# and command after admission; reject a malformed id before any dispatch so a
+# typo cannot slip through and the close names a real canonical task.
+if [[ -n "${SUPERSEDES_ID}" && ! "${SUPERSEDES_ID}" =~ ^TASK-[0-9]{4}-[0-9]{2}-[0-9]{2}-[0-9]{4}-[A-Za-z0-9][A-Za-z0-9-]*$ ]]; then
+    echo "ERROR: invalid --supersedes/SUPERSEDES id '${SUPERSEDES_ID}'; expected a canonical TASK-YYYY-MM-DD-HHMM-<suffix> id"
+    exit 1
+fi
+
 # An explicit 4th-arg lane must survive the runtime-map lookup below; without
 # this the documented [to-model] override was silently discarded (failover
 # to a backup lane was impossible from this wrapper).
@@ -133,6 +199,14 @@ EXPLICIT_MODEL="${TO_MODEL}"
 
 if [[ ! -f "${BODY_FILE}" ]]; then
     echo "ERROR: body file not found: ${BODY_FILE}"
+    exit 1
+fi
+
+# A body declaration cannot grant writable paths; require the frontmatter input
+# before staging unless the operator explicitly marks the declaration as prose.
+if [[ -z "${WRITE_SCOPE:-}" && "${WRITE_SCOPE_BODY_ONLY_OK:-}" != "1" ]] &&
+    grep -Eiq '^[[:space:]]*(-[[:space:]]*)?(\*\*[[:space:]]*)?write scope:' "${BODY_FILE}"; then
+    echo 'ERROR: body declares a write scope but WRITE_SCOPE is not set; set WRITE_SCOPE="p1, p2"' >&2
     exit 1
 fi
 
@@ -255,9 +329,9 @@ if [[ "$review_triggers_compact" != "[]" ]]; then
     REVIEW_MODEL="${REVIEW_MODEL:-${MAPPED_REVIEW_MODEL}}"
     [[ "${REVIEW_MODEL}" == "codex" ]] && REVIEW_MODEL="gpt-codex"
     case "${REVIEW_MODEL}" in
-        gpt-codex|claude|gemini|grok|kimi|none) ;;
+        gpt-codex|claude|gemini|grok|none) ;;
         *)
-            echo "ERROR: invalid REVIEW_MODEL '${REVIEW_MODEL}'; expected codex, gpt-codex, claude, gemini, grok, or kimi"
+            echo "ERROR: invalid REVIEW_MODEL '${REVIEW_MODEL}'; expected codex, gpt-codex, claude, gemini, grok, or none"
             exit 1
             ;;
     esac
@@ -315,7 +389,7 @@ return_artifact: departments/coding/outbox/${TASK_ID}-response.md
 compatibility_namespace: coding
 specialist: ${SPECIALIST}
 to_model: ${TO_MODEL}
-model_override_reason: ${MODEL_OVERRIDE_REASON:-none}
+${ROUTE_TIER_LINE}model_override_reason: ${MODEL_OVERRIDE_REASON:-none}
 source_namespace: ${SOURCE_NAMESPACE}
 review_model: ${REVIEW_MODEL}
 mandatory_review: ${MANDATORY_REVIEW}
@@ -352,6 +426,27 @@ if [[ "${DRY_RUN}" == "true" ]]; then
     DISPATCH_ARGS+=(--dry-run)
 fi
 VAULT_ROOT="${VAULT_ROOT}" "${HARDENED_DISPATCH}" "${DISPATCH_ARGS[@]}"
+
+# Close the superseded task as part of this dispatch so a missed manual close
+# cannot leave the replaced task showing as outstanding work.
+# Ordering is load-bearing: this runs only AFTER admission. `set -e` exits above
+# if the hardened dispatch fails, so a failed admission closes nothing; and a
+# dry-run admits nothing, so it must not close either. The close is best-effort:
+# the dispatch is the irreversible action and already succeeded, so a close
+# failure is loud on stderr but does not fail the dispatch — the operator closes
+# it by hand from the printed command.
+if [[ -n "${SUPERSEDES_ID}" && "${DRY_RUN}" != "true" ]]; then
+    RECONCILER="${VAULT_ROOT}/scripts/python/registry_reconciler.py"
+    if VAULT_ROOT="${VAULT_ROOT}" python3 "${RECONCILER}" \
+        --close-task "${SUPERSEDES_ID}" \
+        --close-status superseded \
+        --close-reason "superseded by ${TASK_ID}"; then
+        echo "  Superseded: ${SUPERSEDES_ID} (closed as superseded by ${TASK_ID})"
+    else
+        echo "WARNING: --supersedes: ${TASK_ID} was admitted, but closing ${SUPERSEDES_ID} as superseded FAILED." >&2
+        echo "         Close it by hand: ${RECONCILER} --close-task ${SUPERSEDES_ID} --close-status superseded --close-reason 'superseded by ${TASK_ID}'" >&2
+    fi
+fi
 
 echo "  File: ${VAULT_ROOT}/departments/coding/inbox/${TASK_ID}.md"
 echo "  Reply expected at: ${VAULT_ROOT}/departments/coding/outbox/${TASK_ID}-response.md"

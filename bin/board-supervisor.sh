@@ -12,10 +12,10 @@ PATH="/usr/bin:/bin:/usr/sbin:/sbin"
 export PATH
 
 # Runtime authority for the memory audit home.  It must not follow VAULT_ROOT:
-# a missing vault is the failure this trail exists to retain.  The launcher has
-# the same entry-point default, held byte-identical by
-# _state/v4-audit/vault-audit-dir/test_worker_unavailable_event.py; this
-# supervisor remains authoritative for plain-shell board launches.
+# a missing vault is the failure this trail exists to retain. This supervisor owns
+# the default; launch-squad.sh carries an entry-point copy, pinned byte-identical by
+# scripts/python/tests/test_board_supervisor_integration.py::VaultAuditDirectoryDefaultTests
+# for plain-shell and coordinator launches alike.
 export CHRONO_VAULT_AUDIT_DIR="${CHRONO_VAULT_AUDIT_DIR:-${HOME:-/var/tmp/chrono-vault-${EUID}}/.local/state/chrono-vault/audit}"
 
 usage() {
@@ -319,16 +319,37 @@ PYQUARANTINE
         receipt_note="receipt unreadable (${quarantined_response#unreadable: }) so quarantine state is UNKNOWN, not clear | "
       fi
       blocked_detail="$(
-        "$python_bin" - "$receipt_path" <<'PYBLOCKED' 2>/dev/null || true
+        "$python_bin" - "$receipt_path" "$return_artifact" <<'PYBLOCKED' 2>/dev/null || true
 import json, sys
 try:
     with open(sys.argv[1], encoding="utf-8") as fh:
         receipt = json.load(fh)
 except Exception:
     raise SystemExit(0)
+details = []
+preservation = receipt.get("evidence_preservation")
+if isinstance(preservation, dict):
+    status = preservation.get("status", "unknown")
+    recovery = f"unfinished work; preservation status: {status}"
+    if status in {"preserved", "preserved_existing", "preserved_partial"}:
+        location = preservation.get("evidence_location") or preservation.get("evidence_commit")
+        if location:
+            recovery += f"; snapshot: {location}"
+    elif status == "none":
+        recovery += "; nothing was preserved"
+    elif status == "error":
+        recovery += "; salvage failed"
+    if sys.argv[2]:
+        recovery += f"; declared artifact: {sys.argv[2]}"
+    worktree = preservation.get("worktree_location")
+    if worktree:
+        recovery += f"; retained worktree: {worktree}"
+    details.append(recovery)
 reason = receipt.get("reason")
 if isinstance(reason, str) and reason.strip():
-    print(" ".join(reason.split())[:600])
+    details.append(" ".join(reason.split())[:600])
+if details:
+    print(" | ".join(details))
 PYBLOCKED
       )"
       if ! "$python_bin" "$context_builder" blocked \
@@ -835,17 +856,19 @@ try:
     )
     from lane_capability_enforcement import (
         CapabilityDenied,
-        RESEARCH_API_KEY_NAMES,
         adapter_path_for,
         broker_chrono_vault_plan,
         chrono_vault_relay_server,
+        claude_plugins_to_disable,
         cli_args_for_materialized,
         codex_chrono_vault_relay_args,
         load_json_mcp_servers,
         load_projection,
         load_tool_classes,
+        materialize_disabled_plugins_settings,
         materialize_role_config,
         parse_claude_enabled_plugins,
+        parse_claude_plugin_components,
         parse_claude_project_plugin_dirs,
         parse_live_mcp_listing,
         partition_absent_mcps,
@@ -1051,23 +1074,12 @@ def load_solodit_api_key():
     return value
 
 
-# RESEARCH_API_KEY_NAMES is imported from `lane_capability_enforcement` above.
-# It used to be restated here, which meant the credential loader and the Kimi
-# per-server env binding kept two copies of the same three names.
-
-
-def load_research_api_keys():
-    # Operator-approved credential widening (2026-07-28). The chrono-research-
-    # arsenal MCP authenticates its xAI, Perplexity, and Firecrawl calls with
-    # three names that live only in the off-repo secret store and are never
-    # ambient in the board process. Source them the same bounded way as the
-    # Gemini/Solodit keys, BEST-EFFORT: a missing/unreadable key is simply omitted
-    # so the tool degrades to its own "key missing"/upstream error at call time
-    # instead of failing the launch. Least-privilege: ONLY these three research
-    # keys, and only injected for lanes that host the research arsenal.
+def load_grok_api_key():
+    # Grok CLI authentication still needs its own bounded secret-store read.
+    # This key is projected only into Grok workers.
     home = os.environ.get("HOME", "")
     if not home or "\x00" in home:
-        return {}
+        return None
     try:
         completed = subprocess.run(
             (
@@ -1075,8 +1087,7 @@ def load_research_api_keys():
                 "-f",
                 "-c",
                 'source "$HOME/.config/shell/secrets.zsh" 2>/dev/null; '
-                'print -rn -- "${XAI_API_KEY:-}\t${PERPLEXITY_API_KEY:-}'
-                '\t${FIRECRAWL_API_KEY:-}"',
+                'print -rn -- "${XAI_API_KEY:-}"',
             ),
             check=False,
             capture_output=True,
@@ -1090,17 +1101,18 @@ def load_research_api_keys():
             close_fds=True,
         )
     except (OSError, subprocess.SubprocessError):
-        return {}
-    if completed.returncode != 0 or "\n" in completed.stdout:
-        return {}
-    parts = completed.stdout.split("\t")
-    if len(parts) != len(RESEARCH_API_KEY_NAMES):
-        return {}
-    keys = {}
-    for name, value in zip(RESEARCH_API_KEY_NAMES, parts):
-        if value and len(value) <= 16384 and "\x00" not in value:
-            keys[name] = value
-    return keys
+        return None
+    value = completed.stdout
+    if (
+        completed.returncode != 0
+        or not value
+        or len(value) > 16384
+        or "\x00" in value
+        or "\n" in value
+        or "\t" in value
+    ):
+        return None
+    return value
 
 
 def load_github_mcp_token():
@@ -1246,45 +1258,6 @@ def _mcp_server_tables(text):
     return lines, tables
 
 
-def _remove_codex_mcp_env_placeholders(config_text, server_name, environment_names):
-    """Remove shell-looking literals that Codex would pass without expansion.
-
-    Codex TOML ``env`` values are fixed strings, so ``"${XAI_API_KEY}"`` masks
-    the real parent value with those literal characters. The actual values stay
-    out of the generated config: the launch gate adds their *names* to the
-    server's ``env_vars`` forwarding list after authorization. Only an exact
-    self-referential placeholder is removed; a real operator-supplied value is
-    left byte-for-byte intact.
-    """
-
-    if not re.fullmatch(r"[A-Za-z0-9_-]+", server_name):
-        raise ValueError("Codex MCP placeholder server name is unsafe")
-    names = tuple(environment_names)
-    if any(not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", name) for name in names):
-        raise ValueError("Codex MCP placeholder environment name is unsafe")
-    lines, tables = _mcp_server_tables(config_text)
-    matches = [
-        (start, end, is_array)
-        for path, is_array, start, end in tables
-        if path == ("mcp_servers", server_name, "env")
-    ]
-    if len(matches) > 1 or (matches and matches[0][2]):
-        raise ValueError("Codex MCP environment table is ambiguous")
-    if not matches:
-        return config_text
-    start, end, _is_array = matches[0]
-    for index in range(start + 1, end):
-        candidate = lines[index].strip()
-        for name in names:
-            if re.fullmatch(
-                rf'{re.escape(name)}\s*=\s*"\$\{{{re.escape(name)}\}}"\s*(?:#.*)?',
-                candidate,
-            ):
-                lines[index] = ""
-                break
-    return "".join(lines)
-
-
 def _inject_codex_vault_context(config_text, vault_context):
     """Bind one validated per-task context into a configured vault server.
 
@@ -1308,7 +1281,7 @@ def _inject_codex_vault_context(config_text, vault_context):
         elif path == ("mcp_servers", "chrono-vault", "env"):
             vault_env_table = (start, end)
 
-    # Match Kimi's authorization gate: context is bound only when the base
+    # Context is bound only when the base
     # configuration actually carries the chrono-vault server.
     if vault_table is None:
         return config_text
@@ -1361,7 +1334,79 @@ def _inject_codex_vault_context(config_text, vault_context):
     return "".join(lines)
 
 
-def _prepare_codex_home(base_home, repo_config, spawn_home, vault_context):
+def _set_codex_root_scalar(config_text, key, value):
+    """Force a TOML root-level scalar so native sub-agents read the selected value.
+
+    The per-attempt config.toml is unioned from the operator's live
+    ``~/.codex/config.toml``, which pins its own ``model`` and
+    ``model_reasoning_effort`` at the document root.  Codex native sub-agents
+    (``collaboration.spawn_agent``) re-read this config.toml and do NOT inherit
+    the parent launch's ``-c`` overrides, so a stale root pin (e.g. ``"high"``)
+    silently shadows the route-tier profile the dispatcher selected and already
+    passes on the command line.  Overwrite the root scalar in place so the file
+    agrees with the launch ``-c`` value; insert it at the document root if
+    absent.  A TOML root key must precede the first ``[table]`` header, so only
+    that region is searched or written.
+    """
+    if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_-]*", key):
+        raise ValueError("Codex root scalar key is unsafe")
+    if not isinstance(value, str) or not re.fullmatch(r"[A-Za-z0-9._-]+", value):
+        raise ValueError("Codex root scalar value is unsafe")
+    lines = config_text.splitlines(keepends=True)
+    first_table = next(
+        (index for index, line in enumerate(lines) if re.match(r"^\s*\[", line)),
+        len(lines),
+    )
+    matches = [
+        index
+        for index in range(first_table)
+        if re.match(rf"^\s*{re.escape(key)}\s*=", lines[index])
+    ]
+    if len(matches) > 1:
+        raise ValueError(f"Codex root scalar {key!r} is defined more than once")
+    assignment = f'{key} = "{value}"\n'
+    if matches:
+        lines[matches[0]] = assignment
+        return "".join(lines)
+    lines.insert(0, assignment)
+    return "".join(lines)
+
+
+def _codex_launch_overrides(lane_args):
+    """Extract the selected model and reasoning effort from the trusted launch args.
+
+    ``lane_args`` is the authenticated codex launch ABI built by
+    ``dispatch_context_builder._trusted_lane_args`` --
+    ``(..., "--model", <model>, "-c", 'model_reasoning_effort="<effort>"')``.
+    These are the single source of the route-tier decision; deriving the
+    config.toml pins from the very args that go on the command line makes the two
+    impossible to drift.  Either value stays ``None`` if the args do not carry it,
+    so the config is left untouched rather than pinned to a guess.
+    """
+    model = None
+    effort = None
+    args = list(lane_args or [])
+    for index in range(len(args) - 1):
+        current, following = args[index], args[index + 1]
+        if current == "--model":
+            model = following
+        elif current == "-c":
+            match = re.fullmatch(
+                r'model_reasoning_effort="([A-Za-z0-9._-]+)"', following
+            )
+            if match:
+                effort = match.group(1)
+    return model, effort
+
+
+def _prepare_codex_home(
+    base_home,
+    repo_config,
+    spawn_home,
+    vault_context,
+    selected_model=None,
+    selected_effort=None,
+):
     """Build a per-spawn CODEX_HOME that unions the live config with guarded MCPs.
 
     Design B: the operator's live ``~/.codex/config.toml`` is the base and stays
@@ -1402,12 +1447,19 @@ def _prepare_codex_home(base_home, repo_config, spawn_home, vault_context):
         )
         merged += "\n".join(blocks)
 
-    merged = _remove_codex_mcp_env_placeholders(
-        merged,
-        "chrono-research-arsenal",
-        RESEARCH_API_KEY_NAMES,
-    )
     merged = _inject_codex_vault_context(merged, vault_context)
+
+    # The launch already passes the route-tier profile through `-c`, but Codex
+    # native sub-agents re-read this config.toml and ignore `-c`, so pin the
+    # selected model/effort at the document root too.  Without this the whole
+    # spawned tree inherits the operator's live default (measured: "high") and
+    # shadows the selected profile (e.g. escalate -> "max").
+    if selected_model:
+        merged = _set_codex_root_scalar(merged, "model", selected_model)
+    if selected_effort:
+        merged = _set_codex_root_scalar(
+            merged, "model_reasoning_effort", selected_effort
+        )
 
     spawn_home.mkdir(parents=True, exist_ok=True)
     os.chmod(spawn_home, 0o700)
@@ -1564,7 +1616,7 @@ except (ClearanceError, TypeError, ValueError, UnicodeEncodeError):
 
 MANAGED_CREDENTIAL_NAMES = (
     "SOLODIT_API_KEY",
-    *RESEARCH_API_KEY_NAMES,
+    "XAI_API_KEY",
     "GITHUB_PERSONAL_ACCESS_TOKEN",
 )
 
@@ -1592,24 +1644,20 @@ def load_managed_credentials(worker_lane, authorized_mcps):
     say so in the receipt and in the worker's context instead of letting the
     worker find out by calling a dead tool.
     """
-    # Kimi's per-role MCP config launches repo-local stdio children and binds
-    # the same bounded snapshot into each authorized server record below.
     # Gemini/Antigravity and Grok have operator-accepted GLOBAL MCP inventories,
     # so they cannot narrow server exposure per spawn; credential projection is
     # still per spawn and belongs on the worker/health-probe environment. The
     # global inventory decision changes the authorization boundary, not which
     # authorized worker receives the credentials its MCPs require.
-    if worker_lane not in {"claude", "codex", "gemini", "grok", "kimi"}:
+    if worker_lane not in {"claude", "codex", "gemini", "grok"}:
         return MappingProxyType({}), ()
 
     authorized = set(authorized_mcps)
     values = {}
     missing = []
     if worker_lane == "grok":
-        # Grok itself authenticates with XAI_API_KEY. Reuse the bounded secret
-        # loader, but project only that one key into the CLI parent; the other
-        # research-provider credentials never belong in this lane process.
-        xai_key = load_research_api_keys().get("XAI_API_KEY")
+        # Grok itself authenticates with XAI_API_KEY.
+        xai_key = load_grok_api_key()
         if xai_key is not None:
             values["XAI_API_KEY"] = xai_key
         else:
@@ -1621,14 +1669,6 @@ def load_managed_credentials(worker_lane, authorized_mcps):
             values["SOLODIT_API_KEY"] = solodit_key
         else:
             missing.append("SOLODIT_API_KEY")
-    if "chrono-research-arsenal" in authorized:
-        research_keys = load_research_api_keys()
-        values.update(research_keys)
-        missing.extend(
-            name
-            for name in RESEARCH_API_KEY_NAMES
-            if name not in research_keys
-        )
     if "github" in authorized:
         github_token = load_github_mcp_token()
         if github_token is not None:
@@ -1684,12 +1724,17 @@ if lane == "codex":
     # Both `codex mcp list --json` and the child launch use this spawn home.
     base_home = Path(trusted_environment.get("HOME", "")) / ".codex"
     if base_home.is_dir():
+        selected_model, selected_effort = _codex_launch_overrides(
+            authority.get("lane_args")
+        )
         try:
             _prepare_codex_home(
                 base_home,
                 repo_path / "model-lanes" / "gpt-codex" / ".codex" / "config.toml",
                 repo_path / "_state" / "board-codex-homes" / attempt_id,
                 trusted_environment["CHRONO_VAULT_CONTEXT"],
+                selected_model=selected_model,
+                selected_effort=selected_effort,
             )
         except (OSError, ValueError) as exc:
             deny(f"Codex guarded-MCP home could not be prepared: {exc}")
@@ -1753,6 +1798,12 @@ brokered_mcps = []
 capability_enforcement = "not-applicable"
 capability_plan = None
 capability_plugin_args = []
+# Claude board workers inherit every operator-enabled plugin, so an unused
+# plugin's MCP server still spawns (and holds RAM) even though its tools are
+# disallowed. These carry the per-plugin inventory and the fail-safe set of
+# plugins this spawn may keep from spawning; the trim never gates a launch.
+claude_plugin_components = {}
+claude_disabled_plugin_ids = ()
 
 
 def declared_array(path, key):
@@ -1793,7 +1844,7 @@ def canonical_capability_surface(worker_lane, projection, overlay_path):
 def trap_cli_missing(exc):
     if isinstance(exc, (FileNotFoundError, PermissionError)): deny(f"native lane CLI is unavailable: {exc}", "cli_missing")
 
-if execution_kind == "lane" and lane in {"claude", "gemini", "grok", "kimi"}:
+if execution_kind == "lane" and lane in {"claude", "gemini", "grok"}:
     try:
         native_adapter_path = adapter_path_for(
             repo_root=repo_root,
@@ -1826,13 +1877,7 @@ if execution_kind == "lane" and lane in {"claude", "gemini", "grok", "kimi"}:
         # The authorization input is the UNION of direct and brokered names,
         # because a brokered server is still hosted by the lead process -- the
         # `lead:` prefix says subagents do not inherit it, not that nobody runs
-        # it. Reading only `mcps` silently starved every Kimi role: `lead:` is
-        # stripped into `brokered_mcps` by `load_projection`, Kimi forbids
-        # direct declarations outright, so this set was ALWAYS empty there while
-        # `plan_lane` went on to authorize the brokered set. The gate and the
-        # execution plan were consuming different normalized sets, which is why
-        # `large-context-analyst@kimi` reported three `"<KEY> missing"` errors
-        # from a role that plainly declares the arsenal.
+        # it. The health gate and execution plan must consume the same set.
         credential_snapshot, credential_missing = load_managed_credentials(
             lane,
             (
@@ -1922,6 +1967,9 @@ if execution_kind == "lane" and lane in {"claude", "gemini", "grok", "kimi"}:
                 project_plugin_dirs = parse_claude_project_plugin_dirs(
                     plugin_listing.stdout
                 )
+                claude_plugin_components = parse_claude_plugin_components(
+                    plugin_listing.stdout
+                )
         else:
             configured_servers = {}
         capability_plan = plan_lane(
@@ -1930,30 +1978,6 @@ if execution_kind == "lane" and lane in {"claude", "gemini", "grok", "kimi"}:
             configured_servers=configured_servers,
             repo_root=repo_root,
             broker_chrono_vault=(launch_mode == "strict" and lane not in {"gemini", "grok"}),
-            kimi_vault_environment=(
-                {
-                    name: trusted_environment[name]
-                    for name in ("CHRONO_VAULT_ROOT", "CHRONO_VAULT_CONTEXT")
-                    if name in trusted_environment
-                }
-                if lane == "kimi"
-                else None
-            ),
-            # Same snapshot the launcher projects, bound into the generated
-            # research-arsenal server record: Kimi's stdio child does not
-            # inherit the parent environment, so this is the seam that actually
-            # delivers the keys to the process making the HTTP call. The
-            # generated config lives only in `<worktree>/.role-capabilities/`,
-            # which is git-ignored and dies with the attempt.
-            kimi_research_environment=(
-                {
-                    name: credential_snapshot[name]
-                    for name in RESEARCH_API_KEY_NAMES
-                    if name in credential_snapshot
-                }
-                if lane == "kimi"
-                else None
-            ),
             # F6: a GUI app bundle / operator-install tool is not a PATH lookup,
             # so a `which()` miss must record a capability gap, not deny a
             # headless spawn. Unclassified tools stay fail-closed.
@@ -2014,6 +2038,56 @@ if execution_kind == "lane" and lane in {"claude", "gemini", "grok", "kimi"}:
     except CapabilityDenied as exc:
         deny(f"role capability enforcement denied launch: {exc}")
     capability_lane_args = capability_plugin_args + list(capability_plan.cli_args)
+    # Decide which operator-enabled plugins this claude spawn may keep from
+    # spawning: those whose every MCP server is unauthorized here and that ship
+    # no projected skill/command/agent. Fail SAFE -- any error disables nothing,
+    # leaving today's (wasteful but correct) behavior. Never gates the launch.
+    if lane == "claude" and claude_plugin_components:
+        try:
+            resolved_components = {}
+            for plugin_id, record in claude_plugin_components.items():
+                # Probe BOTH the plugin's cache install path and the repo dir the
+                # worker actually loads via --plugin-dir (plugins/<name>): a
+                # chrono-* plugin ships its skills from the repo tree, so the
+                # cache path alone reports "no skills" and would wrongly classify
+                # it as pure-MCP. Any component in either location keeps it.
+                plugin_name = plugin_id.split("@", 1)[0]
+                has_skills = False
+                provides_commands = False
+                provides_agents = False
+                try:
+                    bases = []
+                    repo_plugin_dir = repo_root / "plugins" / plugin_name
+                    if repo_plugin_dir.is_dir():
+                        bases.append(repo_plugin_dir)
+                    install_path = record.get("install_path")
+                    if isinstance(install_path, str):
+                        bases.append(Path(install_path))
+                    for base in bases:
+                        if (base / "skills").is_dir():
+                            has_skills = True
+                        if (base / "commands").is_dir():
+                            provides_commands = True
+                        if (base / "agents").is_dir():
+                            provides_agents = True
+                except OSError:
+                    # Unreadable plugin: keep it (treat as component-bearing).
+                    has_skills = True
+                    provides_commands = True
+                    provides_agents = True
+                resolved_components[plugin_id] = {
+                    "mcp_servers": record.get("mcp_servers") or (),
+                    "skills": ("present",) if has_skills else (),
+                    "provides_commands": provides_commands,
+                    "provides_agents": provides_agents,
+                }
+            claude_disabled_plugin_ids = claude_plugins_to_disable(
+                plugin_components=resolved_components,
+                authorized_mcps=tuple(capability_plan.authorized_mcps),
+            )
+        except (CapabilityDenied, OSError, ValueError, TypeError) as exc:
+            claude_disabled_plugin_ids = ()
+            write_board_note(f"claude plugin trim skipped (compute): {exc}")
     configured_mcps = list(capability_plan.configured_mcps)
     authorized_mcps = list(capability_plan.authorized_mcps)
     disabled_mcps = list(capability_plan.disabled_mcps)
@@ -2127,36 +2201,6 @@ if execution_kind == "lane" and lane == "codex":
             capability_lane_args.extend(
                 ("-c", f"mcp_servers.{server_name}.enabled=true")
             )
-            if server_name == "chrono-research-arsenal":
-                transport = listing_by_name[server_name].get("transport")
-                existing_env_vars = (
-                    transport.get("env_vars")
-                    if isinstance(transport, dict)
-                    else None
-                )
-                if (
-                    not isinstance(existing_env_vars, list)
-                    or any(
-                        not isinstance(name, str)
-                        or not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", name)
-                        for name in existing_env_vars
-                    )
-                ):
-                    deny("Codex research MCP env_vars configuration is unsafe")
-                forwarded_env_vars = sorted(
-                    set(existing_env_vars).union(RESEARCH_API_KEY_NAMES)
-                )
-                capability_lane_args.extend(
-                    (
-                        "-c",
-                        f"mcp_servers.{server_name}.env_vars="
-                        + json.dumps(
-                            forwarded_env_vars,
-                            separators=(",", ":"),
-                            ensure_ascii=True,
-                        ),
-                    )
-                )
         else:
             # Replace, rather than merge with, the configured table.  Codex
             # validates remote transports even when disabled, which would
@@ -2353,17 +2397,17 @@ if board_dispatch_context:
         or isinstance(budgets["timeout_seconds"], bool)
         or not isinstance(budgets["timeout_seconds"], int)
         or not (
-            30 <= budgets["timeout_seconds"] <= 2700
-            # The extended 2700-3600s ceiling is an ALLOWLIST keyed on the exact
+            30 <= budgets["timeout_seconds"] <= 5400
+            # The extended 5400-7200s ceiling is an ALLOWLIST keyed on the exact
             # `bounty` token, never a denylist like `!= "project"`. This is what
             # makes the third `modeless` state fail closed here: modeless is not
-            # `bounty`, so it gets the 2700s cap -- the intersection of the typed
-            # modes' budgets (project 2700 ∩ bounty 3600 = 2700). If this is ever
+            # `bounty`, so it gets the 5400s cap -- the intersection of the typed
+            # modes' budgets (project 5400 ∩ bounty 7200 = 5400). If this is ever
             # rewritten as `!= "project"`, modeless silently gains the 3600s
             # budget; test_modeless_dispatch pins the `== "bounty"` shape.
             or (
                 authority["mode_profile"] == "bounty"
-                and 2700 < budgets["timeout_seconds"] <= 3600
+                and 5400 < budgets["timeout_seconds"] <= 7200
             )
         )
         or (
@@ -2511,16 +2555,10 @@ worker_cwd = (
 # dispatch_context_builder owns the repository-roots preamble in task_prompt.
 
 
-# --- V113-18: a lane's completed work must not need Chrono doing git surgery ---
-# Placed ABOVE `_classify_block_reason` deliberately: test_board_supervisor_integration
-# slices that function out by "marker to next top-level def" and execs it with a bare
-# namespace, so a module-level constant landing between the two breaks it on `re`.
-# Three lanes (w8a, w8e, wb2) finished and COMMITTED their work and then lost the
-# return path -- two at the lane wall, one on a nested-YAML response envelope. The
-# preservation guard held everything, but recovery meant a human spotting a
-# "PRESERVED WORK" log line and hand-running `git cherry-pick`. The two helpers
-# below close that, WITHOUT letting a blocked receipt settle as complete: the work
-# becomes reachable on the integration branch, the task stays blocked.
+# --- V113-18: response repair and terminal evidence preservation ---
+# Repair a valid response's frontmatter before classifying a transport failure.
+# Failed attempts retain evidence; only a finished, validated response integrates.
+# Keep helpers above _classify_block_reason: tests extract its source region.
 
 # Extracted and exercised verbatim by scripts/python/tests/test_board_reliability_r1.py,
 # so the two marker lines around this region are load-bearing.
@@ -2719,35 +2757,13 @@ def repair_worker_envelope_frontmatter():
 # Extracted and exercised verbatim by scripts/python/tests/test_trusted_launch.py,
 # so the two marker lines around this region are load-bearing.
 # BEGIN committed-work-recovery
-# Opened immediately before the worker CLI runs and closed the moment code
-# integration is first attempted. Inside that window a block means the WORK may
-# be committed while only the RETURN PATH failed, which is the one situation
-# where landing committed code is recovery rather than a verdict override.
-# Outside it: nothing ran yet (nothing to recover), or integration already ran
-# and made its own decision, or the mode-exit verifier judged the work itself.
+# A failed return path cannot establish that the work is complete. Preserve it
+# on the attempt ref; only the validated complete/needs_review route integrates.
 _work_recovery_window = [False]
 
 
 def recover_committed_work_for_block():
-    """Land the worker's COMMITTED, in-scope code when only its return path failed.
-
-    V113-18 fix (b), and the one that covers all three measured causes rather
-    than one. This does NOT settle the task: `block_after_provision` still emits
-    `status: blocked` and still exits 75. It only makes the committed work
-    REACHABLE on the integration branch instead of stranded behind a
-    "PRESERVED WORK" line that a human has to notice and cherry-pick.
-
-    Deliberately committed-only -- `commit_worker_residue` is NOT called here.
-    A lane that died at the wall may have been killed mid-edit, and an
-    unreviewable half-written file must not reach the shared branch on a failure
-    path. Uncommitted residue keeps its existing home: the preservation guard.
-
-    Every gate `integrate_worktree_commits` enforces on the success path applies
-    unchanged -- declared write scope, categorical deletion refusal, the CBSE
-    plant scan, and the atomic branch lock -- because this calls exactly that
-    function. Best-effort by construction: any failure is reported in the
-    receipt and never replaces the block.
-    """
+    """Keep committed and uncommitted work discoverable without landing it."""
     if not _work_recovery_window[0]:
         return {"status": "not-attempted", "reason": "outside the return-path window"}
     _work_recovery_window[0] = False
@@ -2757,40 +2773,15 @@ def recover_committed_work_for_block():
     if worktree_handle is None:
         return {"status": "not-attempted", "reason": "no worktree handle"}
     try:
-        receipt = wti.integrate_worktree_commits(
-            worktree_handle,
-            authority["write_paths"],
-            exclude_paths=(
-                authority["expected_result_path"],
-                authority["expected_outbox_path"],
-            ),
-            authorized_delete_paths=globals().get("authorized_delete_paths") or (),
-            target_branch=worktree_handle.base_branch,
+        evidence = wti.preserve_terminal_evidence(
+            authority, base_branch=worktree_handle.base_branch,
         )
-    except Exception as exc:  # best-effort: a block receipt is never lost to this
+    except Exception as exc:  # the original block receipt must still be emitted
         detail = " ".join(str(exc).split())[:400]
-        write_board_note(f"committed-work recovery declined: {type(exc).__name__}: {detail}")
-        return {
-            "status": "declined",
-            "reason": f"{type(exc).__name__}: {detail}",
-        }
-    landed = receipt.status == "integrated"
-    write_board_note(
-        "committed-work recovery: "
-        + (
-            f"integrated {len(receipt.integrated_paths)} path(s) as "
-            f"{receipt.integration_commit} -- the task remains blocked"
-            if landed
-            else "the worker committed no in-scope changes; nothing to recover"
-        )
-    )
-    return {
-        "status": "integrated" if landed else "nothing-to-integrate",
-        "integration_commit": receipt.integration_commit if landed else None,
-        "target_after": receipt.target_after if landed else None,
-        "integrated_paths": list(receipt.integrated_paths),
-        "uncommitted_excluded_paths": list(receipt.uncommitted_excluded_paths),
-    }
+        write_board_note(f"committed-work preservation declined: {type(exc).__name__}: {detail}")
+        return {"status": "declined", "reason": f"{type(exc).__name__}: {detail}"}
+    write_board_note(f"committed-work preserved: {evidence.evidence_location}; task remains blocked")
+    return {"status": "preserved", "evidence_preservation": asdict(evidence)}
 
 
 # END committed-work-recovery
@@ -2896,6 +2887,14 @@ def recover_validated_outputs_for_transport_failure():
     """Publish only already-valid outputs; every failure keeps today's block."""
     try:
         prepared = prepare_current_worktree_outputs()
+        # The output bridge already coerces historical spellings, including
+        # completed. Only worker failure/operator holds must remain blocked.
+        if prepared.status in {"blocked", "needs_human"}:
+            write_board_note(
+                f"transport-output quarantine declined: worker status {prepared.status} "
+                "is not a review candidate; outputs were not promoted"
+            )
+            return None
         quarantined = _quarantine_prepared_outputs(prepared)
         bridge_receipt = publish_prepared_worktree_outputs(repo_path, quarantined)
         if bridge_receipt.get("status") != "needs_review":
@@ -3039,9 +3038,7 @@ def block_after_provision(
         "status": "blocked",
         "reason": str(reason),
         "failure_class": failure_class or _classify_block_reason(reason),
-        # Machine-readable recovery outcome. Chrono no longer has to notice a
-        # log line: either the committed work is already on the branch and this
-        # names the commit, or this says exactly why it is not.
+        # Name the preserved attempt ref or explain why preservation failed.
         "work_recovery": work_recovery,
         "task_id": task_id,
         "attempt_id": attempt_id,
@@ -3081,6 +3078,11 @@ def block_after_provision(
         "cli_stderr_truncated": stderr_diagnostic["truncated"],
         **_termination_diagnostics(failure_class, returncode),
     }
+    integration_result = globals().get("integration_result", {})
+    if "evidence_preservation" in integration_result:
+        payload["evidence_preservation"] = integration_result["evidence_preservation"]
+    elif "evidence_preservation" in work_recovery:
+        payload["evidence_preservation"] = work_recovery["evidence_preservation"]
     if controller_quarantine is not None:
         expected = {
             "controller_quarantine": CONTROLLER_QUARANTINE_MARKER,
@@ -3215,6 +3217,30 @@ try:
                 f"role capability config materialization failed: {exc}"
             )
 
+    # Keep unused operator-enabled plugins from spawning their MCP servers on this
+    # claude spawn. Appended AFTER every capability_lane_args rebuild above so it
+    # survives, and fail-safe: a materialization error trims nothing rather than
+    # blocking the launch. Non-claude lanes never reach this (list stays empty).
+    if (
+        execution_kind == "lane"
+        and lane == "claude"
+        and claude_disabled_plugin_ids
+    ):
+        try:
+            plugin_settings_path = materialize_disabled_plugins_settings(
+                claude_disabled_plugin_ids,
+                worktree_root=handle.worktree_root,
+                task_id=task_id,
+                attempt_id=attempt_id,
+            )
+            capability_lane_args.extend(("--settings", str(plugin_settings_path)))
+            write_board_note(
+                "claude plugin trim: disabled "
+                + ", ".join(claude_disabled_plugin_ids)
+            )
+        except (CapabilityDenied, OSError, ValueError) as exc:
+            write_board_note(f"claude plugin trim skipped (settings): {exc}")
+
     if vault_broker_required:
         worker_plan_text = "\n".join(capability_lane_args)
         if capability_plan is not None and capability_plan.role_config_json is not None:
@@ -3277,26 +3303,6 @@ try:
                 str(lane_config_root / "model-lanes" / "grok" / "main.yaml"),
             )
         )
-    if execution_kind == "lane" and lane == "kimi":
-        # Kimi 1.40.0 auto-discovers project skill homes, and its repeatable
-        # `--skills-dir DIRECTORY` overrides that discovery. Point it only at the
-        # shared specialist home `.agents/skills`: its regular-file mirrors carry
-        # cross-lane specialist skills, while the override excludes controller-only
-        # `.claude/skills` entries and avoids duplicate names. Live-probed 2026-09-01;
-        # see model-lanes/SKILL-HOMES.md.
-        capability_lane_args.extend(
-            (
-                "--agent-file",
-                str(lane_config_root / "model-lanes" / "kimi" / "main.yaml"),
-                "--add-dir",
-                str(handle.worktree_root),
-                "--skills-dir",
-                str(handle.worktree_root / ".agents" / "skills"),
-            )
-        )
-        if external_work_repo:
-            # No skill projection or implicit squad skill discovery for WORK.
-            capability_lane_args = capability_lane_args[:-2]
     if execution_kind == "lane" and lane == "codex":
         try:
             for git_write_dir in wti.linked_worktree_commit_write_dirs(handle):
@@ -3485,9 +3491,19 @@ try:
             "os._exit(returncode)\n"
         )
         status_read_fd, status_write_fd = os.pipe()
+        # Clamp lane workers to utility QoS (inherited by every descendant).
+        # Unclamped, a lane's scanners and test suites competed with the
+        # operator's keyboard and browser for the performance cores; on
+        # 2026-10-04 a gitleaks scan at ~230% CPU made typing lag system-wide
+        # until it was moved off them. taskpolicy execs in place, so the pid
+        # and session the reaper fences on are unchanged.
+        qos_prefix = ()
+        if os.environ.get("VS_LANE_QOS", "utility") != "off" and os.path.exists("/usr/sbin/taskpolicy"):
+            qos_prefix = ("/usr/sbin/taskpolicy", "-c", os.environ.get("VS_LANE_QOS", "utility"))
         try:
             proc = subprocess.Popen(
                 (
+                    *qos_prefix,
                     sys.executable,
                     "-c",
                     session_wrapper,
@@ -3698,94 +3714,6 @@ try:
         )
         return selected_launcher(canary_runner, agy_command, **kwargs)
 
-    def kimi_role_launcher(canary_runner, command, **kwargs):
-        if len(command) < 4 or command[0] != str(executable) or command[1] != "-p":
-            raise ValueError("Kimi launch command has an unexpected shape")
-        projection_json = json.dumps(
-            envelope.worker_projection(),
-            sort_keys=True,
-            separators=(",", ":"),
-            ensure_ascii=True,
-        )
-        lead_allowlist_json = json.dumps(
-            list(capability_plan.authorized_mcps),
-            separators=(",", ":"),
-            ensure_ascii=True,
-        )
-        if len(lead_allowlist_json.encode("ascii")) > 2048:
-            raise ValueError("Kimi lead MCP allowlist exceeds prompt bound")
-        lead_contract = (
-            "\n\n## Main-lead MCP contract\n\n"
-            f"Exact allowed MCP server names: `{lead_allowlist_json}`.\n"
-            "Only this main Kimi lead may call them. Native `Agent(...)` subagents remain MCP-free; "
-            "do not ask a subagent to call or inherit MCP tools. Treat every other MCP as unavailable. "
-            "Never reveal or pass MCP configuration, credentials, environment, or values.\n"
-        )
-        concise_prompt = (
-            trusted_task_prompt.strip()
-            + skill_contract
-            + "\n\n## Read-only task runtime envelope\n\n"
-            + "```json\n"
-            + projection_json
-            + "\n```\n"
-            + lead_contract
-        )
-        role_path_count = 4 if external_work_repo else 6
-        role_path_args = tuple(capability_lane_args[-role_path_count:])
-        role_capability_args = tuple(capability_lane_args[:-role_path_count])
-        expected_role_path_args = (
-            "--agent-file",
-            str(lane_config_root / "model-lanes" / "kimi" / "main.yaml"),
-            "--add-dir",
-            str(handle.worktree_root),
-            "--skills-dir",
-            str(handle.worktree_root / ".agents" / "skills"),
-        )
-        if external_work_repo:
-            expected_role_path_args = expected_role_path_args[:-2]
-        if role_path_args != expected_role_path_args:
-            raise ValueError("Kimi agent-file arguments changed after provisioning")
-        proven_args = (
-            tuple(authority["lane_args"])
-            + role_path_args
-            + role_capability_args
-        )
-        expected_tail = tuple(command[3:])
-        if expected_tail != tuple(capability_lane_args) + tuple(authority["lane_args"]):
-            raise ValueError("Kimi launch arguments changed after authentication")
-        kimi_command = (
-            str(executable),
-            *proven_args,
-            "--print",
-            "--output-format",
-            "stream-json",
-            "-p",
-            concise_prompt,
-        )
-        if external_work_repo:
-            combined_prompt = agent_system_context + "\n\n" + concise_prompt
-            if len(combined_prompt.encode("utf-8")) > _prompt_limit:
-                raise ValueError("Kimi external role/task prompt exceeds prompt bound")
-            return selected_launcher(
-                canary_runner,
-                (*kimi_command[:-1], combined_prompt),
-                **kwargs,
-            )
-        # main.yaml loads KIMI.md as its system prompt. Temporarily bind the
-        # authenticated specialist role there for this child, then restore the
-        # tracked worktree byte-for-byte before output integration.
-        kimi_prompt_path = handle.worktree_root / "model-lanes" / "kimi" / "KIMI.md"
-        specialist_suffix = (
-            "\n\n## Board-dispatched specialist context\n\n"
-            + agent_system_context.rstrip()
-            + "\n"
-        )
-        return run_with_restored_prompt(
-            kimi_prompt_path,
-            specialist_suffix,
-            lambda: selected_launcher(canary_runner, kimi_command, **kwargs),
-        )
-
     def grok_role_launcher(canary_runner, command, **kwargs):
         if len(command) < 4 or command[0] != str(executable) or command[1] != "-p":
             raise ValueError("Grok launch command has an unexpected shape")
@@ -3865,9 +3793,7 @@ try:
         )
 
     lane_launcher = (
-        kimi_role_launcher
-        if execution_kind == "lane" and lane == "kimi"
-        else grok_role_launcher
+        grok_role_launcher
         if execution_kind == "lane" and lane == "grok"
         else gemini_ordered_launcher
         if execution_kind == "lane" and lane == "gemini"
@@ -3942,7 +3868,9 @@ try:
             write_board_transcript(timeout_stdout, timeout_stderr)
         controller_quarantine = recover_validated_outputs_for_transport_failure()
         block_after_provision(
-            f"fresh lane CLI timed out: {exc}",
+            f"fresh lane CLI timed out after {launch_timeout:g} seconds; "
+            f"task {task_id}; attempt {attempt_id}; "
+            f"inspect {repo_path / '_state' / 'board-dispatch' / f'{task_id}.{attempt_id}.log'}",
             failure_class="cli_timeout",
             cli_stdout=timeout_stdout,
             cli_stderr=timeout_stderr,
@@ -4056,35 +3984,78 @@ try:
             )
         _work_recovery_window[0] = False
         try:
-            # A specialist CLI edits files; it does not commit them. Integration
-            # only moves committed history, so without this the finalize step
-            # blocked every code task ("worker left uncommitted in-scope code
-            # changes") and stranded a finished response in the worktree. The
-            # controller commits the residue itself, bounded by the dispatcher's
-            # declared scope -- the out-of-scope and delete gates below still run.
-            wti.commit_worker_residue(
-                handle,
-                authority["write_paths"],
-                exclude_paths=(
-                    authority["expected_result_path"],
-                    authority["expected_outbox_path"],
-                ),
-            )
-            integration_receipt = wti.integrate_worktree_commits(
-                handle,
-                authority["write_paths"],
-                exclude_paths=(
-                    authority["expected_result_path"],
-                    authority["expected_outbox_path"],
-                ),
-                # Controller-side capability, resolved from the main-repo
-                # canonical packet before launch. Empty for every packet that
-                # does not carry an operator-approved deletion manifest, which
-                # keeps the categorical refusal as the default.
-                authorized_delete_paths=authorized_delete_paths,
-                target_branch=handle.base_branch,
-            )
+            # Non-complete output is evidence, never an integration candidate.
+            # Use the captured status rather than rereading worker-owned bytes.
+            if (not prepared_outputs.status_recognized
+                    or prepared_outputs.status not in {"complete", "needs_review"}):
+                evidence = wti.preserve_terminal_evidence(
+                    authority, base_branch=handle.base_branch,
+                )
+                integration_result = {
+                    "status": "preserved",
+                    "worktree_integration": {
+                        "status": "preserved",
+                        "reason": f"terminal response status is {prepared_outputs.status!r}",
+                    },
+                    "evidence_preservation": asdict(evidence),
+                }
+            else:
+                # The installed snapshot belongs to the controller repository.
+                # Worker core.hooksPath and checkout hooks remain disabled.
+                candidate = wti.validate_worker_residue(
+                    handle,
+                    authority["write_paths"],
+                    (authority["expected_result_path"], authority["expected_outbox_path"]),
+                    wti.git_common_dir(repo_path) / "hooks" / "vibe-squad-pre-commit",
+                    interpreter=Path(shutil.which("python3", path=_validated_trusted_host_path()) or "/missing-python3"),
+                    trusted_path=_validated_trusted_host_path(),
+                    authorized_delete_paths=authorized_delete_paths,
+                )
+                wti.commit_worker_residue(
+                    handle,
+                    authority["write_paths"],
+                    candidate=candidate,
+                    exclude_paths=(
+                        authority["expected_result_path"],
+                        authority["expected_outbox_path"],
+                    ),
+                )
+                integration_receipt = wti.integrate_worktree_commits(
+                    handle,
+                    authority["write_paths"],
+                    candidate=candidate,
+                    exclude_paths=(
+                        authority["expected_result_path"],
+                        authority["expected_outbox_path"],
+                    ),
+                    # Only the controller's pinned deletion authority applies.
+                    authorized_delete_paths=authorized_delete_paths,
+                    target_branch=handle.base_branch,
+                )
+                integration_result = {
+                    "status": "integrated",
+                    "candidate_validation": candidate.validation,
+                    "worktree_integration": asdict(integration_receipt),
+                }
         except wti.WorktreeIsolationError as exc:
+            # Preserve before emitting the raw blocked receipt. The terminal
+            # finalizer also refreshes this evidence, including abrupt exits.
+            try:
+                evidence = wti.preserve_terminal_evidence(
+                    authority, base_branch=handle.base_branch,
+                )
+                integration_result = {
+                    "status": "preserved", "reason": str(exc),
+                    "worktree_integration": {"status": "preserved", "reason": str(exc)},
+                    "evidence_preservation": asdict(evidence),
+                }
+            except wti.WorktreeIsolationError as preservation_error:
+                integration_result = {
+                    "evidence_preservation": {
+                        "status": "error", "reason": str(preservation_error),
+                        "worktree_location": str(handle.worktree_root),
+                    },
+                }
             block_after_provision(
                 f"fresh lane code integration failed: {exc}"
             )
@@ -4175,8 +4146,11 @@ try:
             "main_envelope_sha256": bridge_receipt["envelope_sha256"],
             "response_status": bridge_receipt["status"],
             "candidate_tree_health": bridge_receipt["candidate_tree_health"],
-            "worktree_integration": asdict(integration_receipt),
+            "worktree_integration": integration_result["worktree_integration"],
+            "candidate_validation": integration_result.get("candidate_validation", "not-integrable"),
         })
+        if "evidence_preservation" in integration_result:
+            receipt["evidence_preservation"] = integration_result["evidence_preservation"]
         if bridge_receipt.get("mode_exit_verification") is not None:
             receipt["mode_exit_verification"] = bridge_receipt[
                 "mode_exit_verification"
@@ -4194,14 +4168,10 @@ try:
     # and named in the receipt instead of being silently cleaned. The leak
     # becomes bounded and visible rather than unbounded and silent.
     worktree_state = "retained"
-    if execution_kind == "lane":
+    if execution_kind == "lane" and not receipt.get("evidence_preservation"):
         try:
-            residue = subprocess.run(
-                ["git", "status", "--porcelain"],
-                cwd=str(handle.worktree_root),
-                capture_output=True,
-                text=True,
-                check=False,
+            residue = wti._run_git(
+                ["status", "--porcelain"], cwd=handle.worktree_root,
             )
             if residue.returncode != 0:
                 worktree_state = "retained-status-unreadable"

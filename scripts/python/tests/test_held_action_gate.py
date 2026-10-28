@@ -117,6 +117,7 @@ class HeldCategoriesTests(unittest.TestCase):
 
 
 class LifecycleMemoryPolicyTests(unittest.TestCase):
+    @unittest.skipUnless((ROOT / "shared/lifecycle.md").exists(), "private input is not published")
     def test_generic_recall_guidance_defers_to_the_dispatch_aperture(self) -> None:
         lifecycle = (ROOT / "shared/lifecycle.md").read_text(encoding="utf-8")
         section = lifecycle.split(

@@ -1224,7 +1224,7 @@ class Block3WatcherNoArchive(unittest.TestCase):
             self.assertFalse(any(call.startswith("-f %m ") for call in calls), msg=calls)
 
             source = OUTBOX_WATCHER.read_text(encoding="utf-8")
-            self.assertEqual(source.count("stat -c %Y"), 3)
+            self.assertEqual(source.count("stat -c %Y"), 4)
             # Match the SHAPE, not two literal argument spellings. This guard
             # used to assert the absence of exactly `"$file"` and `"$lockdir"`,
             # so when a third site spelled its argument `"${CHRONO_NOTIFY_LOCKDIR}"`

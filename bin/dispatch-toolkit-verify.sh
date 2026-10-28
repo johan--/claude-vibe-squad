@@ -40,7 +40,7 @@ fi
 # The subject has to be a script before it can be a document. Until 2026-09-01
 # this check only ever ran awk over the toolkit's SOURCE TEXT, so a toolkit
 # that bash cannot even parse still reported
-# "PASS: all expected MCP enumerations verified across 5 model lanes" --
+# "PASS: all expected MCP enumerations verified" --
 # measured with a one-character `esac` typo, and again with the bare `case`
 # fragment lifted out of its script. Both are unrunnable; both were green.
 # That is a defect in the audited file, not an inability to measure, so it is
@@ -52,19 +52,19 @@ if ! parse_error="$(bash -n "$TOOLKIT" 2>&1)"; then
 fi
 
 # Parallel arrays — bash 3.2 has no associative arrays
-LANES=(gpt-codex claude gemini grok kimi)
+LANES=(gpt-codex claude gemini grok)
 # CLIS must name the binary DISPATCH launches, not the lane. The gemini lane
 # runs on `agy` under OAuth -- the API-key `gemini` path is retired -- and this
 # array said `gemini` for weeks, so every gemini row audited a CLI the squad no
-# longer uses. Its six "lists X but does not enumerate it" warnings, perplexity
-# among them, described the retired binary; a live `agy mcp list` shows
+# longer uses. Its "lists X but does not enumerate it" warnings
+# described the retired binary; a live `agy mcp list` shows
 # chrono-research-arsenal enabled.
 #
 # Same split-source defect that took memory autocapture down for 12 days and 73
 # notes (4928b84b). seatbelt_profile.LANE_CLI_PATHS is the one home
 # (CLAUDE.md Hard Rule 10); test_toolkit_verify_lane_authority.py pins every
 # lane here to it, in both directions.
-CLIS=(codex     claude agy    grok kimi)
+CLIS=(codex     claude agy    grok)
 # (chrono pane is the Coordinator and doesn't receive a toolkit injection.)
 
 # Every lane is asked with the subscription credentials unset: each of these
@@ -82,8 +82,8 @@ mcp_list_for_cli() {
         return 0
     fi
     # Per-lane stderr handling is deliberate, not incidental: codex must emit
-    # clean JSON and kimi prattles authlib warnings, so both discard stderr,
-    # while agy prints its table on stdout; 2>&1 keeps any diagnostic with it.
+    # clean JSON, so it discards stderr; agy prints its table on stdout,
+    # and 2>&1 keeps any diagnostic with it.
     case "$cli" in
         claude) "${NOAUTH[@]}" "$cli" mcp list 2>&1 ;;
         codex)  "${NOAUTH[@]}" "$cli" mcp list --json 2>/dev/null ;;
@@ -225,14 +225,14 @@ mcp_list_for_cli_with_timeout() {
 }
 
 # Render the toolkit for one lane, exactly the way the dispatch path does:
-# bin/send-task.sh runs `bash shared/dispatch-toolkit.sh <namespace> <to-model>`
+# bin/send-task.sh runs `bash shared/dispatch-toolkit.sh <namespace> <to-model> <mode> <specialist>`
 # and appends the stdout to the packet. The namespace is deliberately empty --
 # it selects the toolkit's own "unknown namespace, no toolkit injection"
 # branch, so only the lane block varies and this check stays a lane check.
 #
 # Reading the source instead of running it was the hole: a toolkit whose every
 # heredoc is redirected to /dev/null still SPELLS OUT each expected-surface
-# block in the file, so source-parsing declared five clean lanes for a toolkit
+# block in the file, so source-parsing declared clean lanes for a toolkit
 # that injects nothing into any packet. `bash -n` cannot see that either --
 # such a file parses and exits 0. Rendered stdout is the only artifact a
 # dispatched lane ever receives, so it is the thing to compare.
@@ -362,25 +362,7 @@ elif cli == "grok":
     if len(set(names)) != declared_count:
         raise ValueError("Grok MCP inventory count does not match its inspect header")
 else:
-    # Kimi currently emits a text table. Refuse unknown non-header rows rather
-    # than tokenizing every word and accidentally treating an error message as
-    # a configured server.
-    ignored = {"name", "mcp", "server", "servers", "status", "configured"}
-    for raw in text.splitlines():
-        line = raw.strip()
-        if not line or line.lower().startswith(("authlib", "from authlib")):
-            continue
-        match = re.match(
-            r"^[✓✔✗✘]?\s*(?P<name>[A-Za-z0-9][A-Za-z0-9._:-]*)"
-            r"(?:\s|:|$)",
-            line,
-        )
-        if match is None:
-            raise ValueError("Kimi MCP inventory contains an unparseable row")
-        name = match.group("name")
-        if name.lower() in ignored:
-            continue
-        names.append(canonical(name))
+    raise ValueError(f"unsupported MCP inventory CLI: {cli}")
 
 for name in sorted(set(names)):
     print(name)

@@ -1174,17 +1174,11 @@ class SupervisorThreadingTests(unittest.TestCase):
         self.assertNotIn('"delete-from-main"', self.text)
 
     def test_every_integration_call_site_threads_the_authorization(self) -> None:
-        """EVERY caller, not just the first one found.
-
-        V113-18 added a second integration call site that lands a blocked
-        attempt's committed code when only its return path failed. It integrates
-        real commits, so it is an authorization boundary too -- and a test that
-        checked only `text.index(...)` would have inspected whichever site
-        happened to sit higher in the file while the other went unguarded.
-        """
+        """Only the success path integrates; it consumes captured validation."""
         sites = _integration_call_sites(self.text)
-        self.assertGreaterEqual(len(sites), 2, "expected success and recovery call sites")
+        self.assertEqual(len(sites), 1, "recovery must preserve without integrating")
         self.assertEqual(_integration_authorization_errors(self.text), [])
+        self.assertIn("candidate=candidate", self.text)
 
     def test_call_census_does_not_borrow_arguments_from_the_next_call(self) -> None:
         safe_next_call = """

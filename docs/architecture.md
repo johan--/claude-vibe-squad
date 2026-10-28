@@ -53,7 +53,7 @@ Markdown task packet in departments/coding/inbox/
 detached board supervisor ── one git worktree per attempt
    │
    ▼
-fresh `codex` | `claude` | `agy` | `grok` | `kimi` CLI
+fresh `codex` | `claude` | `agy` | `grok` CLI
    │
    ├─ writes declared artifact
    └─ writes response envelope
@@ -81,8 +81,8 @@ of the board; they do not control worker execution.
 ## Native model transport and utility tools
 
 All specialist model inference runs through the provider's native CLI:
-`codex`, `claude`, Antigravity's `agy` for the `gemini` routing lane, `grok`, or
-`kimi`. Each rail uses the auth policy declared in
+`codex`, `claude`, Antigravity's `agy` for the `gemini` routing lane, or
+`grok`. Each rail uses the auth policy declared in
 `model-lanes/lane-capabilities.tsv`; `agy` uses personal OAuth with provider API
 keys removed. `shared/launch-dependencies.sh` owns the exact required-command
 set used by launch and doctor checks.
@@ -92,7 +92,7 @@ Profiles resolve to exact model and effort settings through
 MCP servers are tools, not model transports. They can provide private memory,
 research, browser automation, code intelligence, sequential thinking, or
 governed media operations. They never proxy a specialist call to Codex, Claude,
-Gemini, Grok, or Kimi. Media and other service APIs may consume their own provider
+Gemini, or Grok. Media and other service APIs may consume their own provider
 credits when an approved Project capability invokes them; that is separate from
 the model lane.
 
@@ -127,11 +127,11 @@ treat a half-published result as complete.
 settles the delivery record from a valid response or a matching terminal
 receipt. Completion observation is explicit: the default watcher fleet starts the
 consolidated outbox watcher, whose best-effort live recipient is only the Chrono
-tmux pane (`bin/launch-squad.sh:217-231`); a headless controller must separately
+tmux pane (`bin/outbox-watcher.sh:4-13`); a headless controller must separately
 start [`bin/board-notify.sh`](../bin/board-notify.sh) and consume the target-state
 lines it writes to stdout (`bin/board-notify.sh:38-55`). That stdout observer has
 no persisted cursor or downtime replay and does not report `review-required`
-holds, which the registry classifies as live (`scripts/python/chrono_state/registry.py:35-63`).
+holds, which the registry classifies as live (`scripts/python/chrono_state/registry.py:23-25`).
 Outbox and queue files are
 durable inputs for a later explicit read, not delivery by existence. Chrono then
 decides whether to accept, manually author an ordinary continuation packet, send

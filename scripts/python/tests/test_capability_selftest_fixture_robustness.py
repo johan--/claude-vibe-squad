@@ -53,11 +53,9 @@ COST_FLIP = {
 # Every real tool a fixture names because the rule under test keys on that name.
 FIXTURE_TOOLS = {
     "Google Search grounding",
-    "Perplexity Sonar structured+recency",
     "higgsfield__models_explore",
     "higgsfield__upscale_image",
     "Higgsfield raw generation",
-    "xai_search",
 }
 
 

@@ -76,7 +76,7 @@ done
 exit 1
 """
 
-_LANE_CLIS = ("claude", "codex", "agy", "grok", "kimi")
+_LANE_CLIS = ("claude", "codex", "agy", "grok")
 
 
 def write_stub(directory: Path, name: str, body: str = "#!/bin/bash\nexit 0\n") -> Path:
@@ -169,7 +169,7 @@ def stub_launch_dependencies(
 ) -> None:
     """Make every launch dependency resolvable from the fixture's own PATH.
 
-    Without this a fixture inherits the HOST's answer to "is kimi installed",
+    Without this a fixture inherits the HOST's answer to "is grok installed",
     which is neither hermetic nor stable: doctor prepends ``$HOME/.local/bin``
     and ``/opt/homebrew/bin``, so the verdict depended on what the maintainer
     happened to have installed. ``omit`` masks exactly one command, which is how

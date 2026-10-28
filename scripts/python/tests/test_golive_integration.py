@@ -304,7 +304,7 @@ class AuthorityIntegrationTests(unittest.TestCase):
                 root,
                 executable="/usr/bin/true",
                 execution_kind="lane",
-                lane="kimi",
+                lane="grok",
             )
             completed, receipt = _run_authority_supervisor(_seal_authority(authority))
             self.assertNotEqual(completed.returncode, 0)

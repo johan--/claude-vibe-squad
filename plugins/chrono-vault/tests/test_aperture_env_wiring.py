@@ -194,7 +194,7 @@ class ProductionWiringTests(unittest.TestCase):
     def test_none_worker_cannot_repeat_the_exact_direct_read(self) -> None:
         with tempfile.TemporaryDirectory(prefix="aperture-none-") as directory:
             vault = _make_vault(Path(directory))
-            for lane in ("claude", "codex", "gemini", "kimi"):
+            for lane in ("claude", "codex", "gemini"):
                 environment = _worker_environment(vault, "none", lane=lane)
                 completed = _run_worker(READ_PROBE, environment)
                 for variable in clearance.VAULT_PATH_ENV:

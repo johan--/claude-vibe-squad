@@ -18,7 +18,9 @@ import shlex
 import sys
 from typing import Any, Mapping
 
-from . import workboard
+from registry_reconciler import CHRONO_NOTICE_PREFIX
+
+from . import thread_charters, workboard
 
 
 USER_PROMPT_SUBMIT = "UserPromptSubmit"
@@ -167,6 +169,45 @@ _MUTATING_MCP_WORDS = frozenset(
 _ASSIGNMENT = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=.*$", re.DOTALL)
 
 
+def is_harness_notice(prompt: object) -> bool:
+    """Recognize one entire emitted notice; unknown or mixed text keeps the anchor.
+
+    These are the wire formats from registry_reconciler's compact_notice /
+    notification_digest and squad-monitor.sh's send_alert callers. A prefix
+    match would also swallow operator instructions appended to a notice.
+    """
+    if not isinstance(prompt, str):
+        return False
+    text = prompt.strip()
+    if not text or "\n" in text or "\r" in text:
+        return False
+    text = text.removeprefix(f"{CHRONO_NOTICE_PREFIX} ")
+    task = r"TASK-[A-Za-z0-9][A-Za-z0-9._-]*"
+    state = r"[a-z][a-z0-9]*(?:-[a-z0-9]+)*"
+    namespace = r"[a-z][a-z0-9_-]{0,63}"
+    details = r"; details: _state/chrono-queue\.md\."
+    count = rf"{state}=[0-9]+"
+    action = rf"(?:review-required|needs-review|needs-human|blocked|coordination-requested): {task}(?:, {task})*"
+    lane = r"(?:codex|gpt-codex|claude|gemini|grok) lane \([^()\r\n]+\)"
+    age = r"(?:[0-9]+|\?)"
+    patterns = (
+        rf"{state}: {task}{details}(?: Coordination requested; see queue\.)?",
+        rf"BOARD DIGEST: {count}(?:, {count})*(?:; action: {action}(?:; {action})*)?"
+        rf"{details}(?: Coordination requested in [0-9]+ notice\(s\); see queue\.)?",
+        rf"MONITOR: task {task} → {lane} idle [0-9]+m, no response yet "
+        rf"\(dispatched {age}m ago\); pending in {namespace}/inbox",
+        rf"MONITOR: observed task {task} → {lane}: live board spawn attempt log idle [0-9]+s, "
+        rf"no receipt \(threshold [0-9]+s; dispatched {age}m ago\); a long model turn or tool call may still be healthy",
+        rf"MONITOR: [A-Za-z_-]+: {namespace}/{task}\.md parked [0-9]+m \([A-Za-z_-]+\); coordinator action overdue",
+        rf"MONITOR: {namespace} namespace has stale active task \({task}\.md, [0-9]+m old\)",
+        rf"MONITOR: {namespace} namespace received same task [0-9]+x in [0-9]+m - real thrash "
+        rf"\((?:repeated task id {task}|duplicate body)\)",
+        rf"MONITOR: NOT_MEASURED thrash {namespace}: skipped_task_ids=[0-9]+ "
+        rf"measured_task_ids=[0-9]+ skipped_log_rows=[0-9]+",
+    )
+    return any(re.fullmatch(pattern, text) for pattern in patterns)
+
+
 @dataclass(frozen=True)
 class GateDecision:
     """One hook-independent focus decision."""
@@ -278,11 +319,51 @@ def _operator_output_reminder() -> str:
     return f"OPERATOR OUTPUT ({_OUTPUT_STANDARD_REL}): " + " ".join(excerpt.split())
 
 
+ANCHOR_CLASSIFY = (
+    "Before any dispatch or mutation, classify the incoming message "
+    "as FOLD / QUEUE / DROP relative to this active thread."
+)
+ANCHOR_MECHANISM = (
+    "Before any packet or plan edit that adds a mechanism (a cap, key, "
+    "approval, claim step, schedule, or safety layer), quote the operator "
+    "sentence that asked for it in your message; if none exists, do not add it."
+)
+
+
+def _charters_dir(ledger_path: Path) -> Path:
+    """The active-charter rail beside the ledger: ``_state/chrono/thread-charters/active``."""
+    return ledger_path.parent / thread_charters.CHARTERS_REL.relative_to("_state/chrono")
+
+
+def _charter_resume_point(ledger_path: Path) -> tuple[str, str]:
+    """Return (NEXT ACTION text, its source) from the single active charter.
+
+    The charter's newest receipt ``resume:`` clause is the one home for where
+    the thread resumes; the workboard ``next_action`` is a pointer at the
+    charter and is only shown when no single charter can answer. A copied
+    workboard action can become stale as the charter's receipts advance, so
+    the anchor reads the return point directly from the charter.
+    """
+    try:
+        charters = thread_charters.load_active_charters(_charters_dir(ledger_path))
+    except Exception as exc:  # noqa: BLE001 — the anchor degrades, never fails
+        return "", f"workboard (active charter rail unreadable: {exc})"
+    if len(charters) != 1:
+        return "", f"workboard (active charters: {len(charters)}, need exactly 1)"
+    charter = charters[0]
+    receipt = thread_charters.last_resume_point(charter)
+    if receipt is None:
+        return "", f"workboard (charter {charter.thread_id} has no parseable receipt)"
+    return receipt.resume, f"charter {charter.thread_id}, receipt {receipt.stamp}"
+
+
 def _active_context(projection: workboard.WorkboardProjection) -> str:
     item = _active_item(projection)
     if item is None or projection.next_action is None:
         raise ValueError("valid active projection has no matching item or next_action")
     why = item.why or "<not recorded in the workboard why field>"
+    resume, source = _charter_resume_point(Path(projection.document.path))
+    next_action = resume or projection.next_action
     return "\n".join(
         (
             "TURN-BOUNDARY FOCUS ANCHOR",
@@ -290,10 +371,10 @@ def _active_context(projection: workboard.WorkboardProjection) -> str:
             f"active_item_id: {projection.active_item_id}",
             f"ACTIVE ITEM: {item.summary}",
             f"WHY: {why}",
-            f"NEXT ACTION: {projection.next_action}",
-            "Before any dispatch or mutation, classify the incoming message "
-            "as FOLD / QUEUE / DROP relative to this active thread. Do not "
-            "dispatch or mutate until that classification is explicit.",
+            f"NEXT ACTION: {next_action}",
+            f"NEXT ACTION SOURCE: {source}",
+            ANCHOR_CLASSIFY,
+            ANCHOR_MECHANISM,
         )
     )
 
@@ -530,11 +611,20 @@ def decide(
     tool_name: str = "",
     tool_input: Mapping[str, Any] | None = None,
     stop_hook_active: bool = False,
+    prompt: object = None,
 ) -> GateDecision:
     """Return an allow/block decision without depending on hook plumbing."""
 
     if hook_event not in SUPPORTED_EVENTS:
         return _fail_open(f"unsupported hook event {hook_event!r}")
+
+    if hook_event == USER_PROMPT_SUBMIT:
+        try:
+            if is_harness_notice(prompt):
+                return GateDecision(True)
+        except Exception:
+            # This cost optimization must fail open to the original anchor.
+            pass
 
     view, issues, failure = _validated_projection(ledger_path, projection)
     if failure is not None:
@@ -675,6 +765,7 @@ def main(argv: list[str] | None = None) -> int:
         tool_name=tool_name,
         tool_input=tool_input,
         stop_hook_active=payload.get("stop_hook_active") is True,
+        prompt=payload.get("prompt"),
     )
     output = render_hook_output(event, decision)
     if output is not None:

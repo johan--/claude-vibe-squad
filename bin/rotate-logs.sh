@@ -178,6 +178,29 @@ if [[ -d "$TMUX_LOG_DIR" ]]; then
     done
 fi
 
+# The local test cluster's launchd writer holds this inode open too. Resolve
+# only the configured directory, never sensitive local config or ambient PG*.
+PG_LOG_PATH="$(python3 -B - "$VAULT_ROOT" <<'PY'
+from contextlib import redirect_stdout
+from pathlib import Path
+import sys
+root = Path(sys.argv[1])
+sys.path.insert(0, str(root / "scripts/python"))
+from disk_hygiene import postgres_policy, test_pg_root
+try:
+    with redirect_stdout(sys.stderr):
+        policy = postgres_policy(root)
+        data = test_pg_root(root, policy) if policy is not None else None
+    if data is not None:
+        print(data / "launchd.stderr.log")
+except OSError:
+    print("postgres log: SKIP (local directory unavailable)", file=sys.stderr)
+PY
+)"
+if [[ -n "$PG_LOG_PATH" ]]; then
+    rotate_file "$PG_LOG_PATH" "$DAEMON_LOG_CAP" "$DAEMON_LOG_KEEP"
+fi
+
 echo
 echo "## Summary"
 echo

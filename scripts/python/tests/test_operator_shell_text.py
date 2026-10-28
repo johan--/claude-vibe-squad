@@ -90,6 +90,7 @@ class SetupDocumentationAuthorityTests(unittest.TestCase):
                         "shared/launch-dependencies.sh",
                     )
 
+    @unittest.skipUnless((ROOT / "shared/lifecycle.md").exists(), "private input is not published")
     def test_effort_transport_table_names_every_profile_lane(self) -> None:
         with (ROOT / "shared" / "registries" / "profiles.tsv").open(
             encoding="utf-8", newline=""

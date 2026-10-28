@@ -16,6 +16,7 @@ of the operator's live squad is invoked and no operator secret is sourced.
 from __future__ import annotations
 
 import os
+import re
 import subprocess
 import unittest
 from pathlib import Path
@@ -33,14 +34,17 @@ PHASE_SCRIPTS = (
     ("doctor", "doctor.sh"),
     ("registry-reconciler", "registry-reconciler.sh"),
     ("memory-audit", "memory-audit.sh"),
+    ("curation-review", "curation-review.sh"),
     ("sweep-active", "sweep-active.sh"),
     ("browser-keep-alive", "browser-keep-alive.sh"),
+    ("chrome-refresh", "chrome-refresh.sh"),
     ("prune-board-scratch", "prune-board-worktrees.sh"),
     ("rotate-logs", "rotate-logs.sh"),
     ("system-cleanup", "system-cleanup.sh"),
+    ("uv-cache-prune", "uv-cache-prune.sh"),
     ("brain-cleanup", "brain-cleanup.sh"),
-    ("morning-brief", "morning-brief.sh"),
     ("weekly-deep", "run-weekly.sh"),
+    ("morning-brief", "morning-brief.sh"),
 )
 
 # Everything invoked after memory-audit. If a fix for the exit code were
@@ -79,6 +83,21 @@ class NightlyRun:
 
 
 class NightlyExitStatusTests(unittest.TestCase):
+    def test_fixture_phases_mirror_the_shipped_sequence(self) -> None:
+        phases = re.findall(
+            r'^\s*run_phase "([^"]+)"\s+"\$\{VAULT_ROOT\}/bin/([^"]+)"',
+            NIGHTLY.read_text(encoding="utf-8"),
+            re.MULTILINE,
+        )
+        self.assertEqual(tuple(phases), PHASE_SCRIPTS)
+
+    def test_new_maintenance_failures_reach_the_nightly_verdict(self) -> None:
+        run = self.run_nightly(failing=frozenset({"chrome-refresh", "uv-cache-prune"}))
+        self.assertNotEqual(run.returncode, 0)
+        for phase in ("chrome-refresh", "uv-cache-prune"):
+            self.assertIn(f"FAIL  phase: {phase}", run.stdout)
+            self.assertIn(phase, run.today_brief)
+
     def run_nightly(self, *, failing: frozenset[str] = frozenset(), absent: frozenset[str] = frozenset()) -> NightlyRun:
         """Run the real script against stub phases.
 

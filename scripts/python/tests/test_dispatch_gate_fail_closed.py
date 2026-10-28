@@ -108,6 +108,9 @@ class DispatchGateFailClosedTests(unittest.TestCase):
         # Every python helper send_task_main imports off SQUAD_CODE_ROOT
         # (worktree_isolation, plan_item_binding, ...) is the real module.
         (self.root / "scripts").symlink_to(REPO_ROOT / "scripts")
+        # The sender now sources its input guards and packet assembly helpers.
+        for helper in (REPO_ROOT / "shared").glob("send-task-*.sh"):
+            shutil.copy2(helper, fixture_shared / helper.name)
 
         # VAULT_ROOT: a fixture-only specialist directory (the "unknown
         # specialist" lookup reads from here, not SQUAD_CODE_ROOT) plus an

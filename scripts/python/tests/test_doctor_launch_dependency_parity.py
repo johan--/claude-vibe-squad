@@ -303,6 +303,17 @@ class DoctorLaunchDependencyParityTest(unittest.TestCase):
 class LaunchDependencyListHasOneHomeTest(unittest.TestCase):
     """The launcher and doctor must READ the list, never restate it."""
 
+    def test_required_commands_match_the_active_lane_registry(self):
+        import csv
+
+        with (ROOT / "model-lanes/lane-capabilities.tsv").open() as stream:
+            lane_commands = {row["cli"] for row in csv.DictReader(stream, delimiter="\t")}
+        self.assertEqual(lane_commands, {"claude", "codex", "agy", "grok"})
+        self.assertEqual(
+            set(doctor_fixture.launch_dependencies(ROOT)),
+            {"tmux", "fswatch", "jq", "curl", "uv"} | lane_commands,
+        )
+
     def test_launcher_iterates_the_shared_list(self):
         launcher = (ROOT / "bin" / "launch-squad.sh").read_text(encoding="utf-8")
         self.assertIn("shared/launch-dependencies.sh", launcher)
@@ -320,7 +331,7 @@ class LaunchDependencyListHasOneHomeTest(unittest.TestCase):
         readme = (ROOT / "README.md").read_text(encoding="utf-8")
         quickstart = readme.split("## Quickstart", 1)[1][:1200]
         for command in doctor_fixture.launch_dependencies(ROOT):
-            if command in ("claude", "codex", "gemini", "grok", "kimi"):
+            if command in ("claude", "codex", "gemini", "grok"):
                 continue  # named as model-lane products rather than shell commands
             with self.subTest(command=command):
                 self.assertIn(command, quickstart)
@@ -339,10 +350,17 @@ class DoctorExternalEntryPointsTest(unittest.TestCase):
 
     def run_external_entries(self, *, missing_monitor=False, unloaded_monitor=False, launchctl=True):
         sys.path.insert(0, str(ROOT / "tests" / "hooks"))
-        from test_install_routines import CHROME, MONITOR, RoutineFixture
+        from test_install_routines import CHROME, MONITOR, PLIST_TOOL, RoutineFixture
 
         fixture = RoutineFixture(launchctl=launchctl)
         self.addCleanup(fixture.close)
+        # The installer models lint/extract only; doctor also reads a full dump.
+        fixture.write_command("plutil", f"#!{sys.executable}\n" + """
+import pathlib, plistlib, sys
+if sys.argv[1:2] == ["-p"]:
+    print(plistlib.loads(pathlib.Path(sys.argv[2]).read_bytes()))
+    raise SystemExit(0)
+""" + PLIST_TOOL)
         fixture.seed(MONITOR, loaded=not unloaded_monitor)
         fixture.seed(CHROME)
         for script in ("squad-monitor.sh", "chrome-bootstrap.sh"):

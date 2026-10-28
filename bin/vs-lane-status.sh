@@ -83,7 +83,7 @@ import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 
-LANES = ("chrono", "gpt-codex", "claude", "gemini", "kimi")
+LANES = ("chrono", "gpt-codex", "claude", "gemini", "grok")
 CYAN = "#[fg=colour74]"
 TEXT = "#[fg=colour252]"
 DIM = "#[fg=colour240]"

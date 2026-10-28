@@ -433,7 +433,7 @@ Exercise the prepared-packet modeless path.
             packet_capture = root / "packet-capture.md"
             (root / "shared/lead-windows.sh").write_text(
                 "COMPATIBILITY_NAMESPACES=(coding security content sysmgmt research)\n"
-                "MODEL_LANES=(gpt-codex claude gemini grok kimi)\n"
+                "MODEL_LANES=(gpt-codex claude gemini grok)\n"
                 'is_compatibility_namespace() { [[ "$1" == coding ]]; }\n',
                 encoding="utf-8",
             )
@@ -648,15 +648,15 @@ class ModelessSupervisorBudgetTests(unittest.TestCase):
         self,
     ) -> None:
         block = self._budget_block()
-        # Anti-widening (launch timeout): project caps at 2700s, bounty may reach
-        # 3600s. The intersection is 2700s. modeless gets 2700s because the
+        # Anti-widening (launch timeout): project caps at 5400s, bounty may reach
+        # 7200s. The intersection is 5400s. modeless gets 5400s because the
         # extension is gated on the exact `== "bounty"` token (an ALLOWLIST). A
-        # `!= "project"` denylist would silently hand modeless the 3600s ceiling.
+        # `!= "project"` denylist would silently hand modeless the 7200s ceiling.
         self.assertIn('authority["mode_profile"] == "bounty"', block)
         self.assertNotIn('!= "project"', block)
         self.assertNotIn('!= \'project\'', block)
-        # The base 2700s cap that modeless (and project) live under is present.
-        self.assertIn("2700", block)
+        # The base 5400s cap that modeless (and project) live under is present.
+        self.assertIn("5400", block)
 
 
 if __name__ == "__main__":

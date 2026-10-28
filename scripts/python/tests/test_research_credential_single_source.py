@@ -37,7 +37,7 @@ def shell_registry_env(path: Path, server: str) -> frozenset[str]:
         if row.group("name") != server:
             continue
         env = row.group("rest").rsplit("|", 1)[-1]
-        if not ENV_FIELD_RE.match(env):
+        if env and not ENV_FIELD_RE.match(env):
             raise AssertionError(
                 f"{path.name}: {server} row has no env-name field; last field "
                 f"parsed as {env!r}"
@@ -96,7 +96,7 @@ class ResearchArsenalCredentialSingleSource(unittest.TestCase):
 
     def test_plugin_manifest_forwards_exactly_the_owner(self) -> None:
         manifest = json.loads(ARSENAL_MANIFEST.read_text())
-        env = manifest["mcpServers"]["chrono-research-arsenal"]["env"]
+        env = manifest["mcpServers"]["chrono-research-arsenal"].get("env", {})
         self.assertEqual(set(env), set(RESEARCH_API_KEY_NAMES))
         # A forwarding declaration that does not pass the value through is a
         # third failure mode: present in the manifest, empty at call time.

@@ -7,15 +7,6 @@ Reference for specialist `required_tools` / `preferred_tools`. Organized by capa
 ## Web search & research
 
 - `chrono-research-arsenal:arxiv_search` — academic papers and preprints
-- `chrono-research-arsenal:xai_search` — web/X/news via xAI Grok
-- `chrono-research-arsenal:perplexity_search` — canonical budgeted cited-web search; fresh worker receipt pending
-- `firecrawl:scrape` — web page HTML extraction
-- `firecrawl:crawl` — web crawl with link following
-- `firecrawl:parse` — document parsing (PDF, HTML, etc.)
-- `firecrawl:map` — site map discovery
-- `chrono-research-arsenal:firecrawl_scrape` — provider-proven all-lane governed scrape wrapper; metered key required
-- `chrono-research-arsenal:firecrawl_crawl` — partial bounded crawl wrapper; unit-tested but no live provider receipt
-- `chrono-research-arsenal:firecrawl_parse` — partial explicit-byte parser; unit-tested but no live provider receipt
 
 ## Documentation & library reference
 
@@ -50,13 +41,14 @@ Reference for specialist `required_tools` / `preferred_tools`. Organized by capa
 
 ## Cross-model reasoning (as tools)
 
-- `chrono-research-arsenal:xai_search` — verified Grok-backed web/X/news route; the stale `grok_reason` token is not live
+None.
 
 ## Content generation: image/video/audio
 
 - `chrono-media-studio:generate_image` — verified governed image wrapper
 - `chrono-media-studio:generate_video` — verified governed video wrapper
 - `chrono-media-studio:generate_audio` — verified governed audio wrapper
+- `chrono-media-studio:openai_auth_diagnostic` — non-generating OpenAI auth probe
 - `higgsfield__generate_image` — **not live directly**; use the governed wrapper
 - `higgsfield__generate_video` — **not live directly**; use the governed wrapper
 - `higgsfield__generate_audio` — **not live directly**; use the governed wrapper
@@ -104,4 +96,5 @@ Reference for specialist `required_tools` / `preferred_tools`. Organized by capa
 
 - `radare2` — verified local static inspection/disassembly (`6.1.4`)
 - `gdb` — installed (`17.1`) and verified only for offline binary parsing; target execution is not live on this host
-- `ghidra`, `binwalk`, `qemu` — genuinely absent; keep dependent routes at `needs_tool`
+- `ghidra` — installed (`/opt/homebrew/bin/ghidraRun`; headless automation via `/opt/homebrew/Cellar/ghidra/12.1.2/libexec/support/analyzeHeadless`, verified per dated 2026-07-26 canary receipt in `shared/api-catalog.md` §12)
+- `binwalk`, `qemu` — genuinely absent on PATH; keep dependent routes at `needs_tool`

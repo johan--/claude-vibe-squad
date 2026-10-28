@@ -1,0 +1,10 @@
+# Pinned so the bench measures the toolchain, not the day's defaults.
+[profile.default]
+src = "src"
+test = "test"
+out = "out"
+libs = []
+solc_version = "0.8.28"
+evm_version = "cancun"
+optimizer = false
+fuzz = { runs = 256, seed = "0x1120" }

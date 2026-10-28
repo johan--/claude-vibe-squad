@@ -2,14 +2,19 @@
 
 from __future__ import annotations
 
+import json
 import os
 import re
 import subprocess
+import sys
 import tempfile
 import unittest
 from datetime import datetime, timezone
 from pathlib import Path
 
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import doctor_fixture  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[3]
 DOCTOR = ROOT / "bin" / "doctor.sh"
@@ -17,45 +22,88 @@ RESOLVER = ROOT / "bin" / "doctor-log-home.sh"
 
 
 class DoctorLogRelocationTests(unittest.TestCase):
-    def test_missing_vault_root_still_writes_configured_durable_log(self) -> None:
+    def test_unwritable_vault_root_still_writes_configured_durable_log(self) -> None:
         with tempfile.TemporaryDirectory(prefix="doctor-log-relocation-") as raw:
             fixture = Path(raw)
-            missing_vault_root = fixture / "missing-vault-root"
+            root = fixture / "root"
+            doctor_fixture.install_doctor_helpers(ROOT, root)
+            home = fixture / "home"
+            local_bin = home / ".local" / "bin"
+            doctor_fixture.stub_launch_dependencies(local_bin, ROOT)
+            doctor_fixture.write_stub(local_bin, "ps", doctor_fixture.EMPTY_PS)
+            doctor_fixture.write_stub(local_bin, "curl", "#!/bin/bash\nexit 7\n")
             durable_log_dir = fixture / "off-repo-state" / "doctor-logs"
             environment = dict(os.environ)
-            environment["VAULT_ROOT"] = str(missing_vault_root)
+            environment["HOME"] = str(home)
+            environment["VAULT_ROOT"] = str(root)
+            environment["SQUAD_LAUNCHAGENTS_DIR"] = str(home / "Library/LaunchAgents")
+            environment["VIBESQUAD_STATUS_DIR"] = str(fixture / "status")
             environment["CHRONO_DOCTOR_LOG_DIR"] = str(durable_log_dir)
             environment.pop("CHRONO_VAULT_ROOT", None)
 
-            completed = subprocess.run(
-                ["bash", str(DOCTOR)],
-                cwd=ROOT,
-                env=environment,
-                capture_output=True,
-                text=True,
-                timeout=30,
-                check=False,
-            )
+            # e9b2446bb makes a missing root fatal before doctor starts. An
+            # existing but unwritable root still reaches the diagnostic checks
+            # and proves their failure reports can be written outside the repo.
+            root.chmod(0o555)
+            try:
+                completed = subprocess.run(
+                    ["bash", str(root / "bin/doctor.sh")],
+                    cwd=fixture,
+                    env=environment,
+                    capture_output=True,
+                    text=True,
+                    timeout=30,
+                    check=False,
+                )
+            finally:
+                root.chmod(0o755)
 
             today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
             report = durable_log_dir / f"{today}.md"
             summary = durable_log_dir / f"{today}-summary.json"
             diagnostic = completed.stdout + completed.stderr
 
-            self.assertNotEqual(completed.returncode, 0, diagnostic)
+            self.assertEqual(completed.returncode, 1, diagnostic)
             self.assertTrue(report.is_file(), diagnostic)
             report_text = report.read_text(encoding="utf-8")
             self.assertIn(f"# Doctor Report — {today}", report_text)
-            # Plan D Task 6 split the single "not accessible" line into the
-            # three states it conflated -- not a directory, not writable, and
-            # writable-but-refusing -- because only the last needs a probe. A
-            # VAULT_ROOT that does not exist is the first of those.
-            self.assertIn("Runtime repository is not a directory", report_text)
+            self.assertIn(f"Runtime repository at {root} is not writable", report_text)
             self.assertTrue(summary.is_file(), diagnostic)
             summary_text = summary.read_text(encoding="utf-8")
             self.assertIn(f'"date": "{today}"', summary_text)
             self.assertIn('"issue_count": ', summary_text)
-            self.assertFalse((missing_vault_root / "_state" / "doctor-logs").exists())
+            self.assertIn("runtime repository not writable", json.loads(summary_text)["issues"])
+            self.assertFalse((root / "_state" / "doctor-logs").exists())
+
+    def test_missing_vault_root_aborts_before_log_validation_or_writes(self) -> None:
+        """The fail-closed root contract precedes the log-home contract."""
+        with tempfile.TemporaryDirectory(prefix="doctor-log-missing-root-") as raw:
+            fixture = Path(raw)
+            missing_root = fixture / "missing-vault-root"
+            durable_log_dir = fixture / "off-repo-state" / "doctor-logs"
+            for log_dir in (str(durable_log_dir), "relative-doctor-logs"):
+                with self.subTest(log_dir=log_dir):
+                    environment = {
+                        **os.environ,
+                        "HOME": str(fixture / "home"),
+                        "VAULT_ROOT": str(missing_root),
+                        "CHRONO_DOCTOR_LOG_DIR": log_dir,
+                    }
+                    completed = subprocess.run(
+                        ["bash", str(DOCTOR)], cwd=fixture, env=environment,
+                        capture_output=True, text=True, timeout=5, check=False,
+                    )
+                    self.assertEqual(completed.returncode, 1, completed.stderr)
+                    self.assertIn(
+                        f"repo-root.sh: VAULT_ROOT is not a directory: {missing_root}",
+                        completed.stderr,
+                    )
+                    self.assertNotIn("CHRONO_DOCTOR_LOG_DIR", completed.stderr)
+                    self.assertEqual(completed.stdout, "")
+                    self.assertFalse(missing_root.exists())
+                    self.assertFalse(durable_log_dir.exists())
+                    self.assertFalse((fixture / "relative-doctor-logs").exists())
+                    self.assertFalse((fixture / "home/.local/state").exists())
 
     def test_default_home_is_absolute_off_repo_and_attempt_independent(self) -> None:
         with tempfile.TemporaryDirectory(prefix="doctor-log-default-") as raw:
@@ -127,7 +175,9 @@ class DoctorLogRelocationTests(unittest.TestCase):
         with tempfile.TemporaryDirectory(prefix="doctor-log-relative-") as raw:
             fixture = Path(raw)
             environment = dict(os.environ)
-            environment["VAULT_ROOT"] = str(fixture / "missing-vault-root")
+            # Reach doctor's log validation with a root accepted by the shared
+            # initializer; the missing-root precedence is pinned separately.
+            environment["VAULT_ROOT"] = str(fixture)
             environment["CHRONO_DOCTOR_LOG_DIR"] = "relative-doctor-logs"
             completed = subprocess.run(
                 ["bash", str(DOCTOR)],

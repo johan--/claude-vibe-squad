@@ -63,6 +63,26 @@ else:
 state_file.write_text(json.dumps(state))
 '''
 
+# Model only the two plutil operations the installer uses, with real parsing.
+# launchctl is already a fixture; no macOS executable is needed for these tests.
+PLIST_TOOL = r'''
+import pathlib, plistlib, sys
+args = sys.argv[1:]
+try:
+    if len(args) == 2 and args[0] == "-lint":
+        plistlib.loads(pathlib.Path(args[1]).read_bytes())
+    elif len(args) == 4 and args[0] == "-extract" and args[2] == "raw":
+        value = plistlib.loads(pathlib.Path(args[3]).read_bytes())[args[1]]
+        if not isinstance(value, str):
+            raise ValueError("fixture supports string extraction only")
+        print(value)
+    else:
+        raise ValueError("unsupported plutil arguments: " + repr(args))
+except (OSError, ValueError, KeyError, plistlib.InvalidFileException) as exc:
+    print(str(exc), file=sys.stderr)
+    raise SystemExit(1)
+'''
+
 
 class RoutineFixture:
     def __init__(self, *, launchctl: bool = True):
@@ -81,12 +101,13 @@ class RoutineFixture:
         (self.base / "calls.jsonl").write_text("")
         for command in (
             "sed", "dirname", "readlink", "id", "sort", "tr", "grep", "head",
-            "mkdir", "mktemp", "cmp", "chmod", "mv", "rm", "plutil", "basename", "awk",
+            "mkdir", "mktemp", "cmp", "chmod", "mv", "rm", "basename", "awk",
         ):
             executable = shutil.which(command, path="/usr/bin:/bin:/usr/sbin:/sbin")
             if executable is None:
                 raise RuntimeError(f"fixture requires file utility: {command}")
             (self.commands / command).symlink_to(executable)
+        self.write_command("plutil", f"#!{sys.executable}\n" + PLIST_TOOL)
         self.write_command("uv", "#!/bin/bash\nexit 0\n")
         if launchctl:
             self.write_command("launchctl", f"#!{sys.executable}\n" + MOCK_LAUNCHCTL)
@@ -317,6 +338,16 @@ class InstallRoutinesOwnershipTest(unittest.TestCase):
         before = fixture.snapshot(), fixture.state()
         (fixture.root / "launchd" / f"{MONITOR}.plist").write_bytes(fixture.render(CHROME))
         self.assert_exit(fixture.run(labels=[MONITOR]), 1)
+        self.assertEqual((fixture.snapshot(), fixture.state()), before)
+        self.assertEqual(fixture.mutations(), [])
+
+    def test_malformed_plist_cannot_be_installed_or_bootstrapped(self):
+        fixture = self.fixture()
+        (fixture.root / "launchd" / f"{MONITOR}.plist").write_text("not a plist\n")
+        before = fixture.snapshot(), fixture.state()
+        result = fixture.run(labels=[MONITOR])
+        self.assert_exit(result, 1)
+        self.assertIn("rendered plist failed plutil validation", result.stderr)
         self.assertEqual((fixture.snapshot(), fixture.state()), before)
         self.assertEqual(fixture.mutations(), [])
 

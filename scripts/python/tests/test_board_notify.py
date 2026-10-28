@@ -48,16 +48,40 @@ class BoardNotifyTests(unittest.TestCase):
         process: subprocess.Popen[str], predicate, timeout: float = 5
     ) -> list[str]:
         lines: list[str] = []
+        pending = b""
         deadline = time.monotonic() + timeout
         while time.monotonic() < deadline and process.poll() is None:
             ready, _, _ = select.select([process.stdout], [], [], 0.1)
             if ready:
-                line = process.stdout.readline()
-                if line:
-                    lines.append(line.rstrip())
-                    if predicate(lines):
-                        break
+                # select sees the kernel pipe, not TextIOWrapper's prefetched
+                # lines. Read the ready bytes directly so a single burst cannot
+                # strand every line after the first in Python's text buffer.
+                chunk = os.read(process.stdout.fileno(), 65536)
+                if not chunk:
+                    break
+                pending += chunk
+                while b"\n" in pending:
+                    line, _, pending = pending.partition(b"\n")
+                    lines.append(line.decode("utf-8").rstrip())
+                if predicate(lines):
+                    break
         return lines
+
+    def test_reader_drains_one_burst_while_child_remains_alive(self) -> None:
+        process = subprocess.Popen(
+            [sys.executable, "-c", "import sys,time; "
+             "sys.stdout.write('first\\nsecond\\nthird\\n'); "
+             "sys.stdout.flush(); time.sleep(10)"],
+            stdout=subprocess.PIPE, text=True, bufsize=1,
+        )
+        try:
+            lines = self.read_until(process, lambda rows: len(rows) == 3)
+            self.assertEqual(lines, ["first", "second", "third"])
+            self.assertIsNone(process.poll(), "the reader must not wait for EOF")
+        finally:
+            process.terminate()
+            process.wait(timeout=5)
+            process.stdout.close()
 
     def test_reports_every_canonical_terminal_transition_and_fast_task(self) -> None:
         tasks = {

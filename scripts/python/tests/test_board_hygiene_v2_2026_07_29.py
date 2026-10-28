@@ -35,10 +35,10 @@ PARKED_AGE_ONLY = 600  # past PARKED_THRESHOLD (300) but not yet stale
 
 class ModeAwareTimeoutTests(unittest.TestCase):
     def test_mode_budget_map_and_recoverable_timeout_owner(self) -> None:
-        self.assertEqual(dcb.timeout_budget_for_mode("bounty"), 3600)
+        self.assertEqual(dcb.timeout_budget_for_mode("bounty"), 7200)
         for mode in ("project", "advisory", "canary", ""):
             with self.subTest(mode=mode):
-                self.assertEqual(dcb.timeout_budget_for_mode(mode), 2700)
+                self.assertEqual(dcb.timeout_budget_for_mode(mode), 5400)
 
         supervisor = (
             IMPLEMENTATION_ROOT / "bin" / "board-supervisor.sh"
@@ -53,7 +53,7 @@ class ModeAwareTimeoutTests(unittest.TestCase):
             supervisor,
             (
                 r'authority\["mode_profile"\] == "bounty"\s+'
-                r'and 2700 < budgets\["timeout_seconds"\] <= 3600'
+                r'and 5400 < budgets\["timeout_seconds"\] <= 7200'
             ),
         )
 

@@ -1,12 +1,12 @@
 #!/bin/bash
 # Install the Vibe Squad launchd routines (LaunchAgents) from the templates in launchd/.
 #
-# `bin/squad up` refuses to launch until com.vibesquad.daemon is installed and loaded
-# (bin/launch-squad.sh:69-72). This script is the supported way to get there.
+# The optional launchd daemon adds the status-bar daemon segment and HTTP tool bridge.
+# `bin/squad up` runs without it; an installed but broken/foreign daemon still blocks launch.
 #
 # Usage:
-#   bash bin/install-routines.sh                # install required + optional routines, then load
-#   bash bin/install-routines.sh --daemon-only  # install only what `squad up` requires
+#   bash bin/install-routines.sh                # install all repo-managed routines, then load
+#   bash bin/install-routines.sh --daemon-only  # install and load only the optional daemon
 #   bash bin/install-routines.sh --dry-run      # render + validate, change nothing
 #   bash bin/install-routines.sh --status       # report installed/loaded state
 #   bash bin/install-routines.sh --force        # replace a differing installed plist
@@ -21,7 +21,7 @@ set -euo pipefail
 # shellcheck source-path=SCRIPTDIR source=../shared/repo-root.sh disable=SC1091
 source "$(cd -- "$(dirname -- "$(readlink -f -- "${BASH_SOURCE[0]}" 2>/dev/null || printf '%s' "${BASH_SOURCE[0]}")")/.." && pwd -P)/shared/repo-root.sh"
 
-# Agents `bin/squad up` blocks on. Keep this list in sync with DAEMON_LABEL in bin/launch-squad.sh.
+# Daemon selected by --daemon-only. Keep this list in sync with DAEMON_LABEL in bin/launch-squad.sh.
 REQUIRED_AGENTS=("com.vibesquad.daemon")
 # Installed by default for parity with previous behavior, but not required to launch.
 OPTIONAL_AGENTS=("com.claudevibesquad.nightly" "com.vibesquad.dream" "com.chrono.squad-monitor")
@@ -102,7 +102,7 @@ DEGRADED=0
 #
 # Both __VAULT_ROOT__ and __HOME__ must be substituted even when a template only
 # *documents* one of them: the daemon template's own instruction comment contains
-# the literal string __HOME__, and bin/launch-squad.sh:74 rejects any installed
+# the literal string __HOME__, and bin/launch-squad.sh:136 rejects any installed
 # plist matching __[A-Z][A-Z0-9_]*__ anywhere in the file, comments included.
 # Substituting only __VAULT_ROOT__ therefore produces a plist the launcher refuses.
 render_plist() {
@@ -396,7 +396,7 @@ if [[ ${STATUS_ONLY} -eq 1 ]]; then
     echo "launchd domain:   ${LAUNCHD_DOMAIN}"
     echo ""
     printf '  %-38s %-10s %-10s %-16s %s\n' "LABEL" "PLIST" "LAUNCHD" "OWNER" "ROLE"
-    report_status "repo-managed" "required by 'squad up'" "${REQUIRED_AGENTS[@]}"
+    report_status "repo-managed" "optional daemon" "${REQUIRED_AGENTS[@]}"
     # Guard the expansion: macOS ships bash 3.2, where "${empty[@]}" under
     # `set -u` is an unbound-variable error rather than zero arguments.
     if [[ ${#OPTIONAL_AGENTS[@]} -gt 0 ]]; then
@@ -471,8 +471,8 @@ done
 
 echo ""
 if [[ ${FAILURES} -gt 0 ]]; then
-    echo "✗ ${FAILURES} agent(s) failed to install. 'bin/squad up' will refuse to launch"
-    echo "  until com.vibesquad.daemon is installed and loaded."
+    echo "✗ ${FAILURES} agent(s) failed to install. See the errors above."
+    echo "  Inspect installed/loaded state with: bash bin/install-routines.sh --status"
     exit 1
 fi
 

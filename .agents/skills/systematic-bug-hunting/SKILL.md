@@ -163,8 +163,7 @@ Run **both** halves — they find disjoint things:
 1. **The arsenal.** Every relevant tool, skill, CLI, plugin, and API for the target class —
    see the [tool-intensity contract](#tool-intensity-contract). Commodity scanners on default
    rules are the *entry fee*, not the work: write target-specific rules
-   (`semgrep-rule-author`, `diff-aware-semgrep-scan`), build a purpose-shaped harness
-   (`fuzzing-campaign-flow`), and point them at the trust boundaries H1 named.
+   (`semgrep-rule-author`, `diff-aware-semgrep-scan`), build a purpose-shaped harness, and point them at the trust boundaries H1 named.
 2. **Manual reading.** Read the code on both sides of every trust boundary yourself. Fuzzers
    find crashes; readers find *assumptions*. Most invention operators in H3 fire on something
    a human noticed and a tool cannot express.

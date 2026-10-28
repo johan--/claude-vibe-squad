@@ -11,14 +11,16 @@ Every task brief must include:
 - `source_namespace`
 - `write_scope`
 - `review_model`
+- `reviews` (`none`, or the held `TASK-YYYY-MM-DD-HHMM-<suffix>` ID this packet reviews — dispatch refuses a packet without it)
 - `mandatory_review`
+- `review_triggers` (`[]` or a subset of `blast_radius | adversarial_claim | deciding_measurement | architecture`)
 - `parallel_safe`
 - `direct_lane_work_allowed: false` unless explicitly approved and justified
 
 Before dispatch:
 
 - Check the specialist exists in the TSV map.
-- Check `to_model` is one of `gpt-codex`, `claude`, `gemini`, `kimi`, or `grok`.
+- Check `to_model` is one of `gpt-codex`, `claude`, `gemini`, or `grok`.
 - Check source namespace is storage only; do not use it to choose a model.
 - Check write scopes do not overlap with active tasks.
 - Add read-only review for high-safety classes.

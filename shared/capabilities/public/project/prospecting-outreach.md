@@ -16,7 +16,7 @@ gates: [live_outreach]
 
 ## Availability in a fresh clone
 
-A zero-key checkout gets this protocol and its validation metadata as documentation; automated dispatch is `needs_tool`. To make it runnable, install and authenticate the selected model CLI, configure every MCP declared by the dispatched specialists, bind the private vault (`CHRONO_VAULT_ROOT`; Kimi also requires its exact vault context), install any required host-local binaries, and provide approved credentials plus a bounded budget for any metered provider named below. After setup, re-run the production role planner and validators on that host; availability remains subject to the narrower gaps and operator gates documented in this card.
+A zero-key checkout gets this protocol and its validation metadata as documentation; automated dispatch is `needs_tool`. To make it runnable, install and authenticate the selected model CLI, configure every MCP declared by the dispatched specialists, bind the private vault (`CHRONO_VAULT_ROOT`), install any required host-local binaries, and provide approved credentials plus a bounded budget for any metered provider named below. After setup, re-run the production role planner and validators on that host; availability remains subject to the narrower gaps and operator gates documented in this card.
 
 **When to use:** client-acquisition / freelance prospecting, job-search applications, or general outreach —
 find + qualify targets, then draft personalized messages and follow-ups. **Drafting/research is live; the SEND
@@ -26,7 +26,7 @@ is operator-gated `needs_tool`** — every message needs per-message operator ap
 |---|---|---|---|---|
 | **S0** Intake/Admit | `Chrono`, `triage` | `chrono-vault` | — | memory overlay (recall) |
 | **S1** Frame (ICP + targets + goals) | `research`, `growth-and-search-analyst` | `chrono-research-arsenal` | `scope-decomposition` | privacy overlay (prospect PII) |
-| **S2** Design (qualify + enrich list) | `research`, `data-extraction-engineer`, `privacy-steward` | `firecrawl`, `chrono-research-arsenal`, `codex --search` | `technical-seo-audit`, `citation-audit` | privacy overlay (PII minimization) |
+| **S2** Design (qualify + enrich list) | `research`, `data-extraction-engineer`, `privacy-steward` | `chrono-research-arsenal`, `codex --search` | `technical-seo-audit`, `citation-audit` | privacy overlay (PII minimization) |
 | **S3** Produce (draft messages + follow-ups) | `brand-voice`, `editor` | `chrono-research-arsenal` | `citation-audit` | — |
 | **S4** Verify (personalization + accuracy) | `editor`, `skeptic` | — | `citation-audit` | privacy overlay; no fabricated claims about the prospect |
 | **S5** Review/Gate (send approval) | `skeptic`, `operator` | — | — | review overlay; **`live_outreach` — per-message operator "go"** (send is `needs_tool`/operator-gated) |

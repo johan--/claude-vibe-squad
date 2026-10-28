@@ -30,23 +30,24 @@ command from you. Two of these agents also run with more than your login:
   `127.0.0.1:9222` and no authentication, so replacing that one file gives an
   attacker every logged-in session and cookie you hold — no secrets file needed.
 
-### The installer manages three of these agents; two more can be running that it never sees
+### The installer manages four of these agents; the fifth is operator-managed and reported only
 
-Run the full `bin/install-routines.sh` and it installs **three** checkout-rooted
-agents. But `launchd/` also ships two more checkout-rooted templates that **no
-command in this repository installs, removes, or reports** — they are loaded by
-hand, and `bin/install-routines.sh --status` lists only the three it manages, so a
-reader who trusts that status output will believe they are covered when they are
-not. Depending on your machine, up to five checkout-rooted agents can be loaded at
-once:
+Run the full `bin/install-routines.sh` and it installs **four** checkout-rooted
+agents (`com.vibesquad.daemon` plus the optional `com.claudevibesquad.nightly`,
+`com.vibesquad.dream`, and `com.chrono.squad-monitor`; `--daemon-only` installs only
+`com.vibesquad.daemon`). `launchd/` also ships one more checkout-rooted template,
+`com.vibesquad.chrome`, that **no command in this repository installs or removes** —
+it is loaded by hand, and `bin/install-routines.sh --status` reports all five labels
+with an `OWNER` column (`installer` vs `operator-managed`). Depending on your
+machine, up to five checkout-rooted agents can be loaded at once:
 
 | Label | Re-executes checkout code | Extra authority on compromise | Installed / removed by |
 |---|---|---|---|
 | `com.vibesquad.daemon` | continuously (`KeepAlive`) | your shell secrets (sources `secrets.zsh`) | `bin/install-routines.sh` |
-| `com.claudevibesquad.nightly` | daily at 03:00 | your shell secrets (sources `secrets.zsh`) | `bin/install-routines.sh` |
-| `com.vibesquad.dream` | daily at 03:00 | your user (no secrets sourced) | `bin/install-routines.sh` |
-| `com.chrono.squad-monitor` | **every 120 seconds** | your user (no secrets sourced) | **no repo command — by hand** |
-| `com.vibesquad.chrome` | continuously (`KeepAlive`) | your authenticated browser (CDP :9222) | **no repo command — by hand** |
+| `com.claudevibesquad.nightly` | daily at 03:00 | your shell secrets (sources `secrets.zsh`) | `bin/install-routines.sh` (optional) |
+| `com.vibesquad.dream` | daily at 03:00 | your user (no secrets sourced) | `bin/install-routines.sh` (optional) |
+| `com.chrono.squad-monitor` | **every 120 seconds** | your user (no secrets sourced) | `bin/install-routines.sh` (optional) |
+| `com.vibesquad.chrome` | continuously (`KeepAlive`) | an operator-provisioned browser | **no repo command — by hand** (reported as `operator-managed` by `--status`) |
 
 The sharpest fact is the cadence: `com.chrono.squad-monitor` re-executes
 `bin/squad-monitor.sh` from the checkout **every two minutes**, unconditionally, so
@@ -68,7 +69,7 @@ launchctl bootout gui/$(id -u)/<label>                                       # u
 launchctl bootstrap gui/$(id -u) "$HOME/Library/LaunchAgents/<label>.plist"  # reload
 ```
 
-For example, to unload the daemon and the two hand-installed agents before
+For example, to unload the daemon, the monitor, and the hand-installed Chrome agent before
 inspecting an untrusted branch:
 
 ```bash
@@ -80,12 +81,12 @@ launchctl bootout gui/$(id -u)/com.vibesquad.chrome
 Reload each with `launchctl bootstrap gui/$(id -u) "$HOME/Library/LaunchAgents/<label>.plist"`
 once you are back on a branch you trust.
 
-- For the **three the installer manages** (`com.vibesquad.daemon`,
-  `com.claudevibesquad.nightly`, `com.vibesquad.dream`) you can reload instead by
-  re-running `bash bin/install-routines.sh` (or `--daemon-only`), which
-  re-bootstraps any that are not loaded.
-- For **`com.chrono.squad-monitor` and `com.vibesquad.chrome`** no repo command
-  will do it — use the `launchctl` commands by hand.
+- For the **four the installer manages** (`com.vibesquad.daemon`,
+  `com.claudevibesquad.nightly`, `com.vibesquad.dream`, `com.chrono.squad-monitor`)
+  you can reload instead by re-running `bash bin/install-routines.sh` (or
+  `--daemon-only` for just the daemon), which re-bootstraps any that are not loaded.
+- For **`com.vibesquad.chrome`** no repo command will install or reload it — use
+  the `launchctl` commands by hand.
 
 `bootout` here is not an uninstall: it leaves the plist in
 `~/Library/LaunchAgents`, which is why `bootstrap` can reload it. Removing the
@@ -126,8 +127,8 @@ the status bar keeps saying `offline` for as long as it is.
 bash bin/install-routines.sh
 ```
 
-That installs the daemon plus the optional routines — `com.claudevibesquad.nightly`
-and `com.vibesquad.dream`. The authoritative list
+That installs the daemon plus the optional routines — `com.claudevibesquad.nightly`,
+`com.vibesquad.dream`, and `com.chrono.squad-monitor`. The authoritative list
 is `OPTIONAL_AGENTS` in `bin/install-routines.sh`; the other install docs point
 here instead of restating it. To install only the daemon:
 
@@ -151,16 +152,20 @@ bash bin/install-routines.sh --status
 ```
 
 ```text
-  LABEL                                  PLIST      LAUNCHD    ROLE
-  com.vibesquad.daemon                   installed  loaded     required by 'squad up'
-  com.claudevibesquad.nightly            installed  loaded     optional
-  com.vibesquad.dream                    installed  loaded     optional
+  LABEL                                  PLIST      LAUNCHD     OWNER             ROLE
+  com.vibesquad.daemon                   installed  loaded      installer         required by 'squad up'
+  com.claudevibesquad.nightly            installed  loaded      installer         optional
+  com.vibesquad.dream                    installed  loaded      installer         optional
+  com.chrono.squad-monitor               installed  loaded      installer         optional
+  com.vibesquad.chrome                   missing    not-loaded  operator-managed  reporting only; lifecycle reserved to operator
 ```
 
-`installed` **and** `loaded` is what a working daemon looks like. Neither is a
-launch gate any more: `bin/squad up` starts whether or not this label appears at
-all. (The `ROLE` column still prints `required by 'squad up'`; that string lives
-in `bin/install-routines.sh` and is now stale.)
+The `PLIST` and `LAUNCHD` values above are illustrative; `installed` **and** `loaded`
+is what a working daemon looks like. Neither is a launch gate any more: `bin/squad up`
+starts whether or not this label appears at all. (The `ROLE` column still prints
+`required by 'squad up'`; that string lives in `bin/install-routines.sh` and is now
+stale.) `com.vibesquad.chrome` is listed for visibility (`operator-managed`); the
+installer never writes, loads, or removes it.
 
 **Absent is fine; broken is not.** Once a plist *is* installed, `bin/squad up`
 holds it to the same standard as before and stops the launch for any of these,

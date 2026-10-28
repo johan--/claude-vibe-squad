@@ -18,7 +18,7 @@ my-specialist	security	security_reasoning	high	[privacy]	none	claude	claude.fabl
 
 Column rules (enforced by `bin/validate-specialists.sh`):
 - `source_namespace` ∈ `coding | security | content | sysmgmt | research | shared`
-- routing lanes use `codex | claude | gemini | kimi | grok`; `primary_lane` may not be `kimi` unless the specialist has an explicit `primary_exception` row in `shared/lane-policy.tsv` (currently two: `summarizer`, `kestrel`)
+- routing lanes use `codex | claude | gemini | grok`; `primary_lane` eligibility is governed by `shared/lane-policy.tsv`
 - `primary_lane` and `backup_lane` must differ, and every lane/profile pair must resolve through `shared/registries/profiles.tsv`
 - `safety_level` ∈ `low | medium | high`
 - `high`/`heightened_risk` rows require an independent `review_lane`, `escalation.safety_floor.v1`, and `throughput.never.v1`
@@ -85,7 +85,6 @@ Every runtime-map specialist needs a thin adapter for each CLI it can be routed 
 | gpt-codex | `model-lanes/gpt-codex/.codex/agents/<specialist>.toml` (contains `name = "<specialist_with_underscores>"`) |
 | gemini | `model-lanes/gemini/.gemini/agents/<specialist>.md` (YAML frontmatter with `name: <specialist>`) |
 | grok | `model-lanes/grok/.grok/agents/<specialist>.yaml` (+ an entry in `model-lanes/grok/main.yaml`) |
-| kimi | `model-lanes/kimi/.kimi/agents/<specialist>.yaml` (+ an entry in `model-lanes/kimi/main.yaml`) |
 
 Ranked routes need adapters too, not only the primary route. Generate/check the primary, backup, escalation, review, and throughput lanes from the canonical brief and runtime-map row:
 
@@ -94,7 +93,7 @@ python3 model-lanes/generate-specialist-adapters.py --write <specialist>
 python3 model-lanes/generate-specialist-adapters.py <specialist>
 ```
 
-The first command creates missing adapters and never replaces reviewed adapters. Canonical brief updates take effect through the adapter pointer, so ordinary updates do not require rewriting its lane wrappers. Grok and Kimi adapters must also remain registered under `agent.subagents` in their respective `model-lanes/<lane>/main.yaml`; the check fails if that registry entry is absent. The runtime map remains the routing source of truth, so this procedure does not make a lane legitimate merely by creating a file.
+The first command creates missing adapters and never replaces reviewed adapters. Canonical brief updates take effect through the adapter pointer, so ordinary updates do not require rewriting its lane wrappers. Grok adapters must also remain registered under `agent.subagents` in `model-lanes/grok/main.yaml`; the check fails if that registry entry is absent. The runtime map remains the routing source of truth, so this procedure does not make a lane legitimate merely by creating a file.
 
 ## 4. Validate
 

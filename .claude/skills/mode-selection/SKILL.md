@@ -1,7 +1,7 @@
 ---
 name: mode-selection
 audience: chrono
-description: Use when choosing the operator-approved `mode` (`project` versus `bounty`) before launch—approval of the work does not approve that workflow. Not for constructing fields or reviewer routing.
+description: Use when choosing the operator-approved `mode` (`project`, `bounty`, or the default `modeless` engagement state) before launch—approval of the work does not approve that workflow. Not for constructing fields or reviewer routing.
 ---
 
 # Mode Selection
@@ -20,9 +20,11 @@ scripts — do not trust this doc over the code.
   word out loud; never infer it from "yes, go".
 
 ## Both dispatch paths preserve an explicit choice
-- Generated packets use `scripts/send-task.sh ... --mode project|bounty`. The wrapper rejects an
-  omitted or invalid value, writes the exact choice into frontmatter, and never supplies a default.
-- Prepared packets carry `mode: project|bounty` in frontmatter and dispatch with
+- Generated packets use `scripts/send-task.sh ... --mode project|bounty|modeless` (`modeless` must
+  be passed explicitly — the wrapper never infers it from absence). The wrapper rejects an omitted
+  or invalid value, writes the exact choice into frontmatter, and never supplies a default.
+- Prepared packets carry `mode: project|bounty` in frontmatter, or omit the field for a deliberate
+  `modeless` engagement (empty or unknown values are rejected), and dispatch with
   `bin/send-task.sh <packet-file>`, which carries the packet's own `mode` into the compiled contract
   (`MODE_VALUE` -> `"mode"`).
 - The wrapper survives because it still assembles standard frontmatter, resolves lanes and review
@@ -45,8 +47,8 @@ scripts — do not trust this doc over the code.
 - If the landed mode differs from what the operator approved, stop and say so before the lane works.
 
 ## The mode changes the contract, not just the wall
-- Walls come from `timeout_budget_for_mode()` in `dispatch_context_builder.py`: a flat 2700s for
-  `project`, 3600s for `bounty`. Scope to the emitted number; do not infer it from a ratio.
+- Walls come from `timeout_budget_for_mode()` in `dispatch_context_builder.py`: a flat 5400s for
+  `project`/`modeless`, 7200s for `bounty`. Scope to the emitted number; do not infer it from a ratio.
 - `verification_contract.py` sets a different contract per mode. `project` requires
   `project_tests`/`recipient_contract` and mandatory recall+record. `bounty` swaps in
   `scope_gate`/`no_self_inflicted`/`poc_reproduction`, an exact target allowlist, forbids
